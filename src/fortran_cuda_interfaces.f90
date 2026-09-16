@@ -189,6 +189,25 @@ MODULE F_B_C
          real(c_double), value :: zeta
       end subroutine
 
+      subroutine gpu_zero_trunc(V, n_floored, N, gpu_stream) bind(C, name="gpu_zero_trunc")
+         use iso_c_binding
+         implicit none
+         type(c_ptr), value :: V
+         type(c_ptr), value :: n_floored
+         type(c_ptr) :: gpu_stream
+         integer(c_int), value :: N
+      end subroutine
+
+      subroutine gpu_zero_trunc_der(Qss, V, n_sites, n_soap, gpu_stream) bind(C, name="gpu_zero_trunc_der")
+         use iso_c_binding
+         implicit none
+         type(c_ptr), value :: Qss
+         type(c_ptr), value :: V
+         type(c_ptr) :: gpu_stream
+         integer(c_int), value :: n_sites
+         integer(c_int), value :: n_soap
+      end subroutine
+
       subroutine gpu_axpe(A, dccc, e0, N, gpu_stream) bind(C, name="gpu_axpc")
          use iso_c_binding
          implicit none

@@ -16,6 +16,8 @@ void gpu_kernels_pow(double* a, double* b, double zeta, int size, hipStream_t* s
 void gpu_axpc(double* a, double dccc, double e0, int size, hipStream_t* stream);
 void cuda_matvect_kernels(double* kernels_d, double* alphas_d, int n_sites, int n_sparse, hipStream_t* stream);
 void cuda_matvect_qs(double* qs_d, double* qs_copy_d, double* alphas_d, int n_soap, int n_sparse, hipStream_t* stream);
+void gpu_zero_trunc(double* v, int* n_floored_d, int size, hipStream_t* stream);
+void gpu_zero_trunc_der(double* Qss_d, const double* v, int n_sites, int n_soap, hipStream_t* stream);
 
 // ---- gap_soap_radial.cu
 void gpu_get_radial_exp_coeff_poly3gauss(double* radial_exp_coeff_d, double* radial_exp_coeff_der_d, int* i_beg_d, int* i_end_d,

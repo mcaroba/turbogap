@@ -6117,6 +6117,9 @@ contains
                      soap_turbo_hypers(n_soap_turbo)%has_vdw = .true.
                      soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%do_derivatives = .true.
                      soap_turbo_hypers(n_soap_turbo)%vdw_index = 1
+!                    Same floor the local_property_labels spelling gets below.
+!                    Without it the two spellings of one potential differ.
+                     soap_turbo_hypers(n_soap_turbo)%local_property_models(1)%zero_trunc = .true.
 
                      !> @kw vdw_qs
                      !> Superseded by local_property_qs.

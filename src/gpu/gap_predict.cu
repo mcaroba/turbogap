@@ -76,6 +76,43 @@ extern "C" void gpu_axpc(double* a, double dccc, double e0, int size, hipStream_
   tg_parallel_for("turbogap_axpc", size, stream, TG_LAMBDA(const int idx) { a[idx] = dccc * a[idx] + e0; }, 256);
 }
 
+// Clamp a local property at zero: the device half of local_property_predict's
+// zero_trunc. A Hirshfeld volume or a core-electron binding energy cannot be
+// negative, so a negative prediction is the model being wrong rather than a
+// value to keep. n_floored_d counts them for the caller's warning and must be
+// zeroed before the call.
+extern "C" void gpu_zero_trunc(double* v, int* n_floored_d, int size, hipStream_t* stream) {
+  tg_parallel_for(
+      "turbogap_zero_trunc", size, stream,
+      TG_LAMBDA(const int idx) {
+        if (v[idx] < 0.0) {
+          v[idx] = 0.0;
+          TG_ATOMIC_ADD(n_floored_d, 1);
+        }
+      },
+      256);
+}
+
+// Zero the gradient of every clamped site.
+//
+// Qss is (n_sites, n_soap) column-major and each of a site's pairs contracts
+// the same row, so zeroing the row zeroes all of that site's derivatives at
+// once -- what local_properties.f90 does pair by pair on the host. A sum of
+// zero products is exactly 0.0, so the two routes agree bit for bit.
+//
+// The test is v == 0.0 rather than a separate mask because the host's is too:
+// it zeroes the gradient of any site whose value is exactly zero, floored or
+// not. Matching that quirk is the point -- the two backends must not disagree.
+extern "C" void gpu_zero_trunc_der(double* Qss_d, const double* v, int n_sites, int n_soap, hipStream_t* stream) {
+  tg_parallel_for(
+      "turbogap_zero_trunc_der", n_sites * n_soap, stream,
+      TG_LAMBDA(const int idx) {
+        if (v[idx % n_sites] == 0.0)
+          Qss_d[idx] = 0.0;
+      },
+      256);
+}
+
 extern "C" void cuda_matvect_kernels(double* kernels_d, double* alphas_d, int n_sites, int n_sparse, hipStream_t* stream) {
   tg_parallel_for(
       "turbogap_matvect_kernels", n_sites * n_sparse, stream,

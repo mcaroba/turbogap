@@ -41,7 +41,7 @@ contains
         & Qs_d, alphas_d, e0, delta, zeta0, local_properties, local_properties_d, &
         & do_derivatives, soap_der_d, local_properties_cart_der,&
         & local_properties_cart_der_d, n_pairs, l_index_d,&
-        & cublas_handle, gpu_stream)
+        & cublas_handle, gpu_stream, zero_trunc, label)
 
       implicit none
 
@@ -78,6 +78,15 @@ contains
       integer(c_int) :: k2
 
       integer(c_int), intent(in) :: n_pairs
+!     Clamp negative predictions at zero, as the host routine below does.
+!     Absent means clamp, which is what that routine has always defaulted to.
+      logical, intent(in), optional :: zero_trunc
+!     Named only so the warning can say which property was floored.
+      character(len=*), intent(in), optional :: label
+      logical :: truncate
+      integer(c_int), target :: n_floored
+      type(c_ptr) :: n_floored_d
+      integer(c_size_t) :: st_n_floored
       real(c_double), allocatable, target :: kernels(:, :)
       real(c_double), allocatable, target :: Qss(:, :)
       real(c_double), allocatable, target :: Qs_copy(:, :)
@@ -149,7 +158,31 @@ contains
 
       call gpu_axpe(local_properties_d, cdelta_ene, e0, size_local_properties, gpu_stream)
 
+      truncate = .true.
+      if (present(zero_trunc)) truncate = zero_trunc
+
+!     On the device, before the copy back, so the value the host receives and
+!     the value the derivative kernel below sees are the same one.
+      if (truncate) then
+         st_n_floored = sizeof(n_floored)
+         call gpu_malloc_async(n_floored_d, st_n_floored, gpu_stream)
+         call gpu_memset_async(n_floored_d, 0, st_n_floored, gpu_stream)
+         call gpu_zero_trunc(local_properties_d, n_floored_d, n_sites, gpu_stream)
+      end if
+
       call cpy_dtoh(local_properties_d, c_loc(local_properties), st_local_properties, gpu_stream)
+
+!     The count is read on the next line, and cpy_dtoh_blocking runs on the
+!     default stream rather than the one the clamp was queued on. Waiting on
+!     that stream explicitly, instead of relying on gpu_stream being a blocking
+!     stream -- true of hipStreamCreate, not of a Kokkos stream a host
+!     application might hand in.
+      if (truncate) then
+         call gpu_stream_sync(gpu_stream)
+         call cpy_dtoh_blocking(n_floored_d, c_loc(n_floored), st_n_floored)
+         call gpu_free_async(n_floored_d, gpu_stream)
+         call warn_floored(n_floored, label)
+      end if
 
       ! Now we do the derivatives
       if (do_derivatives) then
@@ -172,6 +205,11 @@ contains
          cdelta_force = -zeta*delta**2
          call gpu_blas_mmul_n_t(cublas_handle, kernels_der_d, Qs_copy_d, Qss_d, n_sparse, &
                                 n_soap, n_sites, cdelta_force)
+
+!        A clamped site's value no longer depends on the descriptor, so its
+!        gradient is zero. Every pair of a site contracts the same row of Qss,
+!        so zeroing the row does all of them.
+         if (truncate) call gpu_zero_trunc_der(Qss_d, local_properties_d, n_sites, n_soap, gpu_stream)
 
          local_properties_cart_der = 0.d0
 
@@ -298,6 +336,34 @@ contains
    !     ! print *, "local_property_labels ", local_property_labels
    !     ! print *, "local_property_labels_temp (irreducible) ", local_property_labels_temp
 
+!  Report once per run that a local property was floored at zero.
+!
+!  A Hirshfeld volume or a binding energy cannot be negative, so this should
+!  never fire. When it does, the prediction is wrong and the floored value is
+!  not a repair -- it is the wrong answer, rounded up. Shared by the host and
+!  device predictors so that the two cannot word it differently.
+   subroutine warn_floored(n_floored, label)
+
+      implicit none
+
+      integer, intent(in) :: n_floored
+      character(len=*), intent(in), optional :: label
+      logical, save :: warned = .false.
+
+      if (n_floored <= 0 .or. warned) return
+      warned = .true.
+      if (present(label)) then
+         write (*, *) "WARNING: ", n_floored, " negative values of "//trim(label)// &
+            " were floored at zero."
+      else
+         write (*, *) "WARNING: ", n_floored, " negative local property values were floored at zero."
+      end if
+      write (*, *) "         That quantity cannot be negative, so the model is"
+      write (*, *) "         predicting something impossible; the floored values are"
+      write (*, *) "         not a repair. Reported once per run."
+
+   end subroutine
+
    subroutine local_property_predict(soap, Qs, alphas, V0, delta, zeta, V, &
                                      do_derivatives, soap_cart_der, n_neigh, V_der, &
                                      zero_trunc, label)
@@ -324,7 +390,6 @@ contains
       character(len=*), intent(in), optional :: label
       logical :: truncate
       integer :: n_floored
-      logical, save :: warned = .false.
       real(dp), intent(out) :: V_der(:, :)
       real(dp), allocatable :: K(:, :)
       real(dp), allocatable :: K_der(:, :)
@@ -407,22 +472,7 @@ contains
                n_floored = n_floored + 1
             end if
          end do
-!        A Hirshfeld volume or a binding energy cannot be negative, so this
-!        floor should never do anything. When it does, the prediction is wrong
-!        and the floored value is not a repair -- it is the wrong answer,
-!        rounded up. Say so once rather than let it pass.
-         if (n_floored > 0 .and. .not. warned) then
-            warned = .true.
-            if (present(label)) then
-               write (*, *) "WARNING: ", n_floored, " negative values of "//trim(label)// &
-                  " were floored at zero."
-            else
-               write (*, *) "WARNING: ", n_floored, " negative local property values were floored at zero."
-            end if
-            write (*, *) "         That quantity cannot be negative, so the model is"
-            write (*, *) "         predicting something impossible; the floored values are"
-            write (*, *) "         not a repair. Reported once per run."
-         end if
+         call warn_floored(n_floored, label)
       end if
 
       if (do_derivatives) then

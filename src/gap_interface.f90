@@ -486,7 +486,9 @@ contains
                     & do_derivatives, soap_cart_der_d,&
                     & local_properties_cart_der,&
                     & local_properties_cart_der_d, n_pairs, l_index_d,&
-                    & cublas_handle, gpu_stream)
+                    & cublas_handle, gpu_stream,&
+                    & local_property_models(i4)%zero_trunc,&
+                    & trim(local_property_models(i4)%label))
 
                do i = 1, n_sites
                   i2 = in_to_out_site(i)
