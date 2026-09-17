@@ -44,6 +44,10 @@ module neighbors
 !  the run.
    real(dp), parameter :: SOAP_BATCH_SAFETY = 1.10d0
 
+!  Floor on the room made for one site's neighbours, on top of a quarter over
+!  the mean density. Too small only costs the search a second time.
+   integer, parameter :: NEIGHBOR_CAP_SLACK = 16
+
 contains
 
 !
@@ -296,15 +300,27 @@ contains
       real(dp) :: w_cell(1:3)
       real(dp) :: ds(1:3)
       real(dp) :: rcut_filter
+      real(dp) :: vol
       integer, allocatable :: head(:)
       integer, allocatable :: this_list(:)
+!     One column per site, holding that site's neighbours until the offsets
+!     exist. The search has to finish before the count is known, and a column
+!     of its own is what lets a site run without a counter shared with the
+!     others.
+      integer, allocatable :: scratch(:, :)
+      integer :: cap
+!     The largest count any build has needed. A system whose first build did
+!     not fit does not search twice on every later one.
+      integer, save :: cap_hint = 0
 !     Where each site's pairs begin. A prefix sum over n_neigh, so both the
-!     build's fill pass and the per-step geometry loop index rather than count,
-!     and neither carries state from one site to the next.
+!     copy out of the scratch columns and the per-step geometry loop index
+!     rather than count, and neither carries state from one site to the next.
       integer, allocatable :: k2_start(:)
-!     Neighbours found for one site, and which of the two build passes we are in.
+!     Neighbours found for one site.
       integer :: nn
-      integer :: pass
+!     First and last site this rank owns.
+      integer :: i_lo
+      integer :: i_hi
       integer :: i
       integer :: j
       integer :: n_sites_supercell
@@ -390,13 +406,22 @@ contains
 !   The list used to be allocated at a guessed 100 neighbours per atom and grown
 !   by 10 whenever that ran out, copying the whole array each time -- GST at a
 !   5.5 A cutoff needs 117, so it copied twice on every build. It is now sized
-!   exactly, from a counting pass, which is also what lets both passes run in
-!   parallel: a running counter shared between iterations is the one thing that
-!   cannot be.
+!   exactly, from the counts the one search measures.
       if (rebuild_neighbors_list) then
          allocate (n_neigh(1:n_sites))
          n_neigh = 0
          n_atom_pairs = 0
+!        The span of sites this rank owns. The scratch columns cover that and
+!        not every site, or on many ranks the buffer would scale with the rank
+!        count instead of with the work.
+         i_lo = n_sites + 1
+         i_hi = 0
+         do i = 1, n_sites
+            if (do_list(i)) then
+               if (i < i_lo) i_lo = i
+               i_hi = i
+            end if
+         end do
       end if
       allocate (k2_start(1:n_sites))
 !   We have an efficient algorithm for square boxes and inefficient for non-square boxes (sorry!)
@@ -423,24 +448,22 @@ contains
             this_list(i) = head(j)
             head(j) = i
          end do
-!        The same traversal, run twice: pass 1 counts, pass 2 fills. Written
-!        once, with pass deciding only whether the accept site stores, so the
-!        two cannot drift apart -- and the order neighbours land in is the order
-!        the old single pass produced, which matters because permuting a site's
-!        neighbours reassociates every sum downstream of it.
-!
-!        Counting first is what buys the parallelism. The single pass carried
-!        n_atom_pairs from one site to the next, and a running counter is
-!        exactly what an OpenMP loop cannot have. With the offsets known in
-!        advance each site writes only into its own slice.
-         do pass = 1, 2
+!        One traversal, each site into its own column. The offsets cannot be
+!        known before the search -- that is what the second pass used to be
+!        for -- so the columns are sized from the mean density and the search
+!        repeated if a site did not fit. That repeat is the old two-pass cost,
+!        once, and not again for this system.
+         vol = a_box(1)*b_box(2)*c_box(3)
+         cap = max(cap_hint, neighbor_capacity(n_sites, vol, rcut_max))
+         do
+            allocate (scratch(1:cap, i_lo:i_hi))
             !$omp parallel do default(shared) schedule(dynamic, 32) &
             !$omp private(i, j, k, nn, i2, j2, k2, i3, j3, k3, dist, d, i_shift)
             do i = 1, n_sites
                if (.not. do_list(i)) cycle
 !              We always count atom i as its own neighbor. This is useful when building the derivatives
                nn = 1
-               if (pass == 2) neighbors_list(k2_start(i)) = i
+               scratch(1, i) = i
 !              Cell coordinates for this atom
                call get_distance([a_box(1)/2.d0, b_box(2)/2.d0, c_box(3)/2.d0], positions(1:3, i), &
                                  a_box(1:3), b_box(1:3), c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
@@ -469,7 +492,7 @@ contains
                                                 c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
                               if (d < rcut_max) then
                                  nn = nn + 1
-                                 if (pass == 2) neighbors_list(k2_start(i) + nn - 1) = k
+                                 if (nn <= cap) scratch(nn, i) = k
                               end if
                            end if
                            k = this_list(k)
@@ -477,10 +500,14 @@ contains
                      end do
                   end do
                end do
-               if (pass == 1) n_neigh(i) = nn
+               n_neigh(i) = nn
             end do
             !$omp end parallel do
-            if (pass == 1) call size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
+            if (maxval(n_neigh) <= cap) exit
+!           The count it measured, so the repeat cannot overflow in turn, and
+!           the slack so a later build needing one more does not repeat again.
+            cap = maxval(n_neigh) + NEIGHBOR_CAP_SLACK
+            deallocate (scratch)
          end do
          deallocate (head, this_list)
 !   The same cell list for every other cell: any lattice with a non-zero
@@ -496,7 +523,7 @@ contains
 !   and m_k = floor(w_k/rcut) bins make that less than one bin. Which pairs are
 !   accepted does not change -- this only decides which ones are tested.
       else if (rebuild_neighbors_list) then
-         call cell_grid(a_box, b_box, c_box, rcut_max, n_sites_supercell, recip, w_cell, mx, my, mz)
+         call cell_grid(a_box, b_box, c_box, rcut_max, n_sites_supercell, recip, w_cell, vol, mx, my, mz)
 !        Slack so the bound below can never reject a pair the cutoff test would
 !        have taken. The bound is exact in exact arithmetic; 1.d-10 A is far
 !        above the rounding and far below anything physical.
@@ -516,14 +543,16 @@ contains
             this_list(i) = head(j)
             head(j) = i
          end do
-         do pass = 1, 2
+         cap = max(cap_hint, neighbor_capacity(n_sites, vol, rcut_max))
+         do
+            allocate (scratch(1:cap, i_lo:i_hi))
             !$omp parallel do default(shared) schedule(dynamic, 32) &
             !$omp private(i, j, k, nn, i2, j2, k2, i3, j3, k3, dist, d, i_shift, ds)
             do i = 1, n_sites
                if (.not. do_list(i)) cycle
 !              We always count atom i as its own neighbor. This is useful when building the derivatives
                nn = 1
-               if (pass == 2) neighbors_list(k2_start(i)) = i
+               scratch(1, i) = i
                i2 = min(mx, 1 + int(frac(1, i)*dfloat(mx)))
                j2 = min(my, 1 + int(frac(2, i)*dfloat(my)))
                k2 = min(mz, 1 + int(frac(3, i)*dfloat(mz)))
@@ -561,7 +590,7 @@ contains
                                                    c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
                                  if (d < rcut_max) then
                                     nn = nn + 1
-                                    if (pass == 2) neighbors_list(k2_start(i) + nn - 1) = k
+                                    if (nn <= cap) scratch(nn, i) = k
                                  end if
                               end if
                            end if
@@ -570,19 +599,34 @@ contains
                      end do
                   end do
                end do
-               if (pass == 1) n_neigh(i) = nn
+               n_neigh(i) = nn
 !              Ascending index, which is the order the loop over every position
 !              produced. Not cosmetic: permuting a site's neighbours
 !              reassociates every sum downstream and moves the last digit of
 !              every force, so without this the change is not verifiable.
-               if (pass == 2 .and. nn > 2) then
-                  call sort_ascending(neighbors_list(k2_start(i) + 1:k2_start(i) + nn - 1))
-               end if
+               if (nn > 2 .and. nn <= cap) call sort_ascending(scratch(2:nn, i))
             end do
             !$omp end parallel do
-            if (pass == 1) call size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
+            if (maxval(n_neigh) <= cap) exit
+            cap = maxval(n_neigh) + NEIGHBOR_CAP_SLACK
+            deallocate (scratch)
          end do
          deallocate (head, this_list, frac)
+      end if
+
+!   The offsets, then one copy per site out of its column. Each slice is
+!   written exactly once, so there is nothing shared between sites here either.
+      if (rebuild_neighbors_list) then
+         call size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
+         !$omp parallel do default(shared) schedule(static) private(i)
+         do i = 1, n_sites
+            if (do_list(i)) then
+               neighbors_list(k2_start(i):k2_start(i) + n_neigh(i) - 1) = scratch(1:n_neigh(i), i)
+            end if
+         end do
+         !$omp end parallel do
+         deallocate (scratch)
+         cap_hint = cap
       end if
 
       if (do_timing) then
@@ -702,15 +746,11 @@ contains
 !  total divided by the neighbour count, and it decides the answer for a short
 !  cutoff, where there are few pairs per site.
 !
-! Between the two build passes: turn the per-site neighbour counts into the
-! offsets the fill pass writes at, and size the list to exactly the number of
-! pairs there are. Sites this rank does not own have n_neigh = 0 and take no
-! room.
 !  The fractional-coordinate rows, and how many bins fit along each lattice
 !  direction. w_k = V/|b x c| and its cyclic partners is the distance between
 !  the two cell planes normal to k; for an orthorhombic cell that is a(1), b(2),
 !  c(3), so this gives the same counts the orthorhombic branch works out itself.
-   subroutine cell_grid(a, b, c, rcut, n_atoms, recip, w, mx, my, mz)
+   subroutine cell_grid(a, b, c, rcut, n_atoms, recip, w, vol, mx, my, mz)
 
       implicit none
 
@@ -724,13 +764,13 @@ contains
 !     two cell planes normal to it. They set the bin counts below and they are
 !     what the cheap rejection in the search is a bound on.
       real(dp), intent(out) :: w(1:3)
+      real(dp), intent(out) :: vol
       integer, intent(out) :: mx
       integer, intent(out) :: my
       integer, intent(out) :: mz
       real(dp) :: bxc(1:3)
       real(dp) :: cxa(1:3)
       real(dp) :: axb(1:3)
-      real(dp) :: vol
       integer(int64) :: n_bins
 
       bxc = cross_product(b, c)
@@ -792,6 +832,28 @@ contains
 
    end subroutine sort_ascending
 
+!  Room for one site's neighbours, before the search has counted any. A site in
+!  a uniform density has 4/3 pi rcut^3 n/V of them; a surface, an interface or a
+!  cluster in vacuum has more than its box average, which the margin covers
+!  when it is small and the repeat covers when it is not.
+   integer function neighbor_capacity(n_atoms, vol, rcut) result(cap)
+
+      implicit none
+
+      integer, intent(in) :: n_atoms
+      real(dp), intent(in) :: vol
+      real(dp), intent(in) :: rcut
+      real(dp) :: mean
+
+      mean = 4.d0/3.d0*dacos(-1.d0)*rcut**3*dfloat(max(0, n_atoms))/dmax1(dabs(vol), 1.d-10)
+!     At least the one slot the site's own index takes.
+      cap = max(1, NEIGHBOR_CAP_SLACK + int(min(1.25d0*mean, 1.d6)))
+
+   end function neighbor_capacity
+
+!  Turn the per-site neighbour counts into the offsets the copy writes at, and
+!  size the list to exactly the number of pairs there are. Sites this rank does
+!  not own have n_neigh = 0 and take no room.
    subroutine size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
 
       implicit none
