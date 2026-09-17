@@ -2351,9 +2351,12 @@ contains
          !> memory and neighbour-loop time but rebuild less often; pairs beyond a descriptor own
          !> cutoff are dropped before it is evaluated, so the descriptors themselves cost nothing
          !> extra. 0 means rebuild every step; the default is 0.25 A, the measured optimum on GST.
-         !> Keep it small: the cell list uses mx = int(L/rcut_max), so a buffer that pushes L/rcut_max
-         !> across an integer coarsens the grid a whole step and costs more than the skipped rebuilds
-         !> save. With a large observable cutoff, check int(L/(rcut+buffer)) before raising it.
+         !> Keep it small: the cell list puts int(w/rcut_max) bins along each lattice direction, for w
+         !> the perpendicular width of the cell there, so a buffer that pushes w/rcut_max across an
+         !> integer coarsens the grid a whole step and can cost more than the skipped rebuilds save.
+         !> With a large observable cutoff, check int(w/(rcut+buffer)) before raising it. It also does
+         !> not make a rebuild cheaper, only rarer, and how much rarer depends on how fast the atoms
+         !> move: at 1 fs steps on hot carbon the default buys a factor of two and no more.
          !> @units A
       else if (keyword == 'neighbors_buffer') then
          backspace (unit)

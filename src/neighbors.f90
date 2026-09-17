@@ -288,8 +288,14 @@ contains
       real(dp) :: tol
       real(dp) :: d_tol = 1.d-6
 !     Rows that turn a Cartesian position into a fractional one, for the cell
-!     list the non-orthorhombic branch bins with.
+!     list the non-orthorhombic branch bins with, and the fractional coordinate
+!     of every position: the binning needs it and so does the cheap rejection
+!     in the search, which is per candidate rather than per site.
       real(dp) :: recip(1:3, 1:3)
+      real(dp), allocatable :: frac(:, :)
+      real(dp) :: w_cell(1:3)
+      real(dp) :: ds(1:3)
+      real(dp) :: rcut_filter
       integer, allocatable :: head(:)
       integer, allocatable :: this_list(:)
 !     Where each site's pairs begin. A prefix sum over n_neigh, so both the
@@ -490,25 +496,37 @@ contains
 !   and m_k = floor(w_k/rcut) bins make that less than one bin. Which pairs are
 !   accepted does not change -- this only decides which ones are tested.
       else if (rebuild_neighbors_list) then
-         call cell_grid(a_box, b_box, c_box, rcut_max, n_sites_supercell, recip, mx, my, mz)
+         call cell_grid(a_box, b_box, c_box, rcut_max, n_sites_supercell, recip, w_cell, mx, my, mz)
+!        Slack so the bound below can never reject a pair the cutoff test would
+!        have taken. The bound is exact in exact arithmetic; 1.d-10 A is far
+!        above the rounding and far below anything physical.
+         rcut_filter = rcut_max + 1.d-10
          allocate (head(1:mx*my*mz))
          head = 0
          allocate (this_list(1:n_sites_supercell))
+         allocate (frac(1:3, 1:n_sites_supercell))
          do i = 1, n_sites_supercell
-            call bin_coords(positions(1:3, i), recip, mx, my, mz, i2, j2, k2)
+            frac(1, i) = modulo(dot_product(recip(1, 1:3), positions(1:3, i)), 1.d0)
+            frac(2, i) = modulo(dot_product(recip(2, 1:3), positions(1:3, i)), 1.d0)
+            frac(3, i) = modulo(dot_product(recip(3, 1:3), positions(1:3, i)), 1.d0)
+            i2 = min(mx, 1 + int(frac(1, i)*dfloat(mx)))
+            j2 = min(my, 1 + int(frac(2, i)*dfloat(my)))
+            k2 = min(mz, 1 + int(frac(3, i)*dfloat(mz)))
             j = i2 + (j2 - 1)*mx + (k2 - 1)*mx*my
             this_list(i) = head(j)
             head(j) = i
          end do
          do pass = 1, 2
             !$omp parallel do default(shared) schedule(dynamic, 32) &
-            !$omp private(i, j, k, nn, i2, j2, k2, i3, j3, k3, dist, d, i_shift)
+            !$omp private(i, j, k, nn, i2, j2, k2, i3, j3, k3, dist, d, i_shift, ds)
             do i = 1, n_sites
                if (.not. do_list(i)) cycle
 !              We always count atom i as its own neighbor. This is useful when building the derivatives
                nn = 1
                if (pass == 2) neighbors_list(k2_start(i)) = i
-               call bin_coords(positions(1:3, i), recip, mx, my, mz, i2, j2, k2)
+               i2 = min(mx, 1 + int(frac(1, i)*dfloat(mx)))
+               j2 = min(my, 1 + int(frac(2, i)*dfloat(my)))
+               k2 = min(mz, 1 + int(frac(3, i)*dfloat(mz)))
                do k3 = k2 - 1, k2 + 1
                   if (mz == 1 .and. k3 /= 1) cycle
                   if (mz == 2 .and. k2 == 1 .and. k3 == 0) cycle
@@ -525,11 +543,26 @@ contains
                         k = head(j)
                         do while (k /= 0)
                            if (k /= i) then
-                              call get_distance(positions(1:3, i), positions(1:3, k), a_box(1:3), b_box(1:3), &
-                                                c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
-                              if (d < rcut_max) then
-                                 nn = nn + 1
-                                 if (pass == 2) neighbors_list(k2_start(i) + nn - 1) = k
+!                             |dr| >= |ds_k| w_k for every k, because a.g1 = w1
+!                             while b.g1 = c.g1 = 0, so dr's component along g1
+!                             is exactly ds_1 w_1. Rounding ds to the nearest
+!                             integer minimises each |ds_k| on its own, which
+!                             bounds the minimum over every image from below --
+!                             so this rejects only pairs the 27-image search
+!                             would also have rejected, at a twentieth of its
+!                             cost, and it is the reason the search is affordable
+!                             on a cell this shape at all.
+                              ds(1:3) = frac(1:3, k) - frac(1:3, i)
+                              ds(1:3) = ds(1:3) - dnint(ds(1:3))
+                              if (dabs(ds(1))*w_cell(1) < rcut_filter .and. &
+                                  dabs(ds(2))*w_cell(2) < rcut_filter .and. &
+                                  dabs(ds(3))*w_cell(3) < rcut_filter) then
+                                 call get_distance(positions(1:3, i), positions(1:3, k), a_box(1:3), b_box(1:3), &
+                                                   c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
+                                 if (d < rcut_max) then
+                                    nn = nn + 1
+                                    if (pass == 2) neighbors_list(k2_start(i) + nn - 1) = k
+                                 end if
                               end if
                            end if
                            k = this_list(k)
@@ -549,7 +582,7 @@ contains
             !$omp end parallel do
             if (pass == 1) call size_the_list(n_neigh, n_sites, k2_start, n_atom_pairs, neighbors_list)
          end do
-         deallocate (head, this_list)
+         deallocate (head, this_list, frac)
       end if
 
       if (do_timing) then
@@ -677,7 +710,7 @@ contains
 !  direction. w_k = V/|b x c| and its cyclic partners is the distance between
 !  the two cell planes normal to k; for an orthorhombic cell that is a(1), b(2),
 !  c(3), so this gives the same counts the orthorhombic branch works out itself.
-   subroutine cell_grid(a, b, c, rcut, n_atoms, recip, mx, my, mz)
+   subroutine cell_grid(a, b, c, rcut, n_atoms, recip, w, mx, my, mz)
 
       implicit none
 
@@ -687,6 +720,10 @@ contains
       real(dp), intent(in) :: rcut
       integer, intent(in) :: n_atoms
       real(dp), intent(out) :: recip(1:3, 1:3)
+!     Perpendicular widths, one per lattice direction: the distance between the
+!     two cell planes normal to it. They set the bin counts below and they are
+!     what the cheap rejection in the search is a bound on.
+      real(dp), intent(out) :: w(1:3)
       integer, intent(out) :: mx
       integer, intent(out) :: my
       integer, intent(out) :: mz
@@ -706,9 +743,12 @@ contains
 !     max(1, ...) rather than an error: a cell thinner than the cutoff is legal
 !     and reaches here through is_box_small, and one bin on that axis degrades
 !     to testing every position along it, which is what used to happen anyway.
-      mx = max(1, int(dabs(vol)/dsqrt(dot_product(bxc, bxc))/rcut))
-      my = max(1, int(dabs(vol)/dsqrt(dot_product(cxa, cxa))/rcut))
-      mz = max(1, int(dabs(vol)/dsqrt(dot_product(axb, axb))/rcut))
+      w(1) = dabs(vol)/dsqrt(dot_product(bxc, bxc))
+      w(2) = dabs(vol)/dsqrt(dot_product(cxa, cxa))
+      w(3) = dabs(vol)/dsqrt(dot_product(axb, axb))
+      mx = max(1, int(w(1)/rcut))
+      my = max(1, int(w(2)/rcut))
+      mz = max(1, int(w(3)/rcut))
 !     A cluster in a large vacuum box asks for one bin per rcut^3 of empty
 !     space, and more bins than atoms buys nothing. Halving an axis only makes
 !     bins bigger, which the one-bin search is still correct for. int64 because
@@ -726,32 +766,6 @@ contains
       end do
 
    end subroutine cell_grid
-
-!  Which bin a position falls in, 1-based on each axis. modulo folds periodic
-!  images onto the same bin, which is what lets the search wrap.
-   subroutine bin_coords(pos, recip, mx, my, mz, i2, j2, k2)
-
-      implicit none
-
-      real(dp), intent(in) :: pos(1:3)
-      real(dp), intent(in) :: recip(1:3, 1:3)
-      integer, intent(in) :: mx
-      integer, intent(in) :: my
-      integer, intent(in) :: mz
-      integer, intent(out) :: i2
-      integer, intent(out) :: j2
-      integer, intent(out) :: k2
-      real(dp) :: s(1:3)
-
-      s(1) = modulo(dot_product(recip(1, 1:3), pos), 1.d0)
-      s(2) = modulo(dot_product(recip(2, 1:3), pos), 1.d0)
-      s(3) = modulo(dot_product(recip(3, 1:3), pos), 1.d0)
-!     min() because modulo can return a value that rounds up to 1 in the product.
-      i2 = min(mx, 1 + int(s(1)*dfloat(mx)))
-      j2 = min(my, 1 + int(s(2)*dfloat(my)))
-      k2 = min(mz, 1 + int(s(3)*dfloat(mz)))
-
-   end subroutine bin_coords
 
 !  Insertion sort, on one site's neighbours: a hundred or so entries at the
 !  cutoffs this code runs at, where the setup for anything cleverer costs more

@@ -21,7 +21,7 @@ module neighbors_skin
 !  displacement against buffer/2, which fires at |d| = sqrt(buffer/2). For any
 !  buffer below 2 A that is later than the bound above, so the list went stale
 !  before it was rebuilt and pairs were silently dropped. That is why a nonzero
-!  neighbors_buffer could not be used, and why the shipped default is 0.
+!  neighbors_buffer could not be used before this module existed.
 !
 !  The accumulator is a displacement, not a coordinate difference. Positions are
 !  wrapped into the primitive cell every MD step, so an atom crossing a boundary
@@ -31,8 +31,17 @@ module neighbors_skin
 !  atom in one step is far below half a cell, so rounding the fractional offset
 !  to the nearest integer is exact here -- no image search is needed.
 !
-!  buffer <= 0 means "rebuild every step" and is the shipped default, so a deck
-!  that does not set the keyword behaves exactly as before.
+!  buffer <= 0 means "rebuild every step". It is NOT the default -- types.f90
+!  ships 0.25 A -- so a deck that does not set the keyword does get a skin.
+!  Setting it to 0 is how the regression cases pin the old behaviour, because
+!  padding the cutoff changes the order pairs are summed in and moves the last
+!  digit of every force.
+!
+!  What a buffer buys depends entirely on how fast the atoms move, and it is
+!  worth measuring rather than assuming. On 2912 atoms of carbon at the front
+!  of a MAD run, 1 fs steps, the two largest displacements sum to the default
+!  0.25 A in two steps, so it halves the rebuilds and no more. It never makes a
+!  rebuild cheaper, so it does not substitute for the cost of one.
 
    use kinds, only: dp
    use error, only: turbogap_abort
