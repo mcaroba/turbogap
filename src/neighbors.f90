@@ -80,13 +80,18 @@ contains
       real(dp), save :: b0(1:3) = 0.d0
       real(dp), save :: c0(1:3) = 0.d0
       real(dp), save :: mat_inv(1:3, 1:3) = 0.d0
+!     Half the smallest perpendicular width of the cell, squared: below this a
+!     pair is on its nearest image already. Zero until a lattice has been seen,
+!     which only means the full search runs.
+      real(dp), save :: res_near = 0.d0
+      real(dp) :: d_near
 !     The non-orthorhombic branch below caches the reciprocal cell in these and
 !     recomputes it only when the lattice changes. Saved state shared between
 !     threads is a race, and the callers of this routine are OpenMP loops, so
 !     each thread gets its own cache. It costs one extra inversion per thread
 !     per lattice change and nothing at all on the orthorhombic path, which
 !     never touches them.
-!$OMP THREADPRIVATE(a0, b0, c0, mat_inv)
+!$OMP THREADPRIVATE(a0, b0, c0, mat_inv, res_near)
       integer :: i
       integer :: j
       integer :: k
@@ -147,6 +152,12 @@ contains
             mat_inv(3, 2) = mat_inv(2, 3)
             mat_inv(3, 3) = mat(1, 1)*mat(2, 2) - mat(1, 2)**2
             mat_inv = mat_inv/md
+!       w_k = 1/|g_k| and the diagonal of the inverse Gram matrix is |g_k|^2,
+!       so the widths come out of the matrix just built rather than out of
+!       three more cross products. The 1.d-10 A keeps the threshold strictly
+!       inside the bound it stands for.
+            d_near = 0.5d0/dsqrt(maxval((/mat_inv(1, 1), mat_inv(2, 2), mat_inv(3, 3)/))) - 1.d-10
+            res_near = d_near*d_near
          end if
          dist = posj - posi
          indices_real = -1.d0*(/dot_product(dist, a), dot_product(dist, b), dot_product(dist, c)/)
@@ -154,20 +165,32 @@ contains
          i_shift = floor(-indices_real)
 !     Closest integer solution
          indices(1:3) = nint(indices_real(1:3))
+!     Changing any of those integers moves the pair by at least half a cell
+!     width -- |dr| >= |ds_k| w_k, and a different integer makes some |ds_k| at
+!     least 1/2 -- so a pair already closer than that cannot be beaten by the
+!     other 26, and they do not have to be looked at. Every pair in a neighbour
+!     list is closer than that on any cell wider than twice the cutoff, which
+!     is the case the 27 were costing the most in.
+         dist_temp(1:3) = dist(1:3) + dfloat(indices(1))*a(1:3) + dfloat(indices(2))*b(1:3) + dfloat(indices(3))*c(1:3)
+         res = dot_product(dist_temp, dist_temp)
+         if (res < res_near) then
+            dist_opt = dist_temp
+         else
 !     We bruteforce the integer solution among the 27 points surrounding the real solution
-         res_opt = 1.d10
-         do i = indices(1) - 1, indices(1) + 1
-            do j = indices(2) - 1, indices(2) + 1
-               do k = indices(3) - 1, indices(3) + 1
-                  dist_temp(1:3) = dist(1:3) + dfloat(i)*a(1:3) + dfloat(j)*b(1:3) + dfloat(k)*c(1:3)
-                  res = dot_product(dist_temp, dist_temp)
-                  if (res < res_opt) then
-                     res_opt = res
-                     dist_opt = dist_temp
-                  end if
+            res_opt = 1.d10
+            do i = indices(1) - 1, indices(1) + 1
+               do j = indices(2) - 1, indices(2) + 1
+                  do k = indices(3) - 1, indices(3) + 1
+                     dist_temp(1:3) = dist(1:3) + dfloat(i)*a(1:3) + dfloat(j)*b(1:3) + dfloat(k)*c(1:3)
+                     res = dot_product(dist_temp, dist_temp)
+                     if (res < res_opt) then
+                        res_opt = res
+                        dist_opt = dist_temp
+                     end if
+                  end do
                end do
             end do
-         end do
+         end if
          dist = dist_opt
          d = dsqrt(dot_product(dist, dist))
       else
