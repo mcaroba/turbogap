@@ -1,12 +1,13 @@
-! Amorphous carbon driven towards graphite by its XPS C1s line.
+! Amorphous carbon driven towards graphite by its XPS C1s line: one Gaussian at
+! 284.25 eV, sigma 0.2 eV, where this potential puts a three-fold carbon (the
+! 432 sp2 sites here predict 284.299 +/- 0.386 eV, the 35 sp3 sites 285.393 +/-
+! 0.433). The gradient it pulls on is dCEBE/dr.
 !
-! The target is a single Gaussian at 284.25 eV with sigma = 0.4 eV, which is
-! where this potential puts a three-fold coordinated carbon: on this structure
-! the 432 sp2 sites predict 284.299 +/- 0.386 eV and the 35 sp3 sites 285.393
-! +/- 0.433. So the target asks for an all-sp2 network, and the gradient it
-! pulls on is dCEBE/dr.
+! sigma is deliberately narrower than the 0.386 eV spread of the sites: at 0.4
+! eV the two curves already overlap 96% and there is nothing to pull on, at 0.2
+! eV 86%. exp_n_samples matches the target's 601 points, 0.005 eV apart.
 !
-! Five steps: this is a coverage case, not a graphitisation run.
+! Five steps: a coverage case, not a graphitisation run.
 
 ! Species-specific info
 atoms_file = 'atoms.xyz'
@@ -20,15 +21,14 @@ e0 = -.16138053 0.
 n_exp = 1
 exp_labels = 'xps'
 exp_data_files = 'xps_graphite_sp2_284.25.dat'
-exp_n_samples = 401
-exp_energy_scales = 57.0
+exp_n_samples = 601
+exp_energy_scales = 14.69
 
 exp_energies = .true.
 exp_forces   = .true.
 
-! The broadening applied to the predicted binding energies. It matches the
-! width of the target, so a perfect match means every site at 284.25 eV.
-xps_sigma = 0.4
+! Broadening of the predicted binding energies, matching the target's width.
+xps_sigma = 0.2
 
 ! --- MD ---
 md_nsteps = 5

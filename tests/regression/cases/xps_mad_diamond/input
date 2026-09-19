@@ -1,12 +1,13 @@
-! Amorphous carbon driven towards diamond by its XPS C1s line.
+! Amorphous carbon driven towards diamond by its XPS C1s line: one Gaussian at
+! 285.35 eV, sigma 0.2 eV, where this potential puts a four-fold carbon (the 35
+! sp3 sites here predict 285.393 +/- 0.433 eV against 284.299 +/- 0.386 for the
+! 432 sp2 sites). It asks for the opposite network to xps_mad_graphite, from
+! the same starting structure.
 !
-! The target is a single Gaussian at 285.35 eV with sigma = 0.4 eV, which is
-! where this potential puts a four-fold coordinated carbon: on this structure
-! the 35 sp3 sites predict 285.393 +/- 0.433 eV against 284.299 +/- 0.386 for
-! the 432 sp2 sites. So the target asks for an all-sp3 network, the opposite of
-! what xps_mad_graphite asks for, from the same starting structure.
+! sigma is deliberately narrower than the 0.433 eV spread of the sites, and the
+! window is 1.5 eV either side of the peak: see case.conf for what both cost.
 !
-! Five steps: this is a coverage case, not a diamond-formation run.
+! Five steps: a coverage case, not a diamond-formation run.
 
 ! Species-specific info
 atoms_file = 'atoms.xyz'
@@ -20,15 +21,14 @@ e0 = -.16138053 0.
 n_exp = 1
 exp_labels = 'xps'
 exp_data_files = 'xps_diamond_sp3_285.35.dat'
-exp_n_samples = 401
-exp_energy_scales = 3.27
+exp_n_samples = 601
+exp_energy_scales = 2.48
 
 exp_energies = .true.
 exp_forces   = .true.
 
-! The broadening applied to the predicted binding energies. It matches the
-! width of the target, so a perfect match means every site at 285.35 eV.
-xps_sigma = 0.4
+! Broadening of the predicted binding energies, matching the target's width.
+xps_sigma = 0.2
 
 ! --- MD ---
 md_nsteps = 5
