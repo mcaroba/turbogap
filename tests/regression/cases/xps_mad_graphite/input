@@ -1,0 +1,43 @@
+! Amorphous carbon driven towards graphite by its XPS C1s line.
+!
+! The target is a single Gaussian at 284.25 eV with sigma = 0.4 eV, which is
+! where this potential puts a three-fold coordinated carbon: on this structure
+! the 432 sp2 sites predict 284.299 +/- 0.386 eV and the 35 sp3 sites 285.393
+! +/- 0.433. So the target asks for an all-sp2 network, and the gradient it
+! pulls on is dCEBE/dr.
+!
+! Five steps: this is a coverage case, not a graphitisation run.
+
+! Species-specific info
+atoms_file = 'atoms.xyz'
+pot_file = 'gap_files/CO.gap'
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+
+! --- Experimental data specification (MAD) ---
+n_exp = 1
+exp_labels = 'xps'
+exp_data_files = 'xps_graphite_sp2_284.25.dat'
+exp_n_samples = 401
+exp_energy_scales = 57.0
+
+exp_energies = .true.
+exp_forces   = .true.
+
+! The broadening applied to the predicted binding energies. It matches the
+! width of the target, so a perfect match means every site at 284.25 eV.
+xps_sigma = 0.4
+
+! --- MD ---
+md_nsteps = 5
+md_step = 1.0
+thermostat = berendsen
+t_beg = 1000
+t_end = 1000
+random_seed = 12345
+write_xyz = 1
+
+! See case.conf: pinned so the two binaries use the same skin.
+neighbors_buffer = 0

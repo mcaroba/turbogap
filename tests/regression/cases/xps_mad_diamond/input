@@ -1,0 +1,43 @@
+! Amorphous carbon driven towards diamond by its XPS C1s line.
+!
+! The target is a single Gaussian at 285.35 eV with sigma = 0.4 eV, which is
+! where this potential puts a four-fold coordinated carbon: on this structure
+! the 35 sp3 sites predict 285.393 +/- 0.433 eV against 284.299 +/- 0.386 for
+! the 432 sp2 sites. So the target asks for an all-sp3 network, the opposite of
+! what xps_mad_graphite asks for, from the same starting structure.
+!
+! Five steps: this is a coverage case, not a diamond-formation run.
+
+! Species-specific info
+atoms_file = 'atoms.xyz'
+pot_file = 'gap_files/CO.gap'
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+
+! --- Experimental data specification (MAD) ---
+n_exp = 1
+exp_labels = 'xps'
+exp_data_files = 'xps_diamond_sp3_285.35.dat'
+exp_n_samples = 401
+exp_energy_scales = 3.27
+
+exp_energies = .true.
+exp_forces   = .true.
+
+! The broadening applied to the predicted binding energies. It matches the
+! width of the target, so a perfect match means every site at 285.35 eV.
+xps_sigma = 0.4
+
+! --- MD ---
+md_nsteps = 5
+md_step = 1.0
+thermostat = berendsen
+t_beg = 1000
+t_end = 1000
+random_seed = 12345
+write_xyz = 1
+
+! See case.conf: pinned so the two binaries use the same skin.
+neighbors_buffer = 0
