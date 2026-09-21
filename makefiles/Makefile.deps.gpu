@@ -55,5 +55,5 @@ $(BUILD_DIR)/turbogap_vdw.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/misc.o $(BUILD_DI
 $(BUILD_DIR)/turbogap_estat.o: $(BUILD_DIR)/electrostatics.o $(BUILD_DIR)/exp_interface.o $(BUILD_DIR)/fortran_cuda_interfaces.o $(BUILD_DIR)/gpu_context_gpu.o $(BUILD_DIR)/kinds.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/timing.o $(BUILD_DIR)/types.o
 $(BUILD_DIR)/turbogap_setup.o: $(BUILD_DIR)/adaptive_time.o $(BUILD_DIR)/electronic_stopping.o $(BUILD_DIR)/eph_beta.o $(BUILD_DIR)/eph_electronic_stopping.o $(BUILD_DIR)/eph_fdm.o $(BUILD_DIR)/kinds.o $(BUILD_DIR)/local_properties.o $(BUILD_DIR)/mpi.o $(BUILD_DIR)/read_files.o $(BUILD_DIR)/soap_turbo_radial.o $(BUILD_DIR)/timing.o $(BUILD_DIR)/types.o
 $(BUILD_DIR)/turbogap_structure.o: $(BUILD_DIR)/kinds.o
-$(BUILD_DIR)/turbogap_domain.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/read_files.o $(BUILD_DIR)/timing.o $(BUILD_DIR)/turbogap_comm.o $(BUILD_DIR)/turbogap_loop.o $(BUILD_DIR)/turbogap_setup.o $(BUILD_DIR)/turbogap_structure.o $(BUILD_DIR)/types.o
+$(BUILD_DIR)/turbogap_domain.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/read_files.o $(BUILD_DIR)/timing.o $(BUILD_DIR)/turbogap_comm.o $(BUILD_DIR)/turbogap_loop.o $(BUILD_DIR)/turbogap_results.o $(BUILD_DIR)/turbogap_setup.o $(BUILD_DIR)/turbogap_structure.o $(BUILD_DIR)/types.o
 $(BUILD_DIR)/turbogap_results.o: $(BUILD_DIR)/kinds.o

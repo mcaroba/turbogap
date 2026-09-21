@@ -33,11 +33,12 @@ module turbogap_domain
 
    use kinds, only: dp
    use turbogap_comm, only: comm_t, comm_bcast, comm_allgather, comm_sum_to_root
-   use types, only: input_parameters
+   use types, only: input_parameters, any_has_local_properties
    use timing, only: times_t, time_start, time_end
    use turbogap_structure, only: state_t
    use turbogap_setup, only: model_t
    use turbogap_loop, only: loop_t
+   use turbogap_results, only: results_t
    use read_files, only: read_xyz
    use neighbors, only: build_neighbors_list
 
@@ -46,6 +47,7 @@ module turbogap_domain
    private
    public :: domain_sync_state
    public :: domain_build
+   public :: domain_complete_sites
 
    type, public :: neighbors_t
       real(dp), allocatable :: rjs(:)
@@ -246,5 +248,41 @@ contains
       call comm_bcast(comm, dom%site_in_rank, state%n_sites)
       call time_end(time%neigh)
    end subroutine domain_build
+
+!  Make every rank's copy of the per-site properties whole. Replicated data:
+!  each rank computed its own sites and left zeros elsewhere, so a sum is the
+!  whole reduction; rank 0 sums and broadcasts.
+   subroutine domain_complete_sites(dom, comm, res, state, params, model, time)
+      type(domain_t), intent(inout) :: dom
+      type(comm_t), intent(in) :: comm
+      type(results_t), intent(inout) :: res
+      type(state_t), intent(in) :: state
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+      type(times_t), intent(inout) :: time
+
+      if (any_has_local_properties(model%soap_turbo_hypers)) then
+         call time_start(time%mpi)
+         call comm_sum_to_root(comm, res%local_properties, res%this_local_properties, state%n_sites*params%n_local_properties)
+         res%local_properties = res%this_local_properties
+         call comm_bcast(comm, res%local_properties, state%n_sites*params%n_local_properties)
+
+         call time_end(time%mpi)
+      end if
+
+!     Each rank owns a slice of the sites, so its local_dipoles is zero
+!     everywhere else and a plain sum is the whole reduction.
+      if (params%do_dipole) then
+         call time_start(time%mpi)
+         call comm_sum_to_root(comm, res%local_dipoles, res%this_local_dipoles, 3*state%n_sites)
+         res%local_dipoles = res%this_local_dipoles
+         call comm_bcast(comm, res%local_dipoles, 3*state%n_sites)
+
+         call comm_sum_to_root(comm, res%energies_dipole, res%this_energies_dipole, state%n_sites)
+         res%energies_dipole = res%this_energies_dipole
+         call comm_bcast(comm, res%energies_dipole, state%n_sites)
+         call time_end(time%mpi)
+      end if
+   end subroutine domain_complete_sites
 
 end module turbogap_domain

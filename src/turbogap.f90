@@ -49,7 +49,8 @@ program turbogap
    use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane
    use turbogap_setup
    use turbogap_structure, only: state_t
-   use turbogap_domain, only: domain_t, neighbors_t, domain_sync_state, domain_build
+   use turbogap_domain, only: domain_t, neighbors_t, domain_sync_state, domain_build, &
+                              domain_complete_sites
    use turbogap_results, only: results_t
    use turbogap_loop, only: loop_t
    use turbogap_exp
@@ -1677,28 +1678,7 @@ program turbogap
          end do
          call time_end(time%gap)
 
-         if (any_has_local_properties(model%soap_turbo_hypers)) then
-            call time_start(time%mpi)
-            call comm_sum_to_root(comm, res%local_properties, res%this_local_properties, state%n_sites*params%n_local_properties)
-            res%local_properties = res%this_local_properties
-            call comm_bcast(comm, res%local_properties, state%n_sites*params%n_local_properties)
-
-            call time_end(time%mpi)
-         end if
-
-!        Each rank owns a slice of the sites, so its local_dipoles is zero
-!        everywhere else and a plain sum is the whole reduction.
-         if (params%do_dipole) then
-            call time_start(time%mpi)
-            call comm_sum_to_root(comm, res%local_dipoles, res%this_local_dipoles, 3*state%n_sites)
-            res%local_dipoles = res%this_local_dipoles
-            call comm_bcast(comm, res%local_dipoles, 3*state%n_sites)
-
-            call comm_sum_to_root(comm, res%energies_dipole, res%this_energies_dipole, state%n_sites)
-            res%energies_dipole = res%this_energies_dipole
-            call comm_bcast(comm, res%energies_dipole, state%n_sites)
-            call time_end(time%mpi)
-         end if
+         call domain_complete_sites(dom, comm, res, state, params, model, time)
 
          if (params%do_dipole) then
             res%dipole(1) = sum(res%local_dipoles(1, 1:state%n_sites))
