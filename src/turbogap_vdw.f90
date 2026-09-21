@@ -184,6 +184,7 @@ contains
             this_virial_vdw = 0.d0
             this_local_virial_vdw_diag = 0.d0
          end if
+#endif
 ! TEST COMMENT THIS OUT
 !        call mpi_reduce(local_properties(:,vdw_lp_index), this_local_properties(:,vdw_lp_index), n_sites, &
 !                        MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
@@ -215,8 +216,12 @@ contains
                   this_hirshfeld_transfer(k + 1) = this_hirshfeld_transfer(k + 1) + 1
                end if
             end do
+#ifdef _MPIF90
             call mpi_allgather(this_hirshfeld_transfer, ntasks, MPI_INTEGER, hirshfeld_transfer, ntasks, &
                                MPI_INTEGER, MPI_COMM_WORLD, ierr)
+#else
+            hirshfeld_transfer(1:ntasks, 1) = this_hirshfeld_transfer(1:ntasks)
+#endif
 !         Now we repeat the operation above but actually populating the array that is to be scattered by this rank.
 !         The gradients are stored in hirshfeld_v_cart_der_send in such a way that contiguous blocks of memory
 !         are going to be sent to the same rank
@@ -264,6 +269,7 @@ contains
                do j = 2, ntasks
                   hirshfeld_disp(j) = hirshfeld_disp(j - 1) + hirshfeld_transfer(j - 1, i)
                end do
+#ifdef _MPIF90
                call mpi_scatterv(hirshfeld_v_cart_der_send, 3*hirshfeld_transfer(1:ntasks, i), 3*hirshfeld_disp, &
                                  MPI_DOUBLE_PRECISION, this_hirshfeld_v_cart_der_receive, &
                                  3*hirshfeld_transfer(rank + 1, i), MPI_DOUBLE_PRECISION, i - 1, &
@@ -272,6 +278,11 @@ contains
                                  hirshfeld_transfer(rank + 1, i), MPI_INTEGER, i - 1, MPI_COMM_WORLD, ierr)
                call mpi_scatterv(j_send, hirshfeld_transfer(1:ntasks, i), hirshfeld_disp, MPI_INTEGER, this_j_receive, &
                                  hirshfeld_transfer(rank + 1, i), MPI_INTEGER, i - 1, MPI_COMM_WORLD, ierr)
+#else
+               this_hirshfeld_v_cart_der_receive = hirshfeld_v_cart_der_send
+               this_i_receive = i_send
+               this_j_receive = j_send
+#endif
                hirshfeld_disp(1) = 0
                do j = 2, ntasks
                   hirshfeld_disp(j) = hirshfeld_disp(j - 1) + hirshfeld_transfer(rank + 1, j - 1)
@@ -336,7 +347,6 @@ contains
             deallocate (this_hirshfeld_transfer, hirshfeld_transfer, hirshfeld_v_cart_der_send, i_send, j_send, &
                         k_array, hirshfeld_v_cart_der_receive, i_receive, j_receive, hirshfeld_disp, k_start)
          end if
-#endif
 
          if (params%vdw_type == "ts+mbd" .and. is_correction_step) then
 !        if( allocated(state%this_energies_vdw_corr) )deallocate( state%this_energies_vdw_corr, this_mbd_ts_scaling )
@@ -450,12 +460,14 @@ contains
             call get_time(time2)
             call get_time(time1)
 
+#ifdef _MPIF90
             call mpi_reduce(alpha_SCS, this_alpha_SCS, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
             alpha_SCS = this_alpha_SCS
             call mpi_bcast(alpha_SCS, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
             call mpi_reduce(omega_SCS, this_omega_SCS, n_sites, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
             omega_SCS = this_omega_SCS
             call mpi_bcast(omega_SCS, n_sites, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+#endif
 
             call get_time(time2)
 
