@@ -49,7 +49,7 @@ program turbogap
    use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane
    use turbogap_setup
    use turbogap_structure, only: state_t
-   use turbogap_domain, only: domain_t, neighbors_t
+   use turbogap_domain, only: domain_t, neighbors_t, domain_sync_state
    use turbogap_results, only: results_t
    use turbogap_loop, only: loop_t
    use turbogap_exp
@@ -243,7 +243,6 @@ program turbogap
    type(loop_t) :: loop
    integer :: n_sp
    integer :: n_pos
-   integer :: n_sp_sc
    integer :: this_i_beg
    integer :: this_i_end
    integer :: this_j_beg
@@ -809,9 +808,6 @@ program turbogap
       !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
 
       if (rank == 0) then
-         n_pos = size(state%positions, 2)
-         n_sp = size(state%xyz_species, 1)
-         n_sp_sc = size(state%xyz_species_supercell, 1)
          if (params%randomize_velocities .and. loop%md_istep == 0) then
             call randomize_velocities(state%velocities, state%n_sites, E_kinetic, state%masses, instant_temp, params%t_beg, &
                                       params%velocity_distribution)
@@ -841,50 +837,7 @@ program turbogap
          end if
 
       end if
-      call time_start(time%mpi)
-      call comm_bcast(comm, n_pos)
-      call comm_bcast(comm, n_sp)
-      call comm_bcast(comm, n_sp_sc)
-      call comm_bcast(comm, state%n_sites)
-      call time_end(time%mpi)
-
-      if (rank /= 0) then
-         if (allocated(state%positions)) deallocate (state%positions)
-         allocate (state%positions(1:3, n_pos))
-         if (params%do_md .or. params%do_nested_sampling .or. params%do_mc) then
-            if (allocated(state%velocities)) deallocate (state%velocities)
-            allocate (state%velocities(1:3, n_pos))
-            if (allocated(state%masses)) deallocate (state%masses)
-            allocate (state%masses(1:n_sp))
-         end if
-         if (allocated(state%xyz_species)) deallocate (state%xyz_species)
-         allocate (state%xyz_species(1:n_sp))
-         if (allocated(state%species)) deallocate (state%species)
-         allocate (state%species(1:n_sp))
-         if (allocated(state%xyz_species_supercell)) deallocate (state%xyz_species_supercell)
-         allocate (state%xyz_species_supercell(1:n_sp_sc))
-         if (allocated(state%species_supercell)) deallocate (state%species_supercell)
-         allocate (state%species_supercell(1:n_sp_sc))
-         if (allocated(state%fix_atom)) deallocate (state%fix_atom)
-         allocate (state%fix_atom(1:3, 1:n_sp))
-
-      end if
-      call time_start(time%mpi_positions)
-      call comm_bcast(comm, state%positions, 3*n_pos)
-      if (params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian) then
-         call comm_bcast(comm, state%velocities, 3*n_pos)
-         call comm_bcast(comm, state%masses, n_sp)
-         call comm_bcast(comm, state%fix_atom, 3*n_sp)
-      end if
-      call comm_bcast(comm, state%xyz_species, 8*n_sp)
-      call comm_bcast(comm, state%xyz_species_supercell, 8*n_sp_sc)
-      call comm_bcast(comm, state%species, n_sp)
-      call comm_bcast(comm, state%species_supercell, n_sp_sc)
-      call comm_bcast(comm, state%indices, 3)
-      call comm_bcast(comm, state%a_box, 3)
-      call comm_bcast(comm, state%b_box, 3)
-      call comm_bcast(comm, state%c_box, 3)
-      call time_end(time%mpi_positions)
+      call domain_sync_state(dom, comm, state, params, time)
       !   Now that all ranks know the size of n_sites, we allocate do_list
       if (.not. params%do_md .or. (params%do_md .and. loop%md_istep == 0) .or. &
           (params%do_mc)) then
@@ -3996,56 +3949,11 @@ program turbogap
 
       ! This can be optimised, so please do if you are smarter than me
 
-      if (params%do_mc .and. loop%md_istep == -1 .and. rank == 0) then
-         n_pos = size(state%positions, 2)
-         n_sp = size(state%xyz_species, 1)
-         n_sp_sc = size(state%xyz_species_supercell, 1)
-      end if
       call time_start(time%mpi)
-      call comm_bcast(comm, n_pos)
-      call comm_bcast(comm, n_sp)
-      call comm_bcast(comm, n_sp_sc)
       call comm_bcast(comm, params%do_md)
       call comm_bcast(comm, loop%md_istep)
       call time_end(time%mpi)
-      if (rank /= 0) then !.and. (mc_move == "insertion" .or. mc_move == "removal")
-         if (allocated(state%positions)) deallocate (state%positions)
-         allocate (state%positions(1:3, n_pos))
-         if (params%do_md .or. params%do_nested_sampling .or. params%do_mc) then
-            if (allocated(state%velocities)) deallocate (state%velocities)
-            allocate (state%velocities(1:3, n_pos))
-            if (allocated(state%masses)) deallocate (state%masses)
-            allocate (state%masses(1:n_sp))
-            if (allocated(state%fix_atom)) deallocate (state%fix_atom)
-            allocate (state%fix_atom(1:3, 1:n_sp))
-
-         end if
-         if (allocated(state%xyz_species)) deallocate (state%xyz_species)
-         allocate (state%xyz_species(1:n_sp))
-         if (allocated(state%species)) deallocate (state%species)
-         allocate (state%species(1:n_sp))
-         if (allocated(state%xyz_species_supercell)) deallocate (state%xyz_species_supercell)
-         allocate (state%xyz_species_supercell(1:n_sp_sc))
-         if (allocated(state%species_supercell)) deallocate (state%species_supercell)
-         allocate (state%species_supercell(1:n_sp_sc))
-      end if
-      call time_start(time%mpi_positions)
-      call comm_bcast(comm, state%positions, 3*n_pos)
-      if (params%do_md .or. params%do_nested_sampling .or. params%do_mc) then
-         call comm_bcast(comm, state%velocities, 3*n_pos)
-         call comm_bcast(comm, state%masses, n_sp)
-         call comm_bcast(comm, state%fix_atom, 3*n_sp)
-      end if
-      call comm_bcast(comm, state%xyz_species, 8*n_sp)
-      call comm_bcast(comm, state%xyz_species_supercell, 8*n_sp_sc)
-      call comm_bcast(comm, state%species, n_sp)
-      call comm_bcast(comm, state%species_supercell, n_sp_sc)
-      call comm_bcast(comm, state%indices, 3)
-      call comm_bcast(comm, state%a_box, 3)
-      call comm_bcast(comm, state%b_box, 3)
-      call comm_bcast(comm, state%c_box, 3)
-      call comm_bcast(comm, state%n_sites)
-      call time_end(time%mpi_positions)
+      call domain_sync_state(dom, comm, state, params, time)
       !   Now that all ranks know the size of n_sites, we allocate do_list
       if (.not. params%do_md .or. (params%do_md .and. loop%md_istep == 0) .or. &
           (params%do_mc)) then
