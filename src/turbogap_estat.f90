@@ -120,6 +120,7 @@ contains
             if (params%do_forces) then
                allocate (forces_estat(1:3, 1:n_sites))
                forces_estat = 0.d0
+               virial_estat = 0.d0
             end if
 #endif
             allocate (chg_neigh_estat(1:j_end - j_beg + 1))
