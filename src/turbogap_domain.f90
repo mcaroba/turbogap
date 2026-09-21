@@ -32,15 +32,20 @@
 module turbogap_domain
 
    use kinds, only: dp
-   use turbogap_comm, only: comm_t, comm_bcast
+   use turbogap_comm, only: comm_t, comm_bcast, comm_allgather, comm_sum_to_root
    use types, only: input_parameters
    use timing, only: times_t, time_start, time_end
    use turbogap_structure, only: state_t
+   use turbogap_setup, only: model_t
+   use turbogap_loop, only: loop_t
+   use read_files, only: read_xyz
+   use neighbors, only: build_neighbors_list
 
    implicit none
 
    private
    public :: domain_sync_state
+   public :: domain_build
 
    type, public :: neighbors_t
       real(dp), allocatable :: rjs(:)
@@ -131,5 +136,115 @@ contains
       call comm_bcast(comm, state%c_box, 3)
       call time_end(time%mpi_positions)
    end subroutine domain_sync_state
+
+!  Split the sites over the ranks and build each rank's neighbour list for its
+!  share. Replicated data: a contiguous block of sites per rank, every rank
+!  holding every position. The supercell is refreshed first because the box may
+!  have crossed the cutoff sphere since the last build.
+   subroutine domain_build(dom, nl, comm, state, params, model, loop, mc_file, time)
+      type(domain_t), intent(inout) :: dom
+      type(neighbors_t), intent(inout) :: nl
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      type(input_parameters), intent(inout) :: params
+      type(model_t), intent(in) :: model
+      type(loop_t), intent(inout) :: loop
+      character(len=*), intent(in) :: mc_file
+      type(times_t), intent(inout) :: time
+      integer :: i
+
+      !   Now that all ranks know the size of n_sites, we allocate do_list
+      if (.not. params%do_md .or. (params%do_md .and. loop%md_istep == 0) .or. &
+          (params%do_mc)) then
+         if (allocated(dom%do_list)) deallocate (dom%do_list)
+         allocate (dom%do_list(1:state%n_sites))
+         dom%do_list = .true.
+      end if
+      call time_start(time%neigh)
+      !   Parallel neighbors list build
+      call comm_bcast(comm, nl%rebuild_neighbors_list)
+
+      !   If we're using a box rescaling algorithm or a barostat, then the box size can
+      !   become smaller or bigger than the cutoff sphere. If that happens, and the current
+      !   situation is different from before, then we need to figure out if we need to
+      !   construct a supercell (i.e., the box was bigger than the cutoff sphere and now
+      !   is smaller -> makes computations slower) or default back to the primitive unit cell
+      !   (i.e., the box was smaller and now is bigger -> makes computations faster).
+      !   We only need to check if rebuild_neighbors_list = .true.
+      if (nl%rebuild_neighbors_list .and. params%do_mc .and. loop%mc_istep > 0) then
+         call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
+                       model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
+                       state%positions, params%do_md, state%velocities, params%masses_types, state%masses, state%xyz_species, &
+                       state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
+                       state%b_box, state%c_box, &
+                       state%n_sites, .true., state%fix_atom, params%t_beg, &
+                       params%write_array_property(6), .false., params%randomize_velocities)
+      else if (nl%rebuild_neighbors_list) then
+         call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
+                       model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
+                       state%positions, params%do_md, state%velocities, params%masses_types, state%masses, state%xyz_species, &
+                       state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
+                       state%b_box, state%c_box, &
+                       state%n_sites, .true., state%fix_atom, params%t_beg, params%write_array_property(6), &
+                       .false., params%randomize_velocities)
+
+      end if
+
+      !   Overlapping domain decomposition with subcommunicators goes here <------------------- TO DO
+
+      !   This is some trivial MPI parallelization to make sure the code works fine
+      if (comm%rank < mod(state%n_sites, comm%size)) then
+         dom%i_beg = 1 + comm%rank*(state%n_sites/comm%size + 1)
+      else
+         dom%i_beg = 1 + mod(state%n_sites, comm%size)*(state%n_sites/comm%size + 1) + (comm%rank - mod(state%n_sites, &
+                                                                                               comm%size))*(state%n_sites/comm%size)
+      end if
+      if (comm%rank < mod(state%n_sites, comm%size)) then
+         dom%i_end = (comm%rank + 1)*(state%n_sites/comm%size + 1)
+      else
+         dom%i_end = dom%i_beg + state%n_sites/comm%size - 1
+      end if
+
+      dom%do_list = .false.
+      dom%do_list(dom%i_beg:dom%i_end) = .true.
+
+      call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
+                                state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
+                                nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
+                                state%n_sites, state%indices, &
+                                nl%rebuild_neighbors_list, dom%do_list, comm%rank)
+      if (nl%rebuild_neighbors_list) then
+         !     Get total number of atom pairs
+         call comm_allgather(comm, nl%n_atom_pairs, dom%n_atom_pairs_by_rank)
+         nl%n_atom_pairs_total = sum(dom%n_atom_pairs_by_rank)
+         nl%n_atom_pairs = nl%n_atom_pairs_total
+
+         !     Get number of neighbors
+         if (.not. allocated(nl%n_neigh)) allocate (nl%n_neigh(1:state%n_sites))
+         call comm_sum_to_root(comm, nl%n_neigh_local, nl%n_neigh, state%n_sites)
+         call comm_bcast(comm, nl%n_neigh, state%n_sites)
+
+         dom%j_beg = 1
+         dom%j_end = dom%n_atom_pairs_by_rank(comm%rank + 1)
+      end if
+!   Store by which rank each site is being handled
+      if (allocated(dom%site_in_rank)) then
+         if (size(dom%site_in_rank) /= state%n_sites) then
+            deallocate (dom%site_in_rank, dom%this_site_in_rank)
+         end if
+      end if
+      if (.not. allocated(dom%site_in_rank)) then
+         allocate (dom%site_in_rank(1:state%n_sites))
+         allocate (dom%this_site_in_rank(1:state%n_sites))
+      end if
+      dom%site_in_rank = 0
+      dom%this_site_in_rank = 0
+      do i = dom%i_beg, dom%i_end
+         dom%this_site_in_rank(i) = comm%rank
+      end do
+      call comm_sum_to_root(comm, dom%this_site_in_rank, dom%site_in_rank, state%n_sites)
+      call comm_bcast(comm, dom%site_in_rank, state%n_sites)
+      call time_end(time%neigh)
+   end subroutine domain_build
 
 end module turbogap_domain
