@@ -364,6 +364,9 @@ contains
             if (allocated(this_mbd_ts_scaling)) deallocate (this_mbd_ts_scaling)
             allocate (this_mbd_ts_scaling(1:n_sites))
             this_mbd_ts_scaling = 1.d0
+#ifndef _MPIF90
+            mbd_ts_scaling = 1.d0
+#endif
          end if
 
          if (.not. allocated(v_neigh_vdw)) allocate (v_neigh_vdw(1:j_end - j_beg + 1))
