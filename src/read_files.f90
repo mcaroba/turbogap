@@ -2576,7 +2576,7 @@ contains
          end if
          !> @kw p_tol
          !> Convergence threshold on the pressure during a cell relaxation.
-         !> @units GPa
+         !> @units bar
          !> @needs optimize
          !> @see e_tol, f_tol
       else if (keyword == 'p_tol') then
@@ -2696,7 +2696,8 @@ contains
          end if
          !> @kw barostat_sym
          !> Which components of the cell the barostat is allowed to change: "isotropic" scales all
-         !> three axes together, and the anisotropic settings let them move independently.
+         !> three axes together, "diagonal" lets the three axes move independently. Matched on the
+         !> first few characters, and anything else aborts the run.
          !> @modes md mc
          !> @needs barostat
       else if (keyword == 'barostat_sym') then
@@ -2793,7 +2794,7 @@ contains
          allocate (params%t_hold(1:params%n_t_hold*3))
          !> @kw p_beg
          !> Target pressure at the start of the run. With p_end it defines a linear ramp over the run.
-         !> @units GPa
+         !> @units bar
          !> @modes md mc
          !> @needs barostat
       else if (keyword == 'p_beg') then
@@ -2803,7 +2804,7 @@ contains
          if (rank == 0) call print_parameter("p_beg", params%p_beg)
          !> @kw p_end
          !> Target pressure at the end of the run.
-         !> @units GPa
+         !> @units bar
          !> @modes md mc
          !> @needs barostat
          !> @see p_beg
@@ -3059,7 +3060,7 @@ contains
          if (rank == 0) call print_parameter("nested_max_volume_change", params%nested_max_volume_change)
          !> @kw p_nested
          !> External pressure entering the nested-sampling enthalpy.
-         !> @units GPa
+         !> @units bar
          !> @needs n_nested
       else if (keyword == 'p_nested') then
          backspace (unit)

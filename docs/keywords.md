@@ -113,7 +113,7 @@ What is computed, and how a relaxation is driven.
 | `max_opt_step` | real | `0.1` | A | all | Largest distance any atom may move in one gradient-descent step. The step size is chosen so that the biggest displacement equals this. | needs `optimize` |
 | `max_opt_step_eps` | real |  |  | all | **Accepted and ignored.** Largest strain any cell vector could take in one step of the old alternating cell relaxation. gd-box now relaxes positions and lattice together in one preconditioned descent with a single step length, taken from max_opt_step, so this is read and discarded. Use gd_box_weight to change how far the cell moves per step. | see `max_opt_step`; see `gd_box_weight` |
 | `optimize` | string | `vv` |  | md, mc | How the geometry is driven: "vv" for velocity-Verlet dynamics, "gd" for gradient descent on the positions, "gd-box" to relax the cell as well, and "gd-box-ortho" to relax the cell keeping it orthorhombic. Anything else aborts the run. |  |
-| `p_tol` | real | `0.01` | GPa | all | Convergence threshold on the pressure during a cell relaxation. | needs `optimize`; see `e_tol`; see `f_tol` |
+| `p_tol` | real | `0.01` | bar | all | Convergence threshold on the pressure during a cell relaxation. | needs `optimize`; see `e_tol`; see `f_tol` |
 | `soap_radial_legacy_filter` | logical | `true` |  | all | Keep the pre-2026 seed of the SOAP radial filter recursion. That seed drops the surface term at rcut_hard, which leaves the radial derivatives disagreeing with a finite difference of the coefficients by about exp(-nf^2/2) -- 5e-6 relative near the hard cutoff for the default nf. Setting this to .false. restores the term, which makes the derivatives finite-difference exact and the expansion slightly faster, at the cost of moving energies by ~3e-8 relative and forces by ~3e-6 eV/A, so existing baselines have to be regenerated. Second radial derivatives require .false. | see `do_derivatives` |
 | `target_pos_step` | real |  | A | md | Displacement the variable time step aims for: the step is rescaled so that the fastest atom moves about this far. Naming this keyword is what enables the variable time step. | sets `variable_time_step`; see `tau_dt` |
 | `tau_dt` | real | `100.0` | fs | md | Relaxation time over which the variable time step is allowed to change, so that the step size follows target_pos_step smoothly instead of jumping. | needs `target_pos_step` |
@@ -127,7 +127,7 @@ Time stepping, thermostat and barostat.
 | Keyword | Type | Default | Units | Modes | Description | Depends on |
 | --- | --- | --- | --- | --- | --- | --- |
 | `barostat` | string | `none` |  | md, mc | Pressure coupling: "none" or "berendsen". Anything else aborts the run. | see `p_beg`; see `p_end`; see `tau_p`; see `barostat_sym` |
-| `barostat_sym` | string | `isotropic` |  | md, mc | Which components of the cell the barostat is allowed to change: "isotropic" scales all three axes together, and the anisotropic settings let them move independently. | needs `barostat` |
+| `barostat_sym` | string | `isotropic` |  | md, mc | Which components of the cell the barostat is allowed to change: "isotropic" scales all three axes together, "diagonal" lets the three axes move independently. Matched on the first few characters, and anything else aborts the run. | needs `barostat` |
 | `box_scaling_factor` | real(3, 3) | `identity` |  | all | A 3x3 matrix the cell is multiplied by, applied once at the start of the run. Nine numbers, read column by column. Used to strain a cell without editing the XYZ file. | needs `scale_box` |
 | `gamma_p` | real | `1.0` |  | md, mc | Damping of the Berendsen barostat's cell response, on top of tau_p. | needs `barostat` |
 | `gle_a_file` | string |  | fs^-1 | md | Drift matrix of the generalized Langevin thermostat, as a plain text file of (ns+1)x(ns+1) numbers in row-major order, with `#` comment lines allowed. The physical momentum is the first row and column and the remaining ns are the auxiliary momenta; ns is deduced from how many numbers the file holds, not declared. This one matrix fixes the whole memory kernel. Fitted matrices from gle4md.org can be used directly, but they must be downloaded in these units -- nothing here converts or guesses them. | needs `thermostat`; see `thermostat`; see `gle_c_file` |
@@ -138,8 +138,8 @@ Time stepping, thermostat and barostat.
 | `md_nsteps` | integer | `1` |  | md | Number of molecular-dynamics steps to take. |  |
 | `md_step` | real | `1.0` | fs | md | Time step. With a variable time step this is the starting value. | see `target_pos_step` |
 | `n_t_hold` | integer | `0` |  | md | Number of entries in the t_hold list, which must be given before it. | sets `t_hold`; see `t_hold` |
-| `p_beg` | real | `1.0` | GPa | md, mc | Target pressure at the start of the run. With p_end it defines a linear ramp over the run. | needs `barostat` |
-| `p_end` | real | `1.0` | GPa | md, mc | Target pressure at the end of the run. | needs `barostat`; see `p_beg` |
+| `p_beg` | real | `1.0` | bar | md, mc | Target pressure at the start of the run. With p_end it defines a linear ramp over the run. | needs `barostat` |
+| `p_end` | real | `1.0` | bar | md, mc | Target pressure at the end of the run. | needs `barostat`; see `p_beg` |
 | `randomize_velocities` | logical | `false` |  | md, mc | Draw fresh velocities at t_beg instead of taking them from the XYZ file. Also what the "md" Monte Carlo move does before each burst. velocity_distribution chooses the draw. Use random_seed to make it repeatable. | see `velocity_distribution`; see `random_seed`; see `t_beg` |
 | `scale_box` | logical | `false` |  | all | Apply box_scaling_factor to the cell at the start of the run. | see `box_scaling_factor` |
 | `t_beg` | real | `300.0` | K | md, mc | Target temperature at the start of the run. With t_end it defines a linear ramp over the run; give only t_beg for a constant-temperature run. | see `thermostat`; see `t_end`; see `t_hold` |
@@ -159,7 +159,7 @@ Nested-sampling walks.
 | `n_nested` | integer | `0` |  | all | Number of nested-sampling iterations. Naming it is what enables nested sampling. | sets `do_nested_sampling` |
 | `nested_max_strain` | real | `0.0` |  | all | Largest strain a nested-sampling cell-shape move may apply. |  |
 | `nested_max_volume_change` | real | `0.0` |  | all | Largest fractional volume change a nested-sampling volume move may make. | needs `scale_box_nested` |
-| `p_nested` | real | `0.0` | GPa | all | External pressure entering the nested-sampling enthalpy. | needs `n_nested` |
+| `p_nested` | real | `0.0` | bar | all | External pressure entering the nested-sampling enthalpy. | needs `n_nested` |
 | `scale_box_nested` | logical | `false` |  | all | Let nested sampling change the cell as well as the positions. | needs `n_nested`; see `nested_max_volume_change`; see `nested_max_strain` |
 | `t_extra` | real |  |  | all | **Accepted and ignored.** Temperature offset from an earlier nested-sampling design; nothing consults it. |  |
 

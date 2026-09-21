@@ -893,7 +893,7 @@ footer {
 <td class="kw"><code>p_tol</code></td>
 <td class="ty">real</td>
 <td class="df"><code>0.01</code></td>
-<td class="un">GPa</td>
+<td class="un">bar</td>
 <td class="mo">all</td>
 <td class="de">Convergence threshold on the pressure during a cell relaxation.</td>
 <td class="dp"><span class="dep">needs <code>optimize</code></span><span class="dep">see <code>e_tol</code></span><span class="dep">see <code>f_tol</code></span></td>
@@ -957,13 +957,13 @@ footer {
 <td class="de">Pressure coupling: &quot;none&quot; or &quot;berendsen&quot;. Anything else aborts the run.</td>
 <td class="dp"><span class="dep">see <code>p_beg</code></span><span class="dep">see <code>p_end</code></span><span class="dep">see <code>tau_p</code></span><span class="dep">see <code>barostat_sym</code></span></td>
 </tr>
-<tr data-h="barostat_sym which components of the cell the barostat is allowed to change: &quot;isotropic&quot; scales all three axes together, and the anisotropic settings let them move independently." data-m="md mc">
+<tr data-h="barostat_sym which components of the cell the barostat is allowed to change: &quot;isotropic&quot; scales all three axes together, &quot;diagonal&quot; lets the three axes move independently. matched on the first few characters, and anything else aborts the run." data-m="md mc">
 <td class="kw"><code>barostat_sym</code></td>
 <td class="ty">string</td>
 <td class="df"><code>isotropic</code></td>
 <td class="un"></td>
 <td class="mo">md, mc</td>
-<td class="de">Which components of the cell the barostat is allowed to change: &quot;isotropic&quot; scales all three axes together, and the anisotropic settings let them move independently.</td>
+<td class="de">Which components of the cell the barostat is allowed to change: &quot;isotropic&quot; scales all three axes together, &quot;diagonal&quot; lets the three axes move independently. Matched on the first few characters, and anything else aborts the run.</td>
 <td class="dp"><span class="dep">needs <code>barostat</code></span></td>
 </tr>
 <tr data-h="box_scaling_factor a 3x3 matrix the cell is multiplied by, applied once at the start of the run. nine numbers, read column by column. used to strain a cell without editing the xyz file." data-m="predict md mc soap ipi">
@@ -1060,7 +1060,7 @@ footer {
 <td class="kw"><code>p_beg</code></td>
 <td class="ty">real</td>
 <td class="df"><code>1.0</code></td>
-<td class="un">GPa</td>
+<td class="un">bar</td>
 <td class="mo">md, mc</td>
 <td class="de">Target pressure at the start of the run. With p_end it defines a linear ramp over the run.</td>
 <td class="dp"><span class="dep">needs <code>barostat</code></span></td>
@@ -1069,7 +1069,7 @@ footer {
 <td class="kw"><code>p_end</code></td>
 <td class="ty">real</td>
 <td class="df"><code>1.0</code></td>
-<td class="un">GPa</td>
+<td class="un">bar</td>
 <td class="mo">md, mc</td>
 <td class="de">Target pressure at the end of the run.</td>
 <td class="dp"><span class="dep">needs <code>barostat</code></span><span class="dep">see <code>p_beg</code></span></td>
@@ -1191,7 +1191,7 @@ footer {
 <td class="kw"><code>p_nested</code></td>
 <td class="ty">real</td>
 <td class="df"><code>0.0</code></td>
-<td class="un">GPa</td>
+<td class="un">bar</td>
 <td class="mo">all</td>
 <td class="de">External pressure entering the nested-sampling enthalpy.</td>
 <td class="dp"><span class="dep">needs <code>n_nested</code></span></td>

@@ -31,6 +31,8 @@ module md
 
    use neighbors
 
+   use error, only: turbogap_abort
+
 contains
 
 !  Standard normal deviates by the polar Box-Muller transform, drawn from the
@@ -393,8 +395,9 @@ contains
             positions(i, 1:n) = positions(i, 1:n)*(1.d0 + dt/tau*4.5d-5/gamma*(P(i, i) - P0))**(1.d0/3.d0)
          end do
       else
-         write (*, *) "ERROR: I don't understand the specified barostat_sym keyword"
-         stop
+         write (*, *) "ERROR: I do not understand the specified barostat_sym keyword: ", trim(sym)
+         write (*, *) "Valid options are isotropic and diagonal."
+         call turbogap_abort()
       end if
 
    end subroutine

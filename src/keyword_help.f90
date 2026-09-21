@@ -860,7 +860,7 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  p_tol                                [real, default 0.01, GPa]'
+         write (*, '(A)') '  p_tol                                [real, default 0.01, bar]'
          write (*, '(A)') '      Convergence threshold on the pressure during a cell relaxation.'
          write (*, '(A)') '      -> needs optimize; see e_tol, f_tol'
          write (*, '(A)') ''
@@ -924,8 +924,9 @@ contains
       if (every .or. (mode == 'md' .or. mode == 'mc')) then
          write (*, '(A)') '  barostat_sym                         [string, default isotropic]'
          write (*, '(A)') '      Which components of the cell the barostat is allowed to change:'
-         write (*, '(A)') '      "isotropic" scales all three axes together, and the anisotropic'
-         write (*, '(A)') '      settings let them move independently.'
+         write (*, '(A)') '      "isotropic" scales all three axes together, "diagonal" lets the'
+         write (*, '(A)') '      three axes move independently. Matched on the first few characters,'
+         write (*, '(A)') '      and anything else aborts the run.'
          write (*, '(A)') '      -> needs barostat'
          write (*, '(A)') ''
       end if
@@ -1014,14 +1015,14 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'md' .or. mode == 'mc')) then
-         write (*, '(A)') '  p_beg                                [real, default 1.0, GPa]'
+         write (*, '(A)') '  p_beg                                [real, default 1.0, bar]'
          write (*, '(A)') '      Target pressure at the start of the run. With p_end it defines a'
          write (*, '(A)') '      linear ramp over the run.'
          write (*, '(A)') '      -> needs barostat'
          write (*, '(A)') ''
       end if
       if (every .or. (mode == 'md' .or. mode == 'mc')) then
-         write (*, '(A)') '  p_end                                [real, default 1.0, GPa]'
+         write (*, '(A)') '  p_end                                [real, default 1.0, bar]'
          write (*, '(A)') '      Target pressure at the end of the run.'
          write (*, '(A)') '      -> needs barostat; see p_beg'
          write (*, '(A)') ''
@@ -1126,7 +1127,7 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  p_nested                             [real, default 0.0, GPa]'
+         write (*, '(A)') '  p_nested                             [real, default 0.0, bar]'
          write (*, '(A)') '      External pressure entering the nested-sampling enthalpy.'
          write (*, '(A)') '      -> needs n_nested'
          write (*, '(A)') ''
