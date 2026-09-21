@@ -44,6 +44,33 @@ module turbogap_setup
    private
    public :: read_input_and_gap_files
 
+!  The potential as read from the input and the GAP files, and the indices into
+!  its local properties the rest of the run looks things up by.
+   type, public :: model_t
+      integer :: n_species = 1
+      real(dp) :: rcut_max
+      integer :: n_soap_turbo = 0
+      integer :: n_distance_2b = 0
+      integer :: n_angle_3b = 0
+      integer :: n_core_pot = 0
+      type(soap_turbo), allocatable :: soap_turbo_hypers(:)
+      type(distance_2b), allocatable :: distance_2b_hypers(:)
+      type(angle_3b), allocatable :: angle_3b_hypers(:)
+      type(core_pot), allocatable :: core_pot_hypers(:)
+      logical :: valid_xps = .false.
+      integer :: xps_idx
+      integer :: vdw_lp_index
+      integer :: core_be_lp_index
+      logical :: valid_estat_charges = .false.
+      integer :: charge_lp_index
+      character*1024, allocatable :: local_property_labels(:)
+      integer, allocatable :: local_property_indexes(:)
+      integer, allocatable :: n_local_properties_mpi(:)
+      logical, allocatable :: has_local_properties_mpi(:)
+      integer, allocatable :: local_properties_n_sparse_mpi_soap_turbo(:)
+      integer, allocatable :: local_properties_dim_mpi_soap_turbo(:)
+   end type model_t
+
 contains
 
    subroutine read_input_and_gap_files(mode, rank, ntasks, params, &

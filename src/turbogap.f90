@@ -48,6 +48,10 @@ program turbogap
    use vdw
    use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane
    use turbogap_setup
+   use turbogap_structure, only: state_t
+   use turbogap_domain, only: domain_t, neighbors_t
+   use turbogap_results, only: results_t
+   use turbogap_loop, only: loop_t
    use turbogap_exp
    use turbogap_md
    use ipi_driver, only: ipi_driver_open, ipi_driver_exchange, ipi_driver_close
@@ -81,25 +85,8 @@ program turbogap
    implicit none
 
    ! Variable definitions
-   real(dp), allocatable :: rjs(:)
-   real(dp), allocatable :: thetas(:)
-   real(dp), allocatable :: phis(:)
-   real(dp), allocatable :: xyz(:, :)
-   real(dp), allocatable :: positions(:, :)
-   real(dp), allocatable :: positions_prev(:, :)
    real(dp), allocatable :: soap(:, :)
    real(dp), allocatable :: soap_cart_der(:, :, :)
-   real(dp), allocatable :: positions_diff(:, :)
-   real(dp), allocatable :: forces_prev(:, :)
-   real(dp) :: rcut_max
-   real(dp) :: a_box(1:3)
-   real(dp) :: b_box(1:3)
-   real(dp) :: c_box(1:3)
-   real(dp) :: energy
-   real(dp) :: energy_prev
-   real(dp) :: virial(1:3, 1:3)
-   real(dp) :: this_virial(1:3, 1:3)
-   real(dp) :: v_uc
    real(dp) :: v_uc_prev
    real(dp) :: v_a_uc
    real(dp) :: v_a_uc_prev
@@ -109,53 +96,8 @@ program turbogap
    real(dp) :: d_disp
    real(dp) :: p_accept
    real(dp) :: virial_prev(1:3, 1:3)
-!   The eleven contribution families carry the target attribute so contrib(:) below
-!   can point at them. They are split onto their own declarations for that
-!   reason alone -- target on energies/forces, the accumulators they are summed
-!   into, would widen the aliasing assumption for no benefit.
-   real(dp), target :: virial_soap(1:3, 1:3)
-   real(dp), target :: virial_2b(1:3, 1:3)
-   real(dp), target :: virial_3b(1:3, 1:3)
-   real(dp), target :: virial_core_pot(1:3, 1:3)
-   real(dp), target :: virial_vdw(1:3, 1:3)
-   real(dp), target :: virial_estat(1:3, 1:3)
-   real(dp), target :: this_virial_estat(1:3, 1:3)
-   real(dp), target :: virial_lp(1:3, 1:3)
-   real(dp), target :: this_virial_vdw(1:3, 1:3)
-   real(dp), target :: this_virial_lp(1:3, 1:3)
-   real(dp), target :: virial_pdf(1:3, 1:3)
-   real(dp), target :: this_virial_pdf(1:3, 1:3)
-   real(dp), target :: virial_sf(1:3, 1:3)
-   real(dp), target :: this_virial_sf(1:3, 1:3)
-   real(dp), target :: virial_xrd(1:3, 1:3)
-   real(dp), target :: this_virial_xrd(1:3, 1:3)
-   real(dp), target :: virial_nd(1:3, 1:3)
-   real(dp), target :: this_virial_nd(1:3, 1:3)
-   real(dp), allocatable :: energies(:)
-   real(dp), allocatable :: forces(:, :)
-   real(dp), allocatable :: this_energies(:)
-   real(dp), allocatable :: this_forces(:, :)
-   real(dp), allocatable :: velocities(:, :)
    real(dp), allocatable :: masses_types(:)
-   real(dp), allocatable :: masses(:)
-   real(dp), allocatable :: energies_exp(:)
-   real(dp), allocatable, target :: energies_soap(:)
-   real(dp), allocatable, target :: forces_soap(:, :)
-   real(dp), allocatable, target :: energies_2b(:)
-   real(dp), allocatable, target :: forces_2b(:, :)
-   real(dp), allocatable, target :: energies_3b(:)
-   real(dp), allocatable, target :: forces_3b(:, :)
-   real(dp), allocatable, target :: energies_core_pot(:)
-   real(dp), allocatable, target :: forces_core_pot(:, :)
 
-!  Dipole model output. energies_dipole is the model's fictitious scalar: it is
-!  reported as energy_dipole and is deliberately absent from `energies`, and the
-!  model contributes no forces or virial at all.
-   real(dp), allocatable :: local_dipoles(:, :)
-   real(dp), allocatable :: this_local_dipoles(:, :)
-   real(dp), allocatable :: energies_dipole(:)
-   real(dp), allocatable :: this_energies_dipole(:)
-   real(dp) :: dipole(1:3)
 !  MAD IR bias. lambda is dL/dmu of the newest configuration; mad_ir_applied
 !  says whether the ensemble was full enough for a force to have been added.
    real(dp) :: mad_ir_lambda(1:3) = 0.d0
@@ -233,16 +175,6 @@ program turbogap
    real(dp), allocatable :: ir_nu_exp(:), ir_I_exp(:), ir_wgt_exp(:)
    real(dp), allocatable :: ir_fft_I_fit(:)
    integer :: ir_fft_n_chron = 0
-!  The time= tag of the frame just read, and whether it was there at all.
-   real(dp) :: frame_time = 0.d0
-   logical :: has_frame_time = .false.
-
-   real(dp), allocatable, target :: local_properties(:, :)
-   real(dp), allocatable, target :: local_properties_cart_der(:, :, :)
-   real(dp), allocatable, target :: this_local_properties(:, :)
-   real(dp), allocatable, target :: this_local_properties_cart_der(:, :, :)
-   real(dp), pointer :: this_local_properties_pt(:, :)
-   real(dp), pointer :: this_local_properties_cart_der_pt(:, :, :)
 
    real(dp), allocatable :: all_energies(:, :)
    real(dp), allocatable :: all_forces(:, :, :)
@@ -266,17 +198,8 @@ program turbogap
    real(dp) :: time_step
    real(dp) :: md_time
    real(dp) :: instant_pressure_prev
-   real(dp) :: energy_exp
    integer, allocatable :: mc_id(:)
-   integer :: update_bar
-   integer :: bar_frac = 0
    integer :: gd_istep = 0
-   logical, allocatable :: do_list(:)
-   logical, allocatable :: has_local_properties_mpi(:)
-   logical, allocatable :: fix_atom(:, :)
-   logical :: rebuild_neighbors_list = .true.
-   logical :: exit_loop = .true.
-   logical :: valid_xps = .false.
    logical :: write_condition = .false.
    logical :: overwrite_condition = .false.
    character*1 :: creturn = achar(13)
@@ -291,12 +214,7 @@ program turbogap
    type(EPH_LangevinSpatialCorrelation_class) :: ephlsc
 
    ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   integer, allocatable :: n_neigh(:)
-   integer, allocatable :: neighbors_list(:)
    integer, allocatable :: alpha_max(:)
-   integer, allocatable :: species(:)
-   integer, allocatable :: species_supercell(:)
-   integer, allocatable :: neighbor_species(:)
    integer, allocatable :: der_neighbors(:)
    integer, allocatable :: der_neighbors_list(:)
    integer, allocatable :: i_beg_list(:)
@@ -304,11 +222,8 @@ program turbogap
    integer, allocatable :: j_beg_list(:)
    integer, allocatable :: j_end_list(:)
    integer, allocatable :: species_idx(:)
-   integer, allocatable :: n_local_properties_mpi(:)
-   integer, allocatable :: local_property_indexes(:)
    integer, allocatable :: n_mc_species(:)
    integer, allocatable :: n_mc_species_prev(:)
-   integer :: n_sites
    integer :: i
    integer :: j
    integer :: k
@@ -320,6 +235,12 @@ program turbogap
    integer :: rank
    integer :: ntasks
    type(comm_t) :: comm
+   type(state_t) :: state
+   type(domain_t) :: dom
+   type(neighbors_t) :: nl
+   type(model_t), target :: model
+   type(results_t), target :: res
+   type(loop_t) :: loop
    integer :: n_sp
    integer :: n_pos
    integer :: n_sp_sc
@@ -328,20 +249,12 @@ program turbogap
    integer :: this_j_beg
    integer :: this_j_end
    integer :: this_n_sites_mpi
-   integer :: n_sites_prev = 0
-   integer :: n_atom_pairs_by_rank_prev = 0
    integer :: n_lp_count = 0
-   integer :: vdw_lp_index
-   integer :: core_be_lp_index
-   integer :: xps_idx
 
    integer :: l_max
-   integer :: n_atom_pairs
    integer :: n_max
    integer :: central_species = 0
-   integer :: n_atom_pairs_total
    integer :: iostatus
-   integer :: counter = 0
    integer :: counter2
 
 !   The eleven additive contribution families that are reduced together after the
@@ -370,15 +283,8 @@ program turbogap
    integer :: i_contrib
    integer :: which_atom = 0
    integer :: n_omp = 1
-   integer :: n_species = 1
-   integer :: n_xyz
-   integer :: indices(1:3)
    integer :: radial_enhancement = 0
-   integer :: md_istep
-   integer :: mc_istep
    integer :: mc_mu_id = 1
-   character*1024, allocatable :: local_property_labels(:)
-   logical :: repeat_xyz = .true.
    logical :: do_mc_relax = .false.
 !  Whether the trial about to be tested came out of an MD or relaxation burst,
 !  captured before params%do_md is cleared just below.
@@ -398,8 +304,6 @@ program turbogap
    character*1024 :: temp_string
    character*1024 :: temp_string2
    character*8 :: i_char
-   character*8, allocatable :: xyz_species(:)
-   character*8, allocatable :: xyz_species_supercell(:)
 
    ! This is the mode in which we run TurboGAP
    character*16 :: mode = "none"
@@ -410,71 +314,11 @@ program turbogap
    ! Here we store the input parameters
    type(input_parameters) :: params
 
-   ! These are the containers for the hyperparameters of descriptors and GAPs
-   integer :: n_soap_turbo = 0
-   integer :: n_distance_2b = 0
-   integer :: n_angle_3b = 0
-   integer :: n_core_pot = 0
    integer :: temp_md_nsteps
-   type(soap_turbo), allocatable, target :: soap_turbo_hypers(:)
-   type(distance_2b), allocatable :: distance_2b_hypers(:)
-   type(angle_3b), allocatable :: angle_3b_hypers(:)
-   type(core_pot), allocatable :: core_pot_hypers(:)
 
-   !vdw crap
-   real(dp), allocatable, target :: energies_vdw(:)
-   real(dp), allocatable, target :: energies_estat(:)
-   real(dp), allocatable, target :: forces_estat(:, :)
-   real(dp), allocatable, target :: this_energies_estat(:)
-   real(dp), allocatable, target :: this_forces_estat(:, :)
    logical :: do_electrostatics = .true.
-   logical :: valid_estat_charges = .false.
-   integer :: charge_lp_index
-   real(dp), allocatable, target :: forces_vdw(:, :)
-   real(dp), allocatable, target :: this_energies_vdw(:)
-   real(dp), allocatable, target :: this_forces_vdw(:, :)
 ! Persistent ts+mbd correction state, owned by turbogap_vdw
    type(vdw_state) :: vdw_ws
-   real(dp), allocatable, target :: energies_lp(:)
-   real(dp), allocatable, target :: forces_lp(:, :)
-   real(dp), allocatable, target :: this_energies_lp(:)
-   real(dp), allocatable, target :: this_forces_lp(:, :)
-   real(dp), allocatable, target :: energies_pdf(:)
-   real(dp), allocatable, target :: forces_pdf(:, :)
-   real(dp), allocatable, target :: this_energies_pdf(:)
-   real(dp), allocatable, target :: this_forces_pdf(:, :)
-   real(dp), allocatable, target :: energies_sf(:)
-   real(dp), allocatable, target :: forces_sf(:, :)
-   real(dp), allocatable, target :: this_energies_sf(:)
-   real(dp), allocatable, target :: this_forces_sf(:, :)
-   real(dp), allocatable, target :: energies_xrd(:)
-   real(dp), allocatable, target :: forces_xrd(:, :)
-   real(dp), allocatable, target :: this_energies_xrd(:)
-   real(dp), allocatable, target :: this_forces_xrd(:, :)
-   real(dp), allocatable, target :: energies_nd(:)
-   real(dp), allocatable, target :: forces_nd(:, :)
-   real(dp), allocatable, target :: this_energies_nd(:)
-   real(dp), allocatable, target :: this_forces_nd(:, :)
-   real(dp), allocatable :: mbd_ts_scaling(:)
-   real(dp), allocatable :: this_mbd_ts_scaling(:)
-   real(dp), allocatable :: local_virial_vdw_diag(:, :)
-   real(dp), allocatable :: local_virial_vdw_diag_corr(:, :)
-   real(dp), allocatable :: this_local_virial_vdw_diag(:, :)
-   real(dp), allocatable :: energies_vdw_corr(:)
-   real(dp), allocatable :: forces_vdw_corr(:, :)
-   logical :: update_mbd_ts_scaling = .true.
-   ! MPI stuff
-   integer, allocatable :: n_atom_pairs_by_rank(:)
-   integer, allocatable :: local_properties_n_sparse_mpi_soap_turbo(:)
-   integer, allocatable :: local_properties_dim_mpi_soap_turbo(:)
-   integer, allocatable :: n_neigh_local(:)
-   integer, allocatable :: site_in_rank(:)
-   integer, allocatable :: this_site_in_rank(:)
-   integer :: i_beg
-   integer :: i_end
-   integer :: n_sites_mpi
-   integer :: j_beg
-   integer :: j_end
 
    ! Nested sampling
    real(dp) :: e_max
@@ -565,7 +409,7 @@ program turbogap
    call comm_init(comm)
    rank = comm%rank
    ntasks = comm%size
-   allocate (n_atom_pairs_by_rank(1:ntasks))
+   allocate (dom%n_atom_pairs_by_rank(1:ntasks))
 
    ! Read the mode. It should be "soap", "predict" or "md"
    call get_command_argument(1, mode)
@@ -636,13 +480,14 @@ program turbogap
 
    ! Read input file and other files
    call read_input_and_gap_files(mode, rank, ntasks, params, &
-                                 soap_turbo_hypers, distance_2b_hypers, angle_3b_hypers, core_pot_hypers, &
-                                 n_soap_turbo, n_distance_2b, n_angle_3b, n_core_pot, n_species, rcut_max, &
-                                 valid_xps, xps_idx, vdw_lp_index, core_be_lp_index, &
-                                 valid_estat_charges, charge_lp_index, &
-                                 local_property_labels, local_property_indexes, n_local_properties_mpi, &
-                                 has_local_properties_mpi, local_properties_n_sparse_mpi_soap_turbo, &
-                                 local_properties_dim_mpi_soap_turbo, nrows, allelstopdata, &
+                                 model%soap_turbo_hypers, model%distance_2b_hypers, model%angle_3b_hypers, model%core_pot_hypers, &
+                                 model%n_soap_turbo, model%n_distance_2b, model%n_angle_3b, model%n_core_pot, model%n_species, &
+                                 model%rcut_max, &
+                                 model%valid_xps, model%xps_idx, model%vdw_lp_index, model%core_be_lp_index, &
+                                 model%valid_estat_charges, model%charge_lp_index, &
+                                 model%local_property_labels, model%local_property_indexes, model%n_local_properties_mpi, &
+                                 model%has_local_properties_mpi, model%local_properties_n_sparse_mpi_soap_turbo, &
+                                 model%local_properties_dim_mpi_soap_turbo, nrows, allelstopdata, &
                                  ephbeta, ephfdm, ephlsc, time)
 
 !  The host memory budget, which has to sit exactly here.
@@ -672,14 +517,14 @@ program turbogap
          write (*, '(1X,A,A20,A)') 'Atoms file = ', adjustr(trim(params%atoms_file)), '      |'
       end if
       write (*, *) '---------------------------------      |'
-      write (i_char, '(I8)') n_species
+      write (i_char, '(I8)') model%n_species
       write (*, '(1X,A,A8,A)') 'No. of species   = ', adjustl(i_char), '            |'
-      do i = 1, n_species
+      do i = 1, model%n_species
          write (i_char, '(I8)') i
          write (*, '(1X,A,A2,A,A8,A)') '  *) Species #', adjustl(i_char), ' =       ', adjustr(params%species_types(i)), '      |'
       end do
       write (*, *) '---------------------------------      |'
-      write (*, '(1X,A,F15.4,A)') 'rcut_max = ', rcut_max, ' Angst.      |'
+      write (*, '(1X,A,F15.4,A)') 'rcut_max = ', model%rcut_max, ' Angst.      |'
       write (*, *) '---------------------------------      |'
       write (*, *) '                                       |'
       write (*, *) '.......................................|'
@@ -687,10 +532,10 @@ program turbogap
 
    ! Print progress bar and initialize timers
 
-   xps_idx = params%xps_idx
-   md_istep = -1
-   mc_istep = -1
-   n_xyz = 0
+   model%xps_idx = params%xps_idx
+   loop%md_istep = -1
+   loop%mc_istep = -1
+   loop%n_xyz = 0
    i_nested = 0
    i_image = 0
 
@@ -698,18 +543,18 @@ program turbogap
       if (rank == 0) then
          write (*, *) '                                       |'
          write (*, *) 'Doing molecular dynamics...            |'
-         if (params%print_progress .and. md_istep > 0) then
+         if (params%print_progress .and. loop%md_istep > 0) then
             write (*, *) '                                       |'
             write (*, *) 'Progress:                              |'
             write (*, *) '                                       |'
             write (*, '(1X,A)', advance='no') '[                                    ] |'
          end if
       end if
-      update_bar = params%md_nsteps/36
-      if (update_bar < 1) then
-         update_bar = 1
+      loop%update_bar = params%md_nsteps/36
+      if (loop%update_bar < 1) then
+         loop%update_bar = 1
       end if
-      counter = 1
+      loop%counter = 1
    end if
 
    ! This checks if we need to do the SOAP calculation more than once, if there are several concatenated
@@ -736,7 +581,7 @@ program turbogap
    perform%sf_forces = perform%sf .and. params%exp_forces
    perform%xrd_forces = perform%xrd .and. params%exp_forces
    perform%nd_forces = perform%nd .and. params%exp_forces
-   perform%xps_forces = valid_xps .and. params%exp_forces
+   perform%xps_forces = model%valid_xps .and. params%exp_forces
 
 !  WHICH IR ROUTE. There are two, and they are not variations of one thing.
 !
@@ -814,9 +659,9 @@ program turbogap
 !  server is reported now rather than after the first GAP evaluation.
    if (mode == "ipi") call ipi_driver_open(params%ipi_address, rank)
 
-   do while (repeat_xyz .or. (params%do_md .and. md_istep < params%md_nsteps) &
-             .or. (params%do_mc .and. mc_istep < params%mc_nsteps))
-      exit_loop = .false.
+   do while (loop%repeat_xyz .or. (params%do_md .and. loop%md_istep < params%md_nsteps) &
+             .or. (params%do_mc .and. loop%mc_istep < params%mc_nsteps))
+      loop%exit_loop = .false.
 
 !     One stamp per iteration, so that the cost of a step with the IR bias
 !     active can be compared with the cost of one without. Closed at the
@@ -824,16 +669,16 @@ program turbogap
       if (params%valid_ir) call get_time(mad_ir_step_beg)
 
       if (params%do_mc) then
-         mc_istep = mc_istep + 1
+         loop%mc_istep = loop%mc_istep + 1
          ! Undo if the step is md related
-         if (md_istep > -1) mc_istep = mc_istep - 1
+         if (loop%md_istep > -1) loop%mc_istep = loop%mc_istep - 1
 
       end if
 
       if (params%do_md) then
-         md_istep = md_istep + 1
+         loop%md_istep = loop%md_istep + 1
       else
-         n_xyz = n_xyz + 1
+         loop%n_xyz = loop%n_xyz + 1
       end if
 
       !   Update progress bar
@@ -842,53 +687,57 @@ program turbogap
       !   dynamics -- and the bar divides by it. Integer division by zero is a
       !   SIGFPE, so the run died on the first step with a backtrace and no
       !   message rather than producing the single frame it was asked for.
-      bar_frac = 0
-      if (params%md_nsteps > 0) bar_frac = 36*md_istep/params%md_nsteps
-      if (bar_frac > 36) bar_frac = 36
-      if (params%print_progress .and. counter == update_bar .and. (.not. params%do_mc)) then
+      loop%bar_frac = 0
+      if (params%md_nsteps > 0) loop%bar_frac = 36*loop%md_istep/params%md_nsteps
+      if (loop%bar_frac > 36) loop%bar_frac = 36
+      if (params%print_progress .and. loop%counter == loop%update_bar .and. (.not. params%do_mc)) then
          if (rank == 0) then
             do j = 1, 36 + 3
                write (*, "(A)", advance="no") creturn
             end do
             write (*, "(1X,A)", advance="no") "["
-            do i = 1, bar_frac
+            do i = 1, loop%bar_frac
                write (*, "(A)", advance="no") "."
             end do
-            do i = bar_frac + 1, 36
+            do i = loop%bar_frac + 1, 36
                write (*, "(A)", advance="no") " "
             end do
             write (*, "(A)", advance="no") "] |"
-            if (md_istep == params%md_nsteps) then
+            if (loop%md_istep == params%md_nsteps) then
                write (*, *)
             end if
          end if
-         counter = 1
+         loop%counter = 1
       else
-         counter = counter + 1
+         loop%counter = loop%counter + 1
       end if
 
       !   This chunk of code does all the reading/neighbor builds etc for each snapshot
       !   or MD step
       !   Read in XYZ file and build neighbors lists
 
-      if ((params%do_md .and. md_istep == 0)) then
+      if ((params%do_md .and. loop%md_istep == 0)) then
          call time_start(time%read_xyz)
          if (rank == 0) then
-            if (mc_istep > 0) then
+            if (loop%mc_istep > 0) then
                call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
-                             n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                             positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                             xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                             n_sites,.not. params%mc_write_xyz, fix_atom, params%t_beg, &
+                             model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
+                             state%positions, params%do_md, state%velocities, params%masses_types, state%masses, &
+                             state%xyz_species, &
+                             state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
+                             state%b_box, state%c_box, &
+                             state%n_sites,.not. params%mc_write_xyz, state%fix_atom, params%t_beg, &
                              params%write_array_property(6),.not. params%mc_write_xyz, params%randomize_velocities)
-               rebuild_neighbors_list = .true.
+               nl%rebuild_neighbors_list = .true.
 
-            else if (.not. params%do_nested_sampling .or. mc_istep == 0) then
+            else if (.not. params%do_nested_sampling .or. loop%mc_istep == 0) then
                call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
-                             n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                             positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                             xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                             n_sites, .false., fix_atom, params%t_beg, &
+                             model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
+                             state%positions, params%do_md, state%velocities, params%masses_types, state%masses, &
+                             state%xyz_species, &
+                             state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
+                             state%b_box, state%c_box, &
+                             state%n_sites, .false., state%fix_atom, params%t_beg, &
                              params%write_array_property(6), .false., params%randomize_velocities)
 
             end if
@@ -901,15 +750,15 @@ program turbogap
             !     Only rank 0 handles these variables
             !      allocate( positions_prev(1:3, 1:size(positions,2)) )
             !      allocate( positions_diff(1:3, 1:size(positions,2)) )
-            if (.not. allocated(forces_prev)) allocate (forces_prev(1:3, 1:n_sites))
-            if (.not. allocated(positions_prev)) allocate (positions_prev(1:3, 1:n_sites))
-            if (.not. allocated(positions_diff)) allocate (positions_diff(1:3, 1:n_sites))
-            positions_diff = 0.d0
-            rebuild_neighbors_list = .true.
+            if (.not. allocated(state%forces_prev)) allocate (state%forces_prev(1:3, 1:state%n_sites))
+            if (.not. allocated(state%positions_prev)) allocate (state%positions_prev(1:3, 1:state%n_sites))
+            if (.not. allocated(state%positions_diff)) allocate (state%positions_diff(1:3, 1:state%n_sites))
+            state%positions_diff = 0.d0
+            nl%rebuild_neighbors_list = .true.
          end if
          call time_end(time%read_xyz)
          !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
-         repeat_xyz = .false.
+         loop%repeat_xyz = .false.
          !     At the moment, we can't do prediction if the unit cell doesn't fit a whole cutoff sphere
          if (rank == 0) then
             !     CLEAN THIS UP <------------------------------------------------------------------- LOOK HERE
@@ -924,63 +773,67 @@ program turbogap
       else if (.not. params%do_md) then
          call time_start(time%read_xyz)
          if (rank == 0) then
-            if (mc_istep > 0) then
+            if (loop%mc_istep > 0) then
                call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
-                             n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                             positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                             xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                             n_sites,.not. params%mc_write_xyz, fix_atom, params%t_beg, &
+                             model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
+                             state%positions, params%do_md, state%velocities, params%masses_types, state%masses, &
+                             state%xyz_species, &
+                             state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
+                             state%b_box, state%c_box, &
+                             state%n_sites,.not. params%mc_write_xyz, state%fix_atom, params%t_beg, &
                              params%write_array_property(6),.not. params%mc_write_xyz, params%randomize_velocities)
-               rebuild_neighbors_list = .true.
+               nl%rebuild_neighbors_list = .true.
             else
                call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
-                             n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                             positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                             xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                             n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), &
-                             .false., params%randomize_velocities, frame_time, has_frame_time)
+                             model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
+                             state%positions, params%do_md, state%velocities, params%masses_types, state%masses, &
+                             state%xyz_species, &
+                             state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
+                             state%b_box, state%c_box, &
+                             state%n_sites, .false., state%fix_atom, params%t_beg, params%write_array_property(6), &
+                             .false., params%randomize_velocities, state%frame_time, state%has_frame_time)
             end if
          end if
          call time_end(time%read_xyz)
          call time_start(time%mpi)
-         call comm_bcast(comm, repeat_xyz)
+         call comm_bcast(comm, loop%repeat_xyz)
 !        The frame's time label. Every rank pushes the same dipole into the
 !        same buffer -- the trajectory is the ensemble and it is replicated,
 !        not distributed -- so every rank needs the same time with it.
-         call comm_bcast(comm, frame_time)
-         call comm_bcast(comm, has_frame_time)
+         call comm_bcast(comm, state%frame_time)
+         call comm_bcast(comm, state%has_frame_time)
          call time_end(time%mpi)
-         rebuild_neighbors_list = .true.
+         nl%rebuild_neighbors_list = .true.
       end if
       !   Broadcast the info in the XYZ file: positions, velocities, masses, xyz_species, xyz_species_supercell,
       !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
 
       if (rank == 0) then
-         n_pos = size(positions, 2)
-         n_sp = size(xyz_species, 1)
-         n_sp_sc = size(xyz_species_supercell, 1)
-         if (params%randomize_velocities .and. md_istep == 0) then
-            call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg, &
+         n_pos = size(state%positions, 2)
+         n_sp = size(state%xyz_species, 1)
+         n_sp_sc = size(state%xyz_species_supercell, 1)
+         if (params%randomize_velocities .and. loop%md_istep == 0) then
+            call randomize_velocities(state%velocities, state%n_sites, E_kinetic, state%masses, instant_temp, params%t_beg, &
                                       params%velocity_distribution)
          end if
-         if (params%do_mc .and. (mc_move /= "md" .or. md_istep == 0) .and. params%mc_hamiltonian) then
-            if (mc_istep > 0) E_kinetic_prev = E_kinetic
-            call random_number(velocities)
-            call remove_cm_vel(velocities(1:3, 1:n_sites), masses(1:n_sites))
+         if (params%do_mc .and. (mc_move /= "md" .or. loop%md_istep == 0) .and. params%mc_hamiltonian) then
+            if (loop%mc_istep > 0) E_kinetic_prev = E_kinetic
+            call random_number(state%velocities)
+            call remove_cm_vel(state%velocities(1:3, 1:state%n_sites), state%masses(1:state%n_sites))
             E_kinetic = 0.d0
-            do i = 1, n_sites
-               E_kinetic = E_kinetic + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+            do i = 1, state%n_sites
+               E_kinetic = E_kinetic + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
             end do
-            instant_temp = 2.d0/3.d0/dfloat(n_sites - 1)/kB*E_kinetic
-            velocities = velocities*dsqrt(params%t_beg/instant_temp)
-            if (mc_istep > 0) then
+            instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/kB*E_kinetic
+            state%velocities = state%velocities*dsqrt(params%t_beg/instant_temp)
+            if (loop%mc_istep > 0) then
                E_kinetic = E_kinetic_prev
-               instant_temp = 2.d0/3.d0/dfloat(n_sites - 1)/kB*E_kinetic
+               instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/kB*E_kinetic
                ! Reversing as we want it to be at the instant temp and not at t_beg
-               velocities = velocities*dsqrt(instant_temp/params%t_beg)
+               state%velocities = state%velocities*dsqrt(instant_temp/params%t_beg)
 
-               do i = 1, n_sites
-                  E_kinetic = E_kinetic + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+               do i = 1, state%n_sites
+                  E_kinetic = E_kinetic + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
                end do
             else
                E_kinetic = E_kinetic*params%t_beg/instant_temp
@@ -992,56 +845,56 @@ program turbogap
       call comm_bcast(comm, n_pos)
       call comm_bcast(comm, n_sp)
       call comm_bcast(comm, n_sp_sc)
-      call comm_bcast(comm, n_sites)
+      call comm_bcast(comm, state%n_sites)
       call time_end(time%mpi)
 
       if (rank /= 0) then
-         if (allocated(positions)) deallocate (positions)
-         allocate (positions(1:3, n_pos))
+         if (allocated(state%positions)) deallocate (state%positions)
+         allocate (state%positions(1:3, n_pos))
          if (params%do_md .or. params%do_nested_sampling .or. params%do_mc) then
-            if (allocated(velocities)) deallocate (velocities)
-            allocate (velocities(1:3, n_pos))
-            if (allocated(masses)) deallocate (masses)
-            allocate (masses(1:n_sp))
+            if (allocated(state%velocities)) deallocate (state%velocities)
+            allocate (state%velocities(1:3, n_pos))
+            if (allocated(state%masses)) deallocate (state%masses)
+            allocate (state%masses(1:n_sp))
          end if
-         if (allocated(xyz_species)) deallocate (xyz_species)
-         allocate (xyz_species(1:n_sp))
-         if (allocated(species)) deallocate (species)
-         allocate (species(1:n_sp))
-         if (allocated(xyz_species_supercell)) deallocate (xyz_species_supercell)
-         allocate (xyz_species_supercell(1:n_sp_sc))
-         if (allocated(species_supercell)) deallocate (species_supercell)
-         allocate (species_supercell(1:n_sp_sc))
-         if (allocated(fix_atom)) deallocate (fix_atom)
-         allocate (fix_atom(1:3, 1:n_sp))
+         if (allocated(state%xyz_species)) deallocate (state%xyz_species)
+         allocate (state%xyz_species(1:n_sp))
+         if (allocated(state%species)) deallocate (state%species)
+         allocate (state%species(1:n_sp))
+         if (allocated(state%xyz_species_supercell)) deallocate (state%xyz_species_supercell)
+         allocate (state%xyz_species_supercell(1:n_sp_sc))
+         if (allocated(state%species_supercell)) deallocate (state%species_supercell)
+         allocate (state%species_supercell(1:n_sp_sc))
+         if (allocated(state%fix_atom)) deallocate (state%fix_atom)
+         allocate (state%fix_atom(1:3, 1:n_sp))
 
       end if
       call time_start(time%mpi_positions)
-      call comm_bcast(comm, positions, 3*n_pos)
+      call comm_bcast(comm, state%positions, 3*n_pos)
       if (params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian) then
-         call comm_bcast(comm, velocities, 3*n_pos)
-         call comm_bcast(comm, masses, n_sp)
-         call comm_bcast(comm, fix_atom, 3*n_sp)
+         call comm_bcast(comm, state%velocities, 3*n_pos)
+         call comm_bcast(comm, state%masses, n_sp)
+         call comm_bcast(comm, state%fix_atom, 3*n_sp)
       end if
-      call comm_bcast(comm, xyz_species, 8*n_sp)
-      call comm_bcast(comm, xyz_species_supercell, 8*n_sp_sc)
-      call comm_bcast(comm, species, n_sp)
-      call comm_bcast(comm, species_supercell, n_sp_sc)
-      call comm_bcast(comm, indices, 3)
-      call comm_bcast(comm, a_box, 3)
-      call comm_bcast(comm, b_box, 3)
-      call comm_bcast(comm, c_box, 3)
+      call comm_bcast(comm, state%xyz_species, 8*n_sp)
+      call comm_bcast(comm, state%xyz_species_supercell, 8*n_sp_sc)
+      call comm_bcast(comm, state%species, n_sp)
+      call comm_bcast(comm, state%species_supercell, n_sp_sc)
+      call comm_bcast(comm, state%indices, 3)
+      call comm_bcast(comm, state%a_box, 3)
+      call comm_bcast(comm, state%b_box, 3)
+      call comm_bcast(comm, state%c_box, 3)
       call time_end(time%mpi_positions)
       !   Now that all ranks know the size of n_sites, we allocate do_list
-      if (.not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
+      if (.not. params%do_md .or. (params%do_md .and. loop%md_istep == 0) .or. &
           (params%do_mc)) then
-         if (allocated(do_list)) deallocate (do_list)
-         allocate (do_list(1:n_sites))
-         do_list = .true.
+         if (allocated(dom%do_list)) deallocate (dom%do_list)
+         allocate (dom%do_list(1:state%n_sites))
+         dom%do_list = .true.
       end if
       call time_start(time%neigh)
       !   Parallel neighbors list build
-      call comm_bcast(comm, rebuild_neighbors_list)
+      call comm_bcast(comm, nl%rebuild_neighbors_list)
 
       !   If we're using a box rescaling algorithm or a barostat, then the box size can
       !   become smaller or bigger than the cutoff sphere. If that happens, and the current
@@ -1050,19 +903,21 @@ program turbogap
       !   is smaller -> makes computations slower) or default back to the primitive unit cell
       !   (i.e., the box was smaller and now is bigger -> makes computations faster).
       !   We only need to check if rebuild_neighbors_list = .true.
-      if (rebuild_neighbors_list .and. params%do_mc .and. mc_istep > 0) then
+      if (nl%rebuild_neighbors_list .and. params%do_mc .and. loop%mc_istep > 0) then
          call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
-                       n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                       positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                       xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                       n_sites, .true., fix_atom, params%t_beg, &
+                       model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
+                       state%positions, params%do_md, state%velocities, params%masses_types, state%masses, state%xyz_species, &
+                       state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
+                       state%b_box, state%c_box, &
+                       state%n_sites, .true., state%fix_atom, params%t_beg, &
                        params%write_array_property(6), .false., params%randomize_velocities)
-      else if (rebuild_neighbors_list) then
+      else if (nl%rebuild_neighbors_list) then
          call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
-                       n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                       positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                       xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                       n_sites, .true., fix_atom, params%t_beg, params%write_array_property(6), &
+                       model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
+                       state%positions, params%do_md, state%velocities, params%masses_types, state%masses, state%xyz_species, &
+                       state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
+                       state%b_box, state%c_box, &
+                       state%n_sites, .true., state%fix_atom, params%t_beg, params%write_array_property(6), &
                        .false., params%randomize_velocities)
 
       end if
@@ -1070,57 +925,60 @@ program turbogap
       !   Overlapping domain decomposition with subcommunicators goes here <------------------- TO DO
 
       !   This is some trivial MPI parallelization to make sure the code works fine
-      if (rank < mod(n_sites, ntasks)) then
-         i_beg = 1 + rank*(n_sites/ntasks + 1)
+      if (rank < mod(state%n_sites, ntasks)) then
+         dom%i_beg = 1 + rank*(state%n_sites/ntasks + 1)
       else
-         i_beg = 1 + mod(n_sites, ntasks)*(n_sites/ntasks + 1) + (rank - mod(n_sites, ntasks))*(n_sites/ntasks)
+         dom%i_beg = 1 + mod(state%n_sites, ntasks)*(state%n_sites/ntasks + 1) + (rank - mod(state%n_sites, &
+                                                                                             ntasks))*(state%n_sites/ntasks)
       end if
-      if (rank < mod(n_sites, ntasks)) then
-         i_end = (rank + 1)*(n_sites/ntasks + 1)
+      if (rank < mod(state%n_sites, ntasks)) then
+         dom%i_end = (rank + 1)*(state%n_sites/ntasks + 1)
       else
-         i_end = i_beg + n_sites/ntasks - 1
+         dom%i_end = dom%i_beg + state%n_sites/ntasks - 1
       end if
 
-      do_list = .false.
-      do_list(i_beg:i_end) = .true.
+      dom%do_list = .false.
+      dom%do_list(dom%i_beg:dom%i_end) = .true.
 
-      call build_neighbors_list(positions, a_box, b_box, c_box, params%do_timing, &
-                                species_supercell, rcut_max, n_atom_pairs, rjs, &
-                                thetas, phis, xyz, n_neigh_local, neighbors_list, neighbor_species, n_sites, indices, &
-                                rebuild_neighbors_list, do_list, rank)
-      if (rebuild_neighbors_list) then
+      call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
+                                state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
+                                nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
+                                state%n_sites, state%indices, &
+                                nl%rebuild_neighbors_list, dom%do_list, rank)
+      if (nl%rebuild_neighbors_list) then
          !     Get total number of atom pairs
-         call comm_allgather(comm, n_atom_pairs, n_atom_pairs_by_rank)
-         n_atom_pairs_total = sum(n_atom_pairs_by_rank)
-         n_atom_pairs = n_atom_pairs_total
+         call comm_allgather(comm, nl%n_atom_pairs, dom%n_atom_pairs_by_rank)
+         nl%n_atom_pairs_total = sum(dom%n_atom_pairs_by_rank)
+         nl%n_atom_pairs = nl%n_atom_pairs_total
 
          !     Get number of neighbors
-         if (.not. allocated(n_neigh)) allocate (n_neigh(1:n_sites))
-         call comm_sum_to_root(comm, n_neigh_local, n_neigh, n_sites)
-         call comm_bcast(comm, n_neigh, n_sites)
+         if (.not. allocated(nl%n_neigh)) allocate (nl%n_neigh(1:state%n_sites))
+         call comm_sum_to_root(comm, nl%n_neigh_local, nl%n_neigh, state%n_sites)
+         call comm_bcast(comm, nl%n_neigh, state%n_sites)
 
-         j_beg = 1
-         j_end = n_atom_pairs_by_rank(rank + 1)
+         dom%j_beg = 1
+         dom%j_end = dom%n_atom_pairs_by_rank(rank + 1)
       end if
 !   Store by which rank each site is being handled
-      if (allocated(site_in_rank)) then
-         if (size(site_in_rank) /= n_sites) then
-            deallocate (site_in_rank, this_site_in_rank)
+      if (allocated(dom%site_in_rank)) then
+         if (size(dom%site_in_rank) /= state%n_sites) then
+            deallocate (dom%site_in_rank, dom%this_site_in_rank)
          end if
       end if
-      if (.not. allocated(site_in_rank)) then
-         allocate (site_in_rank(1:n_sites))
-         allocate (this_site_in_rank(1:n_sites))
+      if (.not. allocated(dom%site_in_rank)) then
+         allocate (dom%site_in_rank(1:state%n_sites))
+         allocate (dom%this_site_in_rank(1:state%n_sites))
       end if
-      site_in_rank = 0
-      this_site_in_rank = 0
-      do i = i_beg, i_end
-         this_site_in_rank(i) = rank
+      dom%site_in_rank = 0
+      dom%this_site_in_rank = 0
+      do i = dom%i_beg, dom%i_end
+         dom%this_site_in_rank(i) = rank
       end do
-      call comm_sum_to_root(comm, this_site_in_rank, site_in_rank, n_sites)
-      call comm_bcast(comm, site_in_rank, n_sites)
+      call comm_sum_to_root(comm, dom%this_site_in_rank, dom%site_in_rank, state%n_sites)
+      call comm_bcast(comm, dom%site_in_rank, state%n_sites)
       !   Compute the volume of the "primitive" unit cell
-      v_uc = dot_product(cross_product(a_box, b_box), c_box)/(dfloat(indices(1)*indices(2)*indices(3)))
+      state%v_uc = dot_product(cross_product(state%a_box, state%b_box), &
+                               state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
       call time_end(time%neigh)
 
       !   If we are doing prediction, we run this chunk of code
@@ -1128,51 +986,51 @@ program turbogap
 
          !     We only need to reallocate the arrays if the number of sites changes
          ! REMOVE TRUE FROM IF STATEMENT
-         if (n_sites /= n_sites_prev .or. params%do_mc) then
-            if (allocated(energies)) deallocate (energies, &
-                                                 energies_soap, &
-                                                 energies_2b, &
-                                                 energies_3b, &
-                                                 energies_core_pot, &
-                                                 this_energies, &
-                                                 energies_vdw, &
-                                                 energies_vdw_corr, &
-                                                 mbd_ts_scaling, &
-                                                 this_forces, &
-                                                 energies_lp, &
-                                                 energies_exp, &
-                                                 energies_estat, &
-                                                 this_mbd_ts_scaling)
-            allocate (energies(1:n_sites))
-            allocate (this_energies(1:n_sites))
-            allocate (energies_soap(1:n_sites))
-            allocate (energies_2b(1:n_sites))
-            allocate (energies_3b(1:n_sites))
-            allocate (energies_core_pot(1:n_sites))
-            allocate (energies_vdw(1:n_sites))
-            allocate (energies_vdw_corr(1:n_sites))
-            allocate (energies_lp(1:n_sites))
-            allocate (energies_estat(1:n_sites))
-            allocate (energies_exp(1:n_sites))
+         if (state%n_sites /= loop%n_sites_prev .or. params%do_mc) then
+            if (allocated(res%energies)) deallocate (res%energies, &
+                                                     res%energies_soap, &
+                                                     res%energies_2b, &
+                                                     res%energies_3b, &
+                                                     res%energies_core_pot, &
+                                                     res%this_energies, &
+                                                     res%energies_vdw, &
+                                                     res%energies_vdw_corr, &
+                                                     res%mbd_ts_scaling, &
+                                                     res%this_forces, &
+                                                     res%energies_lp, &
+                                                     res%energies_exp, &
+                                                     res%energies_estat, &
+                                                     res%this_mbd_ts_scaling)
+            allocate (res%energies(1:state%n_sites))
+            allocate (res%this_energies(1:state%n_sites))
+            allocate (res%energies_soap(1:state%n_sites))
+            allocate (res%energies_2b(1:state%n_sites))
+            allocate (res%energies_3b(1:state%n_sites))
+            allocate (res%energies_core_pot(1:state%n_sites))
+            allocate (res%energies_vdw(1:state%n_sites))
+            allocate (res%energies_vdw_corr(1:state%n_sites))
+            allocate (res%energies_lp(1:state%n_sites))
+            allocate (res%energies_estat(1:state%n_sites))
+            allocate (res%energies_exp(1:state%n_sites))
 !          We do this allocations for van der Waals corrections
-            allocate (mbd_ts_scaling(1:n_sites))
-            allocate (this_mbd_ts_scaling(1:n_sites))
+            allocate (res%mbd_ts_scaling(1:state%n_sites))
+            allocate (res%this_mbd_ts_scaling(1:state%n_sites))
 !          Allocated whether or not a dipole model is loaded: they are passed to
 !          get_gap_soap unconditionally, and 4 doubles per atom is not worth a
 !          second code path.
-            if (allocated(local_dipoles)) deallocate (local_dipoles, this_local_dipoles, &
-                                                      energies_dipole, this_energies_dipole)
-            allocate (local_dipoles(1:3, 1:n_sites))
-            allocate (this_local_dipoles(1:3, 1:n_sites))
-            allocate (energies_dipole(1:n_sites))
-            allocate (this_energies_dipole(1:n_sites))
+            if (allocated(res%local_dipoles)) deallocate (res%local_dipoles, res%this_local_dipoles, &
+                                                          res%energies_dipole, res%this_energies_dipole)
+            allocate (res%local_dipoles(1:3, 1:state%n_sites))
+            allocate (res%this_local_dipoles(1:3, 1:state%n_sites))
+            allocate (res%energies_dipole(1:state%n_sites))
+            allocate (res%this_energies_dipole(1:state%n_sites))
 
 ! Read in file for ts+mbd van der Waals mode if it exists
 ! Initialise the TS scaling factors. md_istep <= 0 rather than == 0 because
 ! predict and mc never advance md_istep past -1, and without this they reach
 ! get_ts_energy_and_forces with mbd_ts_scaling never having been set. For MD
 ! this is still exactly the first step, so the MD path is unchanged.
-            if (params%vdw_type == "ts+mbd" .and. md_istep <= 0) then
+            if (params%vdw_type == "ts+mbd" .and. loop%md_istep <= 0) then
                if (rank == 0) then
                   open (unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
                   if (iostatus == 0) then
@@ -1184,103 +1042,106 @@ program turbogap
                      write (*, *) '                                       |'
                      write (*, *) '.......................................|'
                      write (*, *) '                                       |'
-                     do i = 1, n_sites
-                        read (30, *) mbd_ts_scaling(i)
+                     do i = 1, state%n_sites
+                        read (30, *) res%mbd_ts_scaling(i)
                      end do
-                     update_mbd_ts_scaling = .false.
+                     res%update_mbd_ts_scaling = .false.
                   else
-                     mbd_ts_scaling = 1.d0
+                     res%mbd_ts_scaling = 1.d0
                   end if
                   close (30)
-                  this_mbd_ts_scaling = mbd_ts_scaling
+                  res%this_mbd_ts_scaling = res%mbd_ts_scaling
                end if
-               call comm_bcast(comm, this_mbd_ts_scaling, n_sites)
+               call comm_bcast(comm, res%this_mbd_ts_scaling, state%n_sites)
             end if
 
             if (perform%pdf) then
-               if (allocated(energies_pdf)) deallocate (energies_pdf)
-               allocate (energies_pdf(1:n_sites))
+               if (allocated(res%energies_pdf)) deallocate (res%energies_pdf)
+               allocate (res%energies_pdf(1:state%n_sites))
             end if
 
             if (perform%sf) then
-               if (allocated(energies_sf)) deallocate (energies_sf)
-               allocate (energies_sf(1:n_sites))
+               if (allocated(res%energies_sf)) deallocate (res%energies_sf)
+               allocate (res%energies_sf(1:state%n_sites))
             end if
 
             if (perform%xrd) then
-               if (allocated(energies_xrd)) deallocate (energies_xrd)
-               allocate (energies_xrd(1:n_sites))
+               if (allocated(res%energies_xrd)) deallocate (res%energies_xrd)
+               allocate (res%energies_xrd(1:state%n_sites))
             end if
 
             if (perform%nd) then
-               if (allocated(energies_nd)) deallocate (energies_nd)
-               allocate (energies_nd(1:n_sites))
+               if (allocated(res%energies_nd)) deallocate (res%energies_nd)
+               allocate (res%energies_nd(1:state%n_sites))
             end if
 
             !       This needs to be allocated even if no force prediction is needed:
-            allocate (this_forces(1:3, 1:n_sites))
+            allocate (res%this_forces(1:3, 1:state%n_sites))
          end if
-         energies = 0.d0
-         energies_soap = 0.d0
-         energies_2b = 0.d0
-         energies_3b = 0.d0
-         energies_core_pot = 0.d0
-         energies_vdw = 0.d0
-         energies_estat = 0.d0
-         energies_lp = 0.d0
-         energies_exp = 0.d0
+         res%energies = 0.d0
+         res%energies_soap = 0.d0
+         res%energies_2b = 0.d0
+         res%energies_3b = 0.d0
+         res%energies_core_pot = 0.d0
+         res%energies_vdw = 0.d0
+         res%energies_estat = 0.d0
+         res%energies_lp = 0.d0
+         res%energies_exp = 0.d0
 !        The dissimilarity accumulators belong to the same step as energies_exp
 !        and are zeroed with it. This is the only point that knows a new
 !        evaluation has begun; get_exp_energies is called once per observable
 !        and mad_ir separately again, so neither can reset them itself.
          exp_dissimilarity = 0.d0
          exp_dissim_ref = 0.d0
-         local_dipoles = 0.d0
-         energies_dipole = 0.d0
-         dipole = 0.d0
+         res%local_dipoles = 0.d0
+         res%energies_dipole = 0.d0
+         res%dipole = 0.d0
 
-         if (perform%pdf) energies_pdf = 0.d0
-         if (perform%sf) energies_sf = 0.d0
-         if (perform%xrd) energies_xrd = 0.d0
-         if (perform%nd) energies_nd = 0.d0
+         if (perform%pdf) res%energies_pdf = 0.d0
+         if (perform%sf) res%energies_sf = 0.d0
+         if (perform%xrd) res%energies_xrd = 0.d0
+         if (perform%nd) res%energies_nd = 0.d0
 
          ! Adding allocation of local properties
 
          ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
-         if (any_has_local_properties(soap_turbo_hypers)) then
-            if (n_sites /= n_sites_prev .or. params%do_mc) then
-               if (allocated(local_properties)) then
-                  nullify (this_local_properties_pt)
-                  deallocate (this_local_properties, local_properties)
+         if (any_has_local_properties(model%soap_turbo_hypers)) then
+            if (state%n_sites /= loop%n_sites_prev .or. params%do_mc) then
+               if (allocated(res%local_properties)) then
+                  nullify (res%this_local_properties_pt)
+                  deallocate (res%this_local_properties, res%local_properties)
                   if (params%do_forces) then
-                     nullify (this_local_properties_cart_der_pt)
-                     deallocate (this_local_properties_cart_der, local_properties_cart_der)
+                     nullify (res%this_local_properties_cart_der_pt)
+                     deallocate (res%this_local_properties_cart_der, res%local_properties_cart_der)
                   end if
                end if
-               allocate (local_properties(1:n_sites, 1:params%n_local_properties))
-               allocate (this_local_properties(1:n_sites, 1:params%n_local_properties))
-               this_local_properties_pt => this_local_properties
+               allocate (res%local_properties(1:state%n_sites, 1:params%n_local_properties))
+               allocate (res%this_local_properties(1:state%n_sites, 1:params%n_local_properties))
+               res%this_local_properties_pt => res%this_local_properties
 
                !         I don't remember why this needs a pointer <----------------------------------------- CHECK
 
             end if
-            local_properties = 0.d0
+            res%local_properties = 0.d0
 
             if (params%do_forces) then
-               if (n_atom_pairs_by_rank(rank + 1) /= n_atom_pairs_by_rank_prev) then
-                  if (allocated(local_properties_cart_der)) deallocate (local_properties_cart_der, this_local_properties_cart_der)
-                  allocate (local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank + 1), 1:params%n_local_properties))
-                  allocate (this_local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank + 1), 1:params%n_local_properties))
+               if (dom%n_atom_pairs_by_rank(rank + 1) /= dom%n_atom_pairs_by_rank_prev) then
+                  if (allocated(res%local_properties_cart_der)) deallocate (res%local_properties_cart_der, &
+                                                                            res%this_local_properties_cart_der)
+                  allocate (res%local_properties_cart_der(1:3, 1:dom%n_atom_pairs_by_rank(rank + 1), 1:params%n_local_properties))
+                  allocate (res%this_local_properties_cart_der(1:3, 1:dom%n_atom_pairs_by_rank(rank + 1), &
+                                                               1:params%n_local_properties))
                end if
-               if (.not. allocated(local_properties_cart_der)) then
-                  allocate (local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank + 1), 1:params%n_local_properties))
-                  allocate (this_local_properties_cart_der(1:3, 1:n_atom_pairs_by_rank(rank + 1), 1:params%n_local_properties))
+               if (.not. allocated(res%local_properties_cart_der)) then
+                  allocate (res%local_properties_cart_der(1:3, 1:dom%n_atom_pairs_by_rank(rank + 1), 1:params%n_local_properties))
+                  allocate (res%this_local_properties_cart_der(1:3, 1:dom%n_atom_pairs_by_rank(rank + 1), &
+                                                               1:params%n_local_properties))
                end if
 
-               local_properties_cart_der = 0.d0
-               this_local_properties_cart_der_pt =>&
-                    & this_local_properties_cart_der(1:3,&
-                    & 1:n_atom_pairs_by_rank(rank + 1), 1:params&
+               res%local_properties_cart_der = 0.d0
+               res%this_local_properties_cart_der_pt =>&
+                    & res%this_local_properties_cart_der(1:3,&
+                    & 1:dom%n_atom_pairs_by_rank(rank + 1), 1:params&
                     &%n_local_properties)
             end if
          end if
@@ -1292,40 +1153,41 @@ program turbogap
          ! statements
 
          if (params%do_forces) then
-            if (n_sites /= n_sites_prev .or. params%do_mc) then
-               if (allocated(forces)) deallocate (forces, forces_soap, forces_2b, forces_3b, forces_core_pot, forces_vdw,&
-                    & forces_lp, forces_estat, local_virial_vdw_diag, local_virial_vdw_diag_corr)
-               allocate (forces(1:3, 1:n_sites))
-               allocate (forces_soap(1:3, 1:n_sites))
-               allocate (forces_2b(1:3, 1:n_sites))
-               allocate (forces_3b(1:3, 1:n_sites))
-               allocate (forces_core_pot(1:3, 1:n_sites))
-               allocate (forces_vdw(1:3, 1:n_sites))
-               if (allocated(forces_vdw_corr)) deallocate (forces_vdw_corr)
-               allocate (forces_vdw_corr(1:3, 1:n_sites))
-               allocate (forces_lp(1:3, 1:n_sites))
-               allocate (forces_estat(1:3, 1:n_sites))
-               allocate (local_virial_vdw_diag_corr(1:3, 1:n_sites))
-               allocate (local_virial_vdw_diag(1:3, 1:n_sites))
+            if (state%n_sites /= loop%n_sites_prev .or. params%do_mc) then
+               if (allocated(res%forces)) deallocate (res%forces, res%forces_soap, res%forces_2b, res%forces_3b, &
+                  res%forces_core_pot, res%forces_vdw,&
+                    & res%forces_lp, res%forces_estat, res%local_virial_vdw_diag, res%local_virial_vdw_diag_corr)
+               allocate (res%forces(1:3, 1:state%n_sites))
+               allocate (res%forces_soap(1:3, 1:state%n_sites))
+               allocate (res%forces_2b(1:3, 1:state%n_sites))
+               allocate (res%forces_3b(1:3, 1:state%n_sites))
+               allocate (res%forces_core_pot(1:3, 1:state%n_sites))
+               allocate (res%forces_vdw(1:3, 1:state%n_sites))
+               if (allocated(res%forces_vdw_corr)) deallocate (res%forces_vdw_corr)
+               allocate (res%forces_vdw_corr(1:3, 1:state%n_sites))
+               allocate (res%forces_lp(1:3, 1:state%n_sites))
+               allocate (res%forces_estat(1:3, 1:state%n_sites))
+               allocate (res%local_virial_vdw_diag_corr(1:3, 1:state%n_sites))
+               allocate (res%local_virial_vdw_diag(1:3, 1:state%n_sites))
 
                if (perform%pdf_forces) then
-                  if (allocated(forces_pdf)) deallocate (forces_pdf)
-                  allocate (forces_pdf(1:3, 1:n_sites))
+                  if (allocated(res%forces_pdf)) deallocate (res%forces_pdf)
+                  allocate (res%forces_pdf(1:3, 1:state%n_sites))
                end if
 
                if (perform%sf_forces) then
-                  if (allocated(forces_sf)) deallocate (forces_sf)
-                  allocate (forces_sf(1:3, 1:n_sites))
+                  if (allocated(res%forces_sf)) deallocate (res%forces_sf)
+                  allocate (res%forces_sf(1:3, 1:state%n_sites))
                end if
 
                if (perform%xrd_forces) then
-                  if (allocated(forces_xrd)) deallocate (forces_xrd)
-                  allocate (forces_xrd(1:3, 1:n_sites))
+                  if (allocated(res%forces_xrd)) deallocate (res%forces_xrd)
+                  allocate (res%forces_xrd(1:3, 1:state%n_sites))
                end if
 
                if (perform%nd_forces) then
-                  if (allocated(forces_nd)) deallocate (forces_nd)
-                  allocate (forces_nd(1:3, 1:n_sites))
+                  if (allocated(res%forces_nd)) deallocate (res%forces_nd)
+                  allocate (res%forces_nd(1:3, 1:state%n_sites))
                end if
 
             end if
@@ -1358,7 +1220,7 @@ program turbogap
                                        trim(params%ir_estimator) /= "unbiased", &
                                        params%ir_taper_partial, params%ir_match_offset, &
                                        params%ir_weight_by_spacing, &
-                                       n_sites, mad_ir_ok, mad_ir_resumed, mad_ir_msg, &
+                                       state%n_sites, mad_ir_ok, mad_ir_resumed, mad_ir_msg, &
                                        params%ir_acf_mode, params%ir_tau_mem)
                   else
 !                    Prediction: the ensemble is the whole trajectory, so its
@@ -1381,7 +1243,7 @@ program turbogap
                                                params%ir_window, params%ir_subtract_mean, &
                                                trim(params%ir_estimator) /= "unbiased", &
                                                params%ir_taper_partial, &
-                                               n_sites, mad_ir_ok, mad_ir_msg, &
+                                               state%n_sites, mad_ir_ok, mad_ir_msg, &
                                                params%ir_acf_mode, params%ir_tau_mem)
                   end if
                   if (.not. mad_ir_ok) then
@@ -1429,7 +1291,7 @@ program turbogap
                         write (*, *) "       or leave ir_bias_mode at acf for a prediction run."
                         stop
                      end if
-                     call mad_ir_xl_setup(mad_ir_state, n_sites, params%ir_xl_n_modes, &
+                     call mad_ir_xl_setup(mad_ir_state, state%n_sites, params%ir_xl_n_modes, &
                                           params%md_step, params%ir_stride, &
                                           params%ir_xl_tau_mem, &
                                           trim(params%ir_xl_amplitude) == "coherent", &
@@ -1499,7 +1361,7 @@ program turbogap
                         write (*, *) "       the bias off."
                         call turbogap_abort()
                      end if
-                     call ir_aux_setup(mad_ir_state, n_sites, params%md_step, params%ir_stride, &
+                     call ir_aux_setup(mad_ir_state, state%n_sites, params%md_step, params%ir_stride, &
                                        params%ir_aux_eff_mass, params%ir_aux_damping, &
                                        params%ir_aux_tau, params%ir_aux_gain, &
                                        params%ir_aux_eta_max, params%ir_aux_restart_file, &
@@ -1546,7 +1408,7 @@ program turbogap
 !              are mutually exclusive and mad_ir_need_dmu is what keeps them so.
                mad_ir_need_dmu = params%valid_ir .and. params%exp_forces &
                                  .and. .not. mad_ir_xl_active
-               mad_ir_collect = (md_istep >= 0) .and. (modulo(md_istep, params%ir_stride) == 0)
+               mad_ir_collect = (loop%md_istep >= 0) .and. (modulo(loop%md_istep, params%ir_stride) == 0)
                if (mad_ir_collect .and. mad_ir_need_dmu) mad_ir_dmu_dr = 0.d0
                mad_ir_xl_collect = mad_ir_xl_active .and. mad_ir_collect &
                                    .and. params%valid_ir .and. params%exp_forces
@@ -1561,76 +1423,76 @@ program turbogap
 !              time resolution. It is identically zero while the bank charges.
                if (mad_ir_xl_collect) mad_ir_xl_force = 0.d0
             end if
-            forces = 0.d0
-            forces_soap = 0.d0
-            forces_2b = 0.d0
-            forces_3b = 0.d0
-            forces_core_pot = 0.d0
-            forces_vdw = 0.d0
-            forces_estat = 0.d0
-            forces_lp = 0.d0
-            virial = 0.d0
-            virial_soap = 0.d0
-            virial_2b = 0.d0
-            virial_3b = 0.d0
-            virial_core_pot = 0.d0
-            virial_vdw = 0.d0
-            virial_estat = 0.d0
-            virial_lp = 0.d0
-            local_virial_vdw_diag = 0.d0
+            res%forces = 0.d0
+            res%forces_soap = 0.d0
+            res%forces_2b = 0.d0
+            res%forces_3b = 0.d0
+            res%forces_core_pot = 0.d0
+            res%forces_vdw = 0.d0
+            res%forces_estat = 0.d0
+            res%forces_lp = 0.d0
+            res%virial = 0.d0
+            res%virial_soap = 0.d0
+            res%virial_2b = 0.d0
+            res%virial_3b = 0.d0
+            res%virial_core_pot = 0.d0
+            res%virial_vdw = 0.d0
+            res%virial_estat = 0.d0
+            res%virial_lp = 0.d0
+            res%local_virial_vdw_diag = 0.d0
             if (perform%pdf_forces) then
-               forces_pdf = 0.d0
-               virial_pdf = 0.d0
+               res%forces_pdf = 0.d0
+               res%virial_pdf = 0.d0
 #ifdef _MPIF90
-               this_virial_pdf = 0.d0
+               res%this_virial_pdf = 0.d0
 #endif
             end if
 
             if (perform%sf_forces) then
-               forces_sf = 0.d0
-               virial_sf = 0.d0
+               res%forces_sf = 0.d0
+               res%virial_sf = 0.d0
 #ifdef _MPIF90
-               this_virial_sf = 0.d0
+               res%this_virial_sf = 0.d0
 #endif
             end if
 
             if (perform%xrd_forces) then
-               forces_xrd = 0.d0
-               virial_xrd = 0.d0
+               res%forces_xrd = 0.d0
+               res%virial_xrd = 0.d0
 #ifdef _MPIF90
-               this_virial_xrd = 0.d0
+               res%this_virial_xrd = 0.d0
 #endif
             end if
 
             if (perform%nd_forces) then
-               forces_nd = 0.d0
-               virial_nd = 0.d0
+               res%forces_nd = 0.d0
+               res%virial_nd = 0.d0
 #ifdef _MPIF90
-               this_virial_nd = 0.d0
+               res%this_virial_nd = 0.d0
 #endif
             end if
          end if
 
          if (params%do_prediction) then
             !       Assign the e0 to each atom according to its species
-            do i = i_beg, i_end
-               do j = 1, n_species
-                  if (xyz_species(i) == params%species_types(j)) then
-                     energies(i) = params%e0(j)
+            do i = dom%i_beg, dom%i_end
+               do j = 1, model%n_species
+                  if (state%xyz_species(i) == params%species_types(j)) then
+                     res%energies(i) = params%e0(j)
                   end if
                end do
             end do
          end if
          !     Collect all energies
          call time_start(time%mpi_ef)
-         call comm_sum_to_root(comm, energies, this_energies, n_sites)
+         call comm_sum_to_root(comm, res%energies, res%this_energies, state%n_sites)
          call time_end(time%mpi_ef)
-         energies = this_energies
+         res%energies = res%this_energies
 
          !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
          n_lp_count = 0 ! This counts the local properties
          call time_start(time%gap)
-         do i = 1, n_soap_turbo
+         do i = 1, model%n_soap_turbo
             call time_start(time%soap)
             !       Compute number of pairs for this SOAP. SOAP has in general a different cutoff than overall max
             !       cutoff, so the number of pairs may be a lot smaller for the SOAP subset.
@@ -1639,115 +1501,116 @@ program turbogap
             !       max_Gbytes_per_process (default = 1.d0)
 #ifdef _GPU
             if (params%n_batches > 0) then
-               call get_number_of_atom_pairs_batches(params%n_batches, n_neigh(i_beg:i_end), &
-                                                     rjs(j_beg:j_end), soap_turbo_hypers(i)%rcut_max, &
-                                                     soap_turbo_hypers(i)%l_max, &
-                                                     soap_turbo_hypers(i)%n_max, &
-                                                     soap_turbo_hypers(i)%dim, &
-                                                     soap_turbo_hypers(i)%n_species, &
+               call get_number_of_atom_pairs_batches(params%n_batches, nl%n_neigh(dom%i_beg:dom%i_end), &
+                                                     nl%rjs(dom%j_beg:dom%j_end), model%soap_turbo_hypers(i)%rcut_max, &
+                                                     model%soap_turbo_hypers(i)%l_max, &
+                                                     model%soap_turbo_hypers(i)%n_max, &
+                                                     model%soap_turbo_hypers(i)%dim, &
+                                                     model%soap_turbo_hypers(i)%n_species, &
                                                      params%max_Gbytes_per_process, i_beg_list, &
                                                      i_end_list, j_beg_list, j_end_list)
             else
-               call get_number_of_atom_pairs(n_neigh(i_beg:i_end), rjs(j_beg:j_end), &
-                                             soap_turbo_hypers(i)%rcut_max, &
-                                             soap_turbo_hypers(i)%l_max, &
-                                             soap_turbo_hypers(i)%n_max, &
-                                             soap_turbo_hypers(i)%dim, &
-                                             soap_turbo_hypers(i)%n_species, &
+               call get_number_of_atom_pairs(nl%n_neigh(dom%i_beg:dom%i_end), nl%rjs(dom%j_beg:dom%j_end), &
+                                             model%soap_turbo_hypers(i)%rcut_max, &
+                                             model%soap_turbo_hypers(i)%l_max, &
+                                             model%soap_turbo_hypers(i)%n_max, &
+                                             model%soap_turbo_hypers(i)%dim, &
+                                             model%soap_turbo_hypers(i)%n_species, &
                                              params%max_Gbytes_per_process, i_beg_list, &
                                              i_end_list, j_beg_list, j_end_list)
             end if
 
-            n_sp = soap_turbo_hypers(i)%n_species
+            n_sp = model%soap_turbo_hypers(i)%n_species
 
-            st_size_nf = n_sp*sizeof(soap_turbo_hypers(i)%nf(1))
+            st_size_nf = n_sp*sizeof(model%soap_turbo_hypers(i)%nf(1))
             call gpu_malloc_async(nf_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%nf), nf_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%nf), nf_d, st_size_nf, gpu_stream)
             call gpu_malloc_async(rcut_hard_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%rcut_hard), rcut_hard_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%rcut_hard), rcut_hard_d, st_size_nf, gpu_stream)
             call gpu_malloc_async(rcut_soft_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%rcut_soft), rcut_soft_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%rcut_soft), rcut_soft_d, st_size_nf, gpu_stream)
             call gpu_malloc_async(global_scaling_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%global_scaling), global_scaling_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%global_scaling), global_scaling_d, st_size_nf, gpu_stream)
             call gpu_malloc_async(atom_sigma_r_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_r), atom_sigma_r_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%atom_sigma_r), atom_sigma_r_d, st_size_nf, gpu_stream)
             call gpu_malloc_async(atom_sigma_r_scaling_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_r_scaling), atom_sigma_r_scaling_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%atom_sigma_r_scaling), atom_sigma_r_scaling_d, st_size_nf, gpu_stream)
             call gpu_malloc_async(atom_sigma_t_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_t), atom_sigma_t_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%atom_sigma_t), atom_sigma_t_d, st_size_nf, gpu_stream)
             call gpu_malloc_async(atom_sigma_t_scaling_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%atom_sigma_t_scaling), atom_sigma_t_scaling_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%atom_sigma_t_scaling), atom_sigma_t_scaling_d, st_size_nf, gpu_stream)
             call gpu_malloc_async(amplitude_scaling_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%amplitude_scaling), amplitude_scaling_d, st_size_nf, gpu_stream)
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%amplitude_scaling), amplitude_scaling_d, st_size_nf, gpu_stream)
             call gpu_malloc_async(central_weight_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%central_weight), central_weight_d, st_size_nf, gpu_stream)
-            st_size_nf = n_sp*sizeof(soap_turbo_hypers(i)%alpha_max(1))
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%central_weight), central_weight_d, st_size_nf, gpu_stream)
+            st_size_nf = n_sp*sizeof(model%soap_turbo_hypers(i)%alpha_max(1))
             call gpu_malloc_async(alpha_max_d, st_size_nf, gpu_stream)
-            call cpy_htod(c_loc(soap_turbo_hypers(i)%alpha_max), alpha_max_d, st_size_nf, gpu_stream)
-            n_sparse = soap_turbo_hypers(i)%n_sparse
-            dim = soap_turbo_hypers(i)%dim
-            call soap_backend_begin(soap_turbo_hypers(i))
+            call cpy_htod(c_loc(model%soap_turbo_hypers(i)%alpha_max), alpha_max_d, st_size_nf, gpu_stream)
+            n_sparse = model%soap_turbo_hypers(i)%n_sparse
+            dim = model%soap_turbo_hypers(i)%dim
+            call soap_backend_begin(model%soap_turbo_hypers(i))
 
-            if (soap_turbo_hypers(i)%has_local_properties) then
+            if (model%soap_turbo_hypers(i)%has_local_properties) then
                ! Allocate gpu memory
-               do j = 1, soap_turbo_hypers(i)%n_local_properties
-                  soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas = &
-                     soap_turbo_hypers(i)%local_property_models(j)%n_sparse* &
-                     sizeof(soap_turbo_hypers(i)%local_property_models(j)%alphas(1))
-                  call gpu_malloc_async(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, &
-                                        soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas, gpu_stream)
-                  call cpy_htod(c_loc(soap_turbo_hypers(i)&
+               do j = 1, model%soap_turbo_hypers(i)%n_local_properties
+                  model%soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas = &
+                     model%soap_turbo_hypers(i)%local_property_models(j)%n_sparse* &
+                     sizeof(model%soap_turbo_hypers(i)%local_property_models(j)%alphas(1))
+                  call gpu_malloc_async(model%soap_turbo_hypers(i)%local_property_models(j)%alphas_d, &
+                                        model%soap_turbo_hypers(i)%local_property_models(j)%st_size_alphas, gpu_stream)
+                  call cpy_htod(c_loc(model%soap_turbo_hypers(i)&
                     &%local_property_models(j)%alphas), &
-                    & soap_turbo_hypers(i)%local_property_models(j)&
-                    &%alphas_d, soap_turbo_hypers(i)&
+                    & model%soap_turbo_hypers(i)%local_property_models(j)&
+                    &%alphas_d, model%soap_turbo_hypers(i)&
                     &%local_property_models(j)%st_size_alphas,&
                     & gpu_stream)
 
-                  soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs = &
-                     soap_turbo_hypers(i)%local_property_models(j)%n_sparse* &
-                     soap_turbo_hypers(i)%local_property_models(j)%dim* &
-                     sizeof(soap_turbo_hypers(i)%local_property_models(j)%Qs(1, 1))
+                  model%soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs = &
+                     model%soap_turbo_hypers(i)%local_property_models(j)%n_sparse* &
+                     model%soap_turbo_hypers(i)%local_property_models(j)%dim* &
+                     sizeof(model%soap_turbo_hypers(i)%local_property_models(j)%Qs(1, 1))
 
-                  call gpu_malloc_async(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
-                                        soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, gpu_stream)
-                  call cpy_htod(c_loc(soap_turbo_hypers(i)%local_property_models(j)%Qs), &
-                                soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
-                                soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, &
+                  call gpu_malloc_async(model%soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
+                                        model%soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, gpu_stream)
+                  call cpy_htod(c_loc(model%soap_turbo_hypers(i)%local_property_models(j)%Qs), &
+                                model%soap_turbo_hypers(i)%local_property_models(j)%Qs_d, &
+                                model%soap_turbo_hypers(i)%local_property_models(j)%st_size_Qs, &
                                 gpu_stream)
 
                end do
 
             end if
 #else
-            call get_number_of_atom_pairs(n_neigh(i_beg:i_end), rjs(j_beg:j_end), soap_turbo_hypers(i)%rcut_max, &
-                                          soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%n_max, &
-                                          soap_turbo_hypers(i)%dim, soap_turbo_hypers(i)%n_species, &
+            call get_number_of_atom_pairs(nl%n_neigh(dom%i_beg:dom%i_end), nl%rjs(dom%j_beg:dom%j_end), &
+                                          model%soap_turbo_hypers(i)%rcut_max, &
+                                          model%soap_turbo_hypers(i)%l_max, model%soap_turbo_hypers(i)%n_max, &
+                                          model%soap_turbo_hypers(i)%dim, model%soap_turbo_hypers(i)%n_species, &
                                           params%max_Gbytes_per_process, i_beg_list, i_end_list, j_beg_list, j_end_list)
 #endif
 
             do j = 1, size(i_beg_list)
-               this_i_beg = i_beg - 1 + i_beg_list(j)
-               this_i_end = i_beg - 1 + i_end_list(j)
-               this_j_beg = j_beg - 1 + j_beg_list(j)
-               this_j_end = j_beg - 1 + j_end_list(j)
+               this_i_beg = dom%i_beg - 1 + i_beg_list(j)
+               this_i_end = dom%i_beg - 1 + i_end_list(j)
+               this_j_beg = dom%j_beg - 1 + j_beg_list(j)
+               this_j_end = dom%j_beg - 1 + j_end_list(j)
                this_n_sites_mpi = this_i_end - this_i_beg + 1
-               this_energies = 0.d0
+               res%this_energies = 0.d0
                if (params%do_forces) then
-                  this_forces = 0.d0
-                  this_virial = 0.d0
+                  res%this_forces = 0.d0
+                  res%this_virial = 0.d0
                end if
-               if (soap_turbo_hypers(i)%is_dipole_model) then
-                  this_local_dipoles = 0.d0
-                  this_energies_dipole = 0.d0
+               if (model%soap_turbo_hypers(i)%is_dipole_model) then
+                  res%this_local_dipoles = 0.d0
+                  res%this_energies_dipole = 0.d0
                end if
-               if (soap_turbo_hypers(i)%has_local_properties) then
-                  this_local_properties = 0.d0
+               if (model%soap_turbo_hypers(i)%has_local_properties) then
+                  res%this_local_properties = 0.d0
                   if (params%do_forces) then
-                     this_local_properties_cart_der = 0.d0
+                     res%this_local_properties_cart_der = 0.d0
                      !             I don't remember why this needs a pointer <----------------------------------------- CHECK
-                     nullify (this_local_properties_cart_der_pt)
-                     this_local_properties_cart_der_pt =>&
-                          & this_local_properties_cart_der(1:3,&
+                     nullify (res%this_local_properties_cart_der_pt)
+                     res%this_local_properties_cart_der_pt =>&
+                          & res%this_local_properties_cart_der(1:3,&
                           & this_j_beg:this_j_end, 1:params&
                           &%n_local_properties)
                   end if
@@ -1755,59 +1618,63 @@ program turbogap
 
 #ifdef _GPU
                call get_gap_soap( &
-                  n_sparse, n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), &
-                  neighbors_list(this_j_beg:this_j_end), soap_turbo_hypers(i)%n_species, &
-                  soap_turbo_hypers(i)%species_types, rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), &
-                  phis(this_j_beg:this_j_end), xyz(1:3, this_j_beg:this_j_end), alpha_max_d, &
-                  soap_turbo_hypers(i)%alpha_max, soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%dim, rcut_hard_d, &
-                  soap_turbo_hypers(i)%rcut_hard, rcut_soft_d, nf_d, global_scaling_d, atom_sigma_r_d, &
-                  soap_turbo_hypers(i)%atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
-                  amplitude_scaling_d, soap_turbo_hypers(i)%radial_enhancement, central_weight_d, &
-                  soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
-                  soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
+                  n_sparse, state%n_sites, this_n_sites_mpi, nl%n_neigh(this_i_beg:this_i_end), &
+                  nl%neighbors_list(this_j_beg:this_j_end), model%soap_turbo_hypers(i)%n_species, &
+                  model%soap_turbo_hypers(i)%species_types, nl%rjs(this_j_beg:this_j_end), nl%thetas(this_j_beg:this_j_end), &
+                  nl%phis(this_j_beg:this_j_end), nl%xyz(1:3, this_j_beg:this_j_end), alpha_max_d, &
+                  model%soap_turbo_hypers(i)%alpha_max, model%soap_turbo_hypers(i)%l_max, model%soap_turbo_hypers(i)%dim, &
+                  rcut_hard_d, &
+                  model%soap_turbo_hypers(i)%rcut_hard, rcut_soft_d, nf_d, global_scaling_d, atom_sigma_r_d, &
+                  model%soap_turbo_hypers(i)%atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
+                  amplitude_scaling_d, model%soap_turbo_hypers(i)%radial_enhancement, central_weight_d, &
+                  model%soap_turbo_hypers(i)%central_weight, model%soap_turbo_hypers(i)%basis, &
+                  model%soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
                   params%do_prediction, params%write_soap, params%write_derivatives, &
-                  soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_soap_indices, &
-                  soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
-                  xyz_species(this_i_beg:this_i_end), xyz_species_supercell, params%all_atoms, &
-                  params%which_atom, indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
-                  soap_turbo_hypers(i)%has_local_properties, soap_turbo_hypers(i)%n_local_properties, &
-                  soap_turbo_hypers(i)%local_property_models, n_lp_count, energies_soap, forces_soap, &
-                  this_local_properties_pt, this_local_properties_cart_der_pt, local_property_indexes, this_virial, &
-                  time%soap_lin(3), time%get_soap(3), soap_turbo_hypers(i)%W_d, soap_turbo_hypers(i)%S_d, &
-                  soap_turbo_hypers(i)%multiplicity_array_d, soap_turbo_hypers(i)%st_W_d, &
-                  soap_turbo_hypers(i)%st_S_d, soap_turbo_hypers(i)%st_multiplicity_array_d, &
-                  soap_turbo_hypers(i)%recompute_basis, time%local_prop, &
-                  soap_turbo_hypers(i)%is_dipole_model, local_dipoles, energies_dipole)
+                  model%soap_turbo_hypers(i)%compress_soap, model%soap_turbo_hypers(i)%compress_soap_indices, &
+                  model%soap_turbo_hypers(i)%delta, model%soap_turbo_hypers(i)%zeta, model%soap_turbo_hypers(i)%central_species, &
+                  state%xyz_species(this_i_beg:this_i_end), state%xyz_species_supercell, params%all_atoms, &
+                  params%which_atom, state%indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
+                  model%soap_turbo_hypers(i)%has_local_properties, model%soap_turbo_hypers(i)%n_local_properties, &
+                  model%soap_turbo_hypers(i)%local_property_models, n_lp_count, res%energies_soap, res%forces_soap, &
+                  res%this_local_properties_pt, res%this_local_properties_cart_der_pt, model%local_property_indexes, &
+                  res%this_virial, &
+                  time%soap_lin(3), time%get_soap(3), model%soap_turbo_hypers(i)%W_d, model%soap_turbo_hypers(i)%S_d, &
+                  model%soap_turbo_hypers(i)%multiplicity_array_d, model%soap_turbo_hypers(i)%st_W_d, &
+                  model%soap_turbo_hypers(i)%st_S_d, model%soap_turbo_hypers(i)%st_multiplicity_array_d, &
+                  model%soap_turbo_hypers(i)%recompute_basis, time%local_prop, &
+                  model%soap_turbo_hypers(i)%is_dipole_model, res%local_dipoles, res%energies_dipole)
 #else
-               call soap_backend_begin(soap_turbo_hypers(i))
-               call get_gap_soap(n_sites, this_n_sites_mpi, n_neigh(this_i_beg:this_i_end), neighbors_list(this_j_beg:this_j_end), &
-                    soap_turbo_hypers(i)%n_species, soap_turbo_hypers(i)%species_types, &
-                    rjs(this_j_beg:this_j_end), thetas(this_j_beg:this_j_end), phis(this_j_beg:this_j_end), &
-                    xyz(1:3, this_j_beg:this_j_end), &
-                    soap_turbo_hypers(i)%alpha_max, &
-                    soap_turbo_hypers(i)%l_max, soap_turbo_hypers(i)%dim, soap_turbo_hypers(i)%rcut_hard, &
-                    soap_turbo_hypers(i)%rcut_soft, soap_turbo_hypers(i)%nf, soap_turbo_hypers(i)%global_scaling, &
-                    soap_turbo_hypers(i)%atom_sigma_r, soap_turbo_hypers(i)%atom_sigma_r_scaling, &
-                    soap_turbo_hypers(i)%atom_sigma_t, soap_turbo_hypers(i)%atom_sigma_t_scaling, &
-                    soap_turbo_hypers(i)%amplitude_scaling, soap_turbo_hypers(i)%radial_enhancement, &
-                    soap_turbo_hypers(i)%central_weight, soap_turbo_hypers(i)%basis, &
-                    soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
+               call soap_backend_begin(model%soap_turbo_hypers(i))
+               call get_gap_soap(state%n_sites, this_n_sites_mpi, nl%n_neigh(this_i_beg:this_i_end), &
+                  nl%neighbors_list(this_j_beg:this_j_end), &
+                    model%soap_turbo_hypers(i)%n_species, model%soap_turbo_hypers(i)%species_types, &
+                    nl%rjs(this_j_beg:this_j_end), nl%thetas(this_j_beg:this_j_end), nl%phis(this_j_beg:this_j_end), &
+                    nl%xyz(1:3, this_j_beg:this_j_end), &
+                    model%soap_turbo_hypers(i)%alpha_max, &
+                    model%soap_turbo_hypers(i)%l_max, model%soap_turbo_hypers(i)%dim, model%soap_turbo_hypers(i)%rcut_hard, &
+                    model%soap_turbo_hypers(i)%rcut_soft, model%soap_turbo_hypers(i)%nf, &
+                       model%soap_turbo_hypers(i)%global_scaling, &
+                    model%soap_turbo_hypers(i)%atom_sigma_r, model%soap_turbo_hypers(i)%atom_sigma_r_scaling, &
+                    model%soap_turbo_hypers(i)%atom_sigma_t, model%soap_turbo_hypers(i)%atom_sigma_t_scaling, &
+                    model%soap_turbo_hypers(i)%amplitude_scaling, model%soap_turbo_hypers(i)%radial_enhancement, &
+                    model%soap_turbo_hypers(i)%central_weight, model%soap_turbo_hypers(i)%basis, &
+                    model%soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
                     params%do_prediction, params%write_soap, params%write_derivatives, &
-                    soap_turbo_hypers(i)%compress_soap, soap_turbo_hypers(i)%compress_P_nonzero, &
-                    soap_turbo_hypers(i)%compress_P_i, soap_turbo_hypers(i)%compress_P_j, &
-                    soap_turbo_hypers(i)%compress_P_el, &
-                    soap_turbo_hypers(i)%delta, soap_turbo_hypers(i)%zeta, soap_turbo_hypers(i)%central_species, &
-                    xyz_species(this_i_beg:this_i_end), xyz_species_supercell, &
-                    params%all_atoms, params%which_atom, indices, soap, soap_cart_der, &
+                    model%soap_turbo_hypers(i)%compress_soap, model%soap_turbo_hypers(i)%compress_P_nonzero, &
+                    model%soap_turbo_hypers(i)%compress_P_i, model%soap_turbo_hypers(i)%compress_P_j, &
+                    model%soap_turbo_hypers(i)%compress_P_el, &
+                    model%soap_turbo_hypers(i)%delta, model%soap_turbo_hypers(i)%zeta, model%soap_turbo_hypers(i)%central_species, &
+                    state%xyz_species(this_i_beg:this_i_end), state%xyz_species_supercell, &
+                    params%all_atoms, params%which_atom, state%indices, soap, soap_cart_der, &
                     der_neighbors, der_neighbors_list, &
-                    & soap_turbo_hypers(i)%has_local_properties,&
-                    & soap_turbo_hypers(i)%n_local_properties,&
-                    & soap_turbo_hypers(i)%local_property_models,&
-                    & this_energies, this_forces, this_local_properties_pt,&
-                    & this_local_properties_cart_der_pt,&
-                    & local_property_indexes, this_i_beg, this_i_end, this_j_beg, this_j_end, &
-                    & this_virial, n_lp_count, soap_turbo_hypers(i)%is_dipole_model, &
-                    & this_local_dipoles, this_energies_dipole)
+                    & model%soap_turbo_hypers(i)%has_local_properties,&
+                    & model%soap_turbo_hypers(i)%n_local_properties,&
+                    & model%soap_turbo_hypers(i)%local_property_models,&
+                    & res%this_energies, res%this_forces, res%this_local_properties_pt,&
+                    & res%this_local_properties_cart_der_pt,&
+                    & model%local_property_indexes, this_i_beg, this_i_end, this_j_beg, this_j_end, &
+                    & res%this_virial, n_lp_count, model%soap_turbo_hypers(i)%is_dipole_model, &
+                    & res%this_local_dipoles, res%this_energies_dipole)
 
                call soap_backend_end()
 #endif
@@ -1818,31 +1685,31 @@ program turbogap
 !              zero they were set to above -- get_gap_soap never writes them --
 !              so its fictitious energy stays out of energies_soap and its
 !              gradient out of forces_soap. It is carried separately.
-               energies_soap = energies_soap + this_energies
+               res%energies_soap = res%energies_soap + res%this_energies
 
-               if (soap_turbo_hypers(i)%is_dipole_model) then
-                  local_dipoles = local_dipoles + this_local_dipoles
-                  energies_dipole = energies_dipole + this_energies_dipole
+               if (model%soap_turbo_hypers(i)%is_dipole_model) then
+                  res%local_dipoles = res%local_dipoles + res%this_local_dipoles
+                  res%energies_dipole = res%energies_dipole + res%this_energies_dipole
                end if
 
-               if (soap_turbo_hypers(i)%has_local_properties) then
+               if (model%soap_turbo_hypers(i)%has_local_properties) then
 
-                  local_properties(:, :) = local_properties(:, :) + this_local_properties(:, :)
-                  if (any(soap_turbo_hypers(i)&
+                  res%local_properties(:, :) = res%local_properties(:, :) + res%this_local_properties(:, :)
+                  if (any(model%soap_turbo_hypers(i)&
                        &%local_property_models(:)%do_derivatives) &
                        & .and. params%do_derivatives) then
-                     local_properties_cart_der(:, :, :) =&
-                          & local_properties_cart_der(:, :, :) +&
-                          & this_local_properties_cart_der(:, :, :)
+                     res%local_properties_cart_der(:, :, :) =&
+                          & res%local_properties_cart_der(:, :, :) +&
+                          & res%this_local_properties_cart_der(:, :, :)
                   end if
 
                end if
                if (params%do_forces) then
-                  forces_soap = forces_soap + this_forces
-                  virial_soap = virial_soap + this_virial
+                  res%forces_soap = res%forces_soap + res%this_forces
+                  res%virial_soap = res%virial_soap + res%this_virial
                end if
             end do
-            n_lp_count = n_lp_count + soap_turbo_hypers(i)%n_local_properties
+            n_lp_count = n_lp_count + model%soap_turbo_hypers(i)%n_local_properties
 
 #ifdef _GPU
             call gpu_free_async(nf_d, gpu_stream)
@@ -1857,10 +1724,10 @@ program turbogap
             call gpu_free_async(alpha_max_d, gpu_stream)
             call gpu_free_async(central_weight_d, gpu_stream)
 
-            if (soap_turbo_hypers(i)%has_local_properties) then
-               do j = 1, soap_turbo_hypers(i)%n_local_properties
-                  call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)%alphas_d, gpu_stream)
-                  call gpu_free_async(soap_turbo_hypers(i)%local_property_models(j)%Qs_d, gpu_stream)
+            if (model%soap_turbo_hypers(i)%has_local_properties) then
+               do j = 1, model%soap_turbo_hypers(i)%n_local_properties
+                  call gpu_free_async(model%soap_turbo_hypers(i)%local_property_models(j)%alphas_d, gpu_stream)
+                  call gpu_free_async(model%soap_turbo_hypers(i)%local_property_models(j)%Qs_d, gpu_stream)
                end do
             end if
 
@@ -1878,7 +1745,7 @@ program turbogap
             ! FILES WITH MORE THAN ONE MPI TASK
             if (rank == 0) then
                !       Write out stuff - THIS SHOULD PROBABLY BE PUT IN A MODULE
-               if (n_soap_turbo == 1) then
+               if (model%n_soap_turbo == 1) then
                   i_char = ""
                else
                   write (i_char, '(I7)') i
@@ -1886,14 +1753,14 @@ program turbogap
                end if
                !       Write the SOAP vectors - NOT THE OPTIMAL STRATEGY IN TERMS OF DISK SPACE SINCE SOME ATOMS HAVE SOAP = 0
                if (params%write_soap) then
-                  if (n_xyz == 1 .or. md_istep == 0) then
+                  if (loop%n_xyz == 1 .or. loop%md_istep == 0) then
                      open (unit=10, file="soap"//trim(i_char)//".dat", status="unknown")
                   else
                      open (unit=10, file="soap"//trim(i_char)//".dat", status="old", position="append")
                   end if
                   if (.not. params%do_md .or. &
-                      (params%do_md .and. (md_istep == 0 .or. md_istep == params%md_nsteps .or. &
-                                           modulo(md_istep, params%write_xyz) == 0))) then
+                      (params%do_md .and. (loop%md_istep == 0 .or. loop%md_istep == params%md_nsteps .or. &
+                                           modulo(loop%md_istep, params%write_xyz) == 0))) then
                      n_sites_this = size(soap, 2)
                      n_soap = size(soap, 1)
                      write (10, *) n_sites_this, n_soap
@@ -1907,22 +1774,22 @@ program turbogap
 
                !       Optionally, write out the derivatives (might take a lot of disk space)
                if ((params%do_derivatives .or. params%do_derivatives_fd) .and. params%write_derivatives) then
-                  if (n_xyz == 1 .or. md_istep == 0) then
+                  if (loop%n_xyz == 1 .or. loop%md_istep == 0) then
                      open (unit=10, file="soap_der"//trim(i_char)//".dat", status="unknown")
                   else
                      open (unit=10, file="soap_der"//trim(i_char)//".dat", status="old", position="append")
                   end if
                   if (.not. params%do_md .or. &
-                      (params%do_md .and. (md_istep == 0 .or. md_istep == params%md_nsteps .or. &
-                                           modulo(md_istep, params%write_xyz) == 0))) then
+                      (params%do_md .and. (loop%md_istep == 0 .or. loop%md_istep == params%md_nsteps .or. &
+                                           modulo(loop%md_istep, params%write_xyz) == 0))) then
                      !           Note, this n_sites is not the same as the total number of sites, it's just the total number
                      !           of sites that have a derivative, since the first neighbor of each site is itself, the site
                      !           ID can always be retrieved from there. Note also that the sites are not necessarily given in
                      !           order
                      n_sites_this = size(der_neighbors, 1)
                      n_soap = size(soap_cart_der, 2)
-                     n_atom_pairs = size(der_neighbors_list, 1)
-                     write (10, *) n_sites, n_soap, n_atom_pairs
+                     nl%n_atom_pairs = size(der_neighbors_list, 1)
+                     write (10, *) state%n_sites, n_soap, nl%n_atom_pairs
                      k = 1
                      k2 = 0
                      do i2 = 1, n_sites_this
@@ -1948,11 +1815,11 @@ program turbogap
          end do
          call time_end(time%gap)
 
-         if (any_has_local_properties(soap_turbo_hypers)) then
+         if (any_has_local_properties(model%soap_turbo_hypers)) then
             call time_start(time%mpi)
-            call comm_sum_to_root(comm, local_properties, this_local_properties, n_sites*params%n_local_properties)
-            local_properties = this_local_properties
-            call comm_bcast(comm, local_properties, n_sites*params%n_local_properties)
+            call comm_sum_to_root(comm, res%local_properties, res%this_local_properties, state%n_sites*params%n_local_properties)
+            res%local_properties = res%this_local_properties
+            call comm_bcast(comm, res%local_properties, state%n_sites*params%n_local_properties)
 
             call time_end(time%mpi)
          end if
@@ -1961,20 +1828,20 @@ program turbogap
 !        everywhere else and a plain sum is the whole reduction.
          if (params%do_dipole) then
             call time_start(time%mpi)
-            call comm_sum_to_root(comm, local_dipoles, this_local_dipoles, 3*n_sites)
-            local_dipoles = this_local_dipoles
-            call comm_bcast(comm, local_dipoles, 3*n_sites)
+            call comm_sum_to_root(comm, res%local_dipoles, res%this_local_dipoles, 3*state%n_sites)
+            res%local_dipoles = res%this_local_dipoles
+            call comm_bcast(comm, res%local_dipoles, 3*state%n_sites)
 
-            call comm_sum_to_root(comm, energies_dipole, this_energies_dipole, n_sites)
-            energies_dipole = this_energies_dipole
-            call comm_bcast(comm, energies_dipole, n_sites)
+            call comm_sum_to_root(comm, res%energies_dipole, res%this_energies_dipole, state%n_sites)
+            res%energies_dipole = res%this_energies_dipole
+            call comm_bcast(comm, res%energies_dipole, state%n_sites)
             call time_end(time%mpi)
          end if
 
          if (params%do_dipole) then
-            dipole(1) = sum(local_dipoles(1, 1:n_sites))
-            dipole(2) = sum(local_dipoles(2, 1:n_sites))
-            dipole(3) = sum(local_dipoles(3, 1:n_sites))
+            res%dipole(1) = sum(res%local_dipoles(1, 1:state%n_sites))
+            res%dipole(2) = sum(res%local_dipoles(2, 1:state%n_sites))
+            res%dipole(3) = sum(res%local_dipoles(3, 1:state%n_sites))
          end if
 
 !        IR PREDICTION FROM A TRAJECTORY. This frame's total dipole joins the
@@ -1987,7 +1854,7 @@ program turbogap
 !        ensemble replicated means the final transform needs no communication.
 !        Three doubles a frame; a 100 ps trajectory at 1 fs is 2.4 MB.
          if (ir_from_traj) then
-            call ir_fft_frames_push(ir_fft_frames, dipole, frame_time, has_frame_time)
+            call ir_fft_frames_push(ir_fft_frames, res%dipole, state%frame_time, state%has_frame_time)
          end if
 
          !     Compute vdW energies and forces
@@ -2007,44 +1874,44 @@ program turbogap
 !        Fortran-aware could parse it.
 #ifdef _GPU
 #ifdef _MPIF90
-         call compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
-                            n_sites, n_neigh, neighbors_list, species, neighbor_species, rjs, xyz, &
-                            local_properties, local_properties_cart_der, &
-                            i_beg, i_end, j_beg, j_end, rank, n_omp, &
-                            this_energies_estat, this_forces_estat, this_virial_estat, time)
+         call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
+                            state%n_sites, nl%n_neigh, nl%neighbors_list, state%species, nl%neighbor_species, nl%rjs, nl%xyz, &
+                            res%local_properties, res%local_properties_cart_der, &
+                            dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, n_omp, &
+                            res%this_energies_estat, res%this_forces_estat, res%this_virial_estat, time)
 #else
-         call compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
-                            n_sites, n_neigh, neighbors_list, species, neighbor_species, rjs, xyz, &
-                            local_properties, local_properties_cart_der, &
-                            i_beg, i_end, j_beg, j_end, rank, n_omp, &
-                            energies_estat, forces_estat, virial_estat, time)
+         call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
+                            state%n_sites, nl%n_neigh, nl%neighbors_list, state%species, nl%neighbor_species, nl%rjs, nl%xyz, &
+                            res%local_properties, res%local_properties_cart_der, &
+                            dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, n_omp, &
+                            res%energies_estat, res%forces_estat, res%virial_estat, time)
 #endif
 #else
 #ifdef _MPIF90
-         call compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
-                            n_sites, n_neigh, neighbors_list, rjs, xyz, &
-                            local_properties, local_properties_cart_der, &
-                            i_beg, i_end, j_beg, j_end, rank, &
-                            this_energies_estat, this_forces_estat, this_virial_estat, time)
+         call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
+                            state%n_sites, nl%n_neigh, nl%neighbors_list, nl%rjs, nl%xyz, &
+                            res%local_properties, res%local_properties_cart_der, &
+                            dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, &
+                            res%this_energies_estat, res%this_forces_estat, res%this_virial_estat, time)
 #else
-         call compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
-                            n_sites, n_neigh, neighbors_list, rjs, xyz, &
-                            local_properties, local_properties_cart_der, &
-                            i_beg, i_end, j_beg, j_end, rank, &
-                            energies_estat, forces_estat, virial_estat, time)
+         call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
+                            state%n_sites, nl%n_neigh, nl%neighbors_list, nl%rjs, nl%xyz, &
+                            res%local_properties, res%local_properties_cart_der, &
+                            dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, &
+                            res%energies_estat, res%forces_estat, res%virial_estat, time)
 #endif
 #endif
 
-         call compute_vdw(params, any_has_vdw(soap_turbo_hypers), n_sites, &
-                          n_neigh, neighbors_list, neighbor_species, rjs, xyz, &
-                          local_properties, local_properties_cart_der, vdw_lp_index, &
-                          i_beg, i_end, j_beg, j_end, n_atom_pairs_by_rank, site_in_rank, &
-                          indices, rank, ntasks, md_istep, vdw_ws, &
-                          energies_vdw, forces_vdw, virial_vdw, local_virial_vdw_diag, &
-                          this_energies_vdw, this_forces_vdw, this_virial_vdw, &
-                          this_local_virial_vdw_diag, energies_vdw_corr, forces_vdw_corr, &
-                          local_virial_vdw_diag_corr, mbd_ts_scaling, this_mbd_ts_scaling, &
-                          update_mbd_ts_scaling, time)
+         call compute_vdw(params, any_has_vdw(model%soap_turbo_hypers), state%n_sites, &
+                          nl%n_neigh, nl%neighbors_list, nl%neighbor_species, nl%rjs, nl%xyz, &
+                          res%local_properties, res%local_properties_cart_der, model%vdw_lp_index, &
+                          dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, dom%n_atom_pairs_by_rank, dom%site_in_rank, &
+                          state%indices, rank, ntasks, loop%md_istep, vdw_ws, &
+                          res%energies_vdw, res%forces_vdw, res%virial_vdw, res%local_virial_vdw_diag, &
+                          res%this_energies_vdw, res%this_forces_vdw, res%this_virial_vdw, &
+                          res%this_local_virial_vdw_diag, res%energies_vdw_corr, res%forces_vdw_corr, &
+                          res%local_virial_vdw_diag_corr, res%mbd_ts_scaling, res%this_mbd_ts_scaling, &
+                          res%update_mbd_ts_scaling, time)
 
          !--- EXPERIMENTAL SPECTRUM CALCULATION AND FORCES ---!
 
@@ -2060,7 +1927,7 @@ program turbogap
                ! If we want to compute the experimental interpolation, we do it now.
 
                call get_write_condition(params%do_mc, params%do_md&
-                    &, mc_istep, md_istep, params%write_xyz,&
+                    &, loop%mc_istep, loop%md_istep, params%write_xyz,&
                     & write_condition)
 
                if (params%exp_data(i)%compute_exp) then
@@ -2083,15 +1950,15 @@ program turbogap
 
                   call preprocess_exp_data(params, params%exp_data(i)%x,&
                        & params%exp_data(i)%y, params%exp_data(i)%label,&
-                       & n_sites, dot_product(cross_product(a_box,&
-                       & b_box), c_box)/(dfloat(indices(1)*indices(2) &
-                       &*indices(3))), params%exp_data(i)%input, exp_output, .true.)
+                       & state%n_sites, dot_product(cross_product(state%a_box,&
+                       & state%b_box), state%c_box)/(dfloat(state%indices(1)*state%indices(2) &
+                       &*state%indices(3))), params%exp_data(i)%input, exp_output, .true.)
 
                   if (params%write_exp .and. .not. params&
                        &%exp_data(i)%wrote_exp .and. rank == 0 .and. write_condition) then
 
                      call get_overwrite_condition(params%do_mc,&
-                          & params%do_md, mc_istep, md_istep, params&
+                          & params%do_md, loop%mc_istep, loop%md_istep, params&
                           &%write_xyz, overwrite_condition)
 
                      call write_exp_data(params%exp_data(i)%x, params&
@@ -2110,7 +1977,7 @@ program turbogap
                           & trim(params%exp_data(i)%label)//"_exp_fit.dat"
 
                      call get_overwrite_condition(params%do_mc,&
-                          & params%do_md, mc_istep, md_istep, params&
+                          & params%do_md, loop%mc_istep, loop%md_istep, params&
                           &%write_xyz, overwrite_condition)
 
                      call write_exp_data(params%exp_data(i)%x, params%exp_data(i)%y,&
@@ -2137,19 +2004,21 @@ program turbogap
          ! rather than inside a continued argument list where nothing
          ! Fortran-aware could parse it.
 #ifdef _MPIF90
-         call compute_exp_xps(params, n_sites, n_xyz, xyz, neighbors_list, n_neigh, &
-                              local_properties, local_properties_cart_der, soap_turbo_hypers, &
-                              a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
-                              md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
+         call compute_exp_xps(params, state%n_sites, loop%n_xyz, nl%xyz, nl%neighbors_list, nl%n_neigh, &
+                              res%local_properties, res%local_properties_cart_der, model%soap_turbo_hypers, &
+                              state%a_box, state%b_box, state%c_box, state%indices, dom%i_beg, dom%i_end, dom%j_beg, &
+                              dom%j_end, rank, &
+                              loop%md_istep, loop%mc_istep, model%valid_xps, model%xps_idx, model%core_be_lp_index, &
                               write_condition, overwrite_condition, exp_output, &
-                              this_energies_lp, this_forces_lp, this_virial_lp, time)
+                              res%this_energies_lp, res%this_forces_lp, res%this_virial_lp, time)
 #else
-         call compute_exp_xps(params, n_sites, n_xyz, xyz, neighbors_list, n_neigh, &
-                              local_properties, local_properties_cart_der, soap_turbo_hypers, &
-                              a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
-                              md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
+         call compute_exp_xps(params, state%n_sites, loop%n_xyz, nl%xyz, nl%neighbors_list, nl%n_neigh, &
+                              res%local_properties, res%local_properties_cart_der, model%soap_turbo_hypers, &
+                              state%a_box, state%b_box, state%c_box, state%indices, dom%i_beg, dom%i_end, dom%j_beg, &
+                              dom%j_end, rank, &
+                              loop%md_istep, loop%mc_istep, model%valid_xps, model%xps_idx, model%core_be_lp_index, &
                               write_condition, overwrite_condition, exp_output, &
-                              energies_lp, forces_lp, virial_lp, time)
+                              res%energies_lp, res%forces_lp, res%virial_lp, time)
 #endif
 
          !###---   (Partial) Pair distribution functions and XRD   ---###!
@@ -2161,45 +2030,47 @@ program turbogap
          ! lists disappear from the moved code.
 #ifdef _GPU
 #ifdef _MPIF90
-         call compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
-                                  n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, &
-                                  j_end, rank, ntasks, ierr, md_istep, mc_istep, this_energies_pdf, &
-                                  this_forces_pdf, this_virial_pdf, this_energies_sf, &
-                                  this_forces_sf, this_virial_sf, this_energies_xrd, this_forces_xrd, &
-                                  this_virial_xrd, this_energies_nd, this_forces_nd, this_virial_nd, time, &
+         call compute_exp_spectra(params, state%n_sites, state%species, state%positions, nl%rjs, nl%xyz, nl%neighbors_list, &
+                                  nl%n_neigh, nl%neighbor_species, state%indices, state%a_box, state%b_box, state%c_box, &
+                                  dom%i_beg, dom%i_end, dom%j_beg, &
+                                  dom%j_end, rank, ntasks, ierr, loop%md_istep, loop%mc_istep, res%this_energies_pdf, &
+                                  res%this_forces_pdf, res%this_virial_pdf, res%this_energies_sf, &
+                                  res%this_forces_sf, res%this_virial_sf, res%this_energies_xrd, res%this_forces_xrd, &
+                                  res%this_virial_xrd, res%this_energies_nd, res%this_forces_nd, res%this_virial_nd, time, &
                                   i_beg_list, i_end_list, j_beg_list, &
                                   j_end_list, n_omp, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, &
                                   n_sites_temp, n_pairs_temp, write_condition, overwrite_condition, &
-                                  temp_string, species_types_actual, v_uc)
+                                  temp_string, species_types_actual, state%v_uc)
 #else
-         call compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
-                                  n_neigh, neighbor_species, indices, a_box, b_box, c_box, i_beg, i_end, j_beg, &
-                                  j_end, rank, ntasks, ierr, md_istep, mc_istep, energies_pdf, forces_pdf, &
-                                  virial_pdf, energies_sf, forces_sf, &
-                                  virial_sf, energies_xrd, forces_xrd, virial_xrd, energies_nd, forces_nd, &
-                                  virial_nd, time, i_beg_list, &
+         call compute_exp_spectra(params, state%n_sites, state%species, state%positions, nl%rjs, nl%xyz, nl%neighbors_list, &
+                                  nl%n_neigh, nl%neighbor_species, state%indices, state%a_box, state%b_box, state%c_box, &
+                                  dom%i_beg, dom%i_end, dom%j_beg, &
+                                  dom%j_end, rank, ntasks, ierr, loop%md_istep, loop%mc_istep, res%energies_pdf, res%forces_pdf, &
+                                  res%virial_pdf, res%energies_sf, res%forces_sf, &
+                                  res%virial_sf, res%energies_xrd, res%forces_xrd, res%virial_xrd, res%energies_nd, res%forces_nd, &
+                                  res%virial_nd, time, i_beg_list, &
                                   i_end_list, j_beg_list, j_end_list, n_omp, omp_task, this_i_beg, this_i_end, &
                                   this_j_beg, this_j_end, n_sites_temp, n_pairs_temp, write_condition, &
-                                  overwrite_condition, temp_string, species_types_actual, v_uc)
+                                  overwrite_condition, temp_string, species_types_actual, state%v_uc)
 #endif
 #else
 #ifdef _MPIF90
-         call compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
-                                  n_neigh, neighbor_species, indices, a_box, b_box, c_box, &
-                                  i_beg, i_end, j_beg, j_end, rank, ntasks, ierr, md_istep, mc_istep, &
-                                  this_energies_pdf, this_forces_pdf, this_virial_pdf, &
-                                  this_energies_sf, this_forces_sf, this_virial_sf, &
-                                  this_energies_xrd, this_forces_xrd, this_virial_xrd, &
-                                  this_energies_nd, this_forces_nd, this_virial_nd, &
+         call compute_exp_spectra(params, state%n_sites, state%species, state%positions, nl%rjs, nl%xyz, nl%neighbors_list, &
+                                  nl%n_neigh, nl%neighbor_species, state%indices, state%a_box, state%b_box, state%c_box, &
+                                  dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, ntasks, ierr, loop%md_istep, loop%mc_istep, &
+                                  res%this_energies_pdf, res%this_forces_pdf, res%this_virial_pdf, &
+                                  res%this_energies_sf, res%this_forces_sf, res%this_virial_sf, &
+                                  res%this_energies_xrd, res%this_forces_xrd, res%this_virial_xrd, &
+                                  res%this_energies_nd, res%this_forces_nd, res%this_virial_nd, &
                                   time)
 #else
-         call compute_exp_spectra(params, n_sites, species, positions, rjs, xyz, neighbors_list, &
-                                  n_neigh, neighbor_species, indices, a_box, b_box, c_box, &
-                                  i_beg, i_end, j_beg, j_end, rank, ntasks, ierr, md_istep, mc_istep, &
-                                  energies_pdf, forces_pdf, virial_pdf, &
-                                  energies_sf, forces_sf, virial_sf, &
-                                  energies_xrd, forces_xrd, virial_xrd, &
-                                  energies_nd, forces_nd, virial_nd, &
+         call compute_exp_spectra(params, state%n_sites, state%species, state%positions, nl%rjs, nl%xyz, nl%neighbors_list, &
+                                  nl%n_neigh, nl%neighbor_species, state%indices, state%a_box, state%b_box, state%c_box, &
+                                  dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, ntasks, ierr, loop%md_istep, loop%mc_istep, &
+                                  res%energies_pdf, res%forces_pdf, res%virial_pdf, &
+                                  res%energies_sf, res%forces_sf, res%virial_sf, &
+                                  res%energies_xrd, res%forces_xrd, res%virial_xrd, &
+                                  res%energies_nd, res%forces_nd, res%virial_nd, &
                                   time)
 #endif
 #endif
@@ -2211,29 +2082,33 @@ program turbogap
             !       names from src/gap_backend_gpu.f90 and the Makefile picks one.
             call time_start(time%gap)
 
-            call gap_backend_begin(params, rjs, xyz, n_neigh, species, neighbor_species, &
-                                   neighbors_list, i_beg, i_end, j_beg, j_end)
+            call gap_backend_begin(params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
+                                   nl%neighbors_list, dom%i_beg, dom%i_end, dom%j_beg, dom%j_end)
 
-            call add_2b_contribution(n_distance_2b, distance_2b_hypers, &
-                                     params, rjs, xyz, n_neigh, species, neighbor_species, &
-                                     i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                     energies_2b, forces_2b, virial_2b, time)
+            call add_2b_contribution(model%n_distance_2b, model%distance_2b_hypers, &
+                                     params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
+                                     dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, res%this_energies, res%this_forces, &
+                                     res%this_virial, &
+                                     res%energies_2b, res%forces_2b, res%virial_2b, time)
 
-            call add_core_pot_contribution(n_core_pot, core_pot_hypers, &
-                                           params, rjs, xyz, n_neigh, species, neighbor_species, &
-                                           i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                           energies_core_pot, forces_core_pot, virial_core_pot, time)
+            call add_core_pot_contribution(model%n_core_pot, model%core_pot_hypers, &
+                                           params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
+                                           dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, res%this_energies, res%this_forces, &
+                                           res%this_virial, &
+                                           res%energies_core_pot, res%forces_core_pot, res%virial_core_pot, time)
 
 #ifdef _GPU
-            call add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
-                                     params, rjs, xyz, n_neigh, species, neighbor_species, &
-                                     i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                     forces, energies_3b, forces_3b, virial_3b, time)
+            call add_3b_contribution(model%n_angle_3b, model%angle_3b_hypers, nl%neighbors_list, &
+                                     params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
+                                     dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, res%this_energies, res%this_forces, &
+                                     res%this_virial, &
+                                     res%forces, res%energies_3b, res%forces_3b, res%virial_3b, time)
 #else
-            call add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
-                                     params, rjs, xyz, n_neigh, species, neighbor_species, &
-                                     i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                     energies_3b, forces_3b, virial_3b, time)
+            call add_3b_contribution(model%n_angle_3b, model%angle_3b_hypers, nl%neighbors_list, &
+                                     params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
+                                     dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, res%this_energies, res%this_forces, &
+                                     res%this_virial, &
+                                     res%energies_3b, res%forces_3b, res%virial_3b, time)
 #endif
 
             call gap_backend_end()
@@ -2249,159 +2124,159 @@ program turbogap
 !       this replaces was three independent copies of these conditions, where
 !       any two disagreeing shifts the slot numbering and silently attributes
 !       one family's energies and forces to another.
-            contrib_on(C_SOAP) = (n_soap_turbo > 0)
-            contrib_on(C_VDW) = allocated(this_energies_vdw)
-            contrib_on(C_ESTAT) = allocated(this_energies_estat)
-            contrib_on(C_LP) = allocated(this_energies_lp)
-            contrib_on(C_PDF) = allocated(this_energies_pdf) .and. params%valid_pdf
-            contrib_on(C_SF) = allocated(this_energies_sf) .and. params%valid_sf
-            contrib_on(C_XRD) = allocated(this_energies_xrd) .and. params%valid_xrd
-            contrib_on(C_ND) = allocated(this_energies_nd) .and. params%valid_nd
-            contrib_on(C_2B) = (n_distance_2b > 0)
-            contrib_on(C_CP) = (n_core_pot > 0)
-            contrib_on(C_3B) = (n_angle_3b > 0)
+            contrib_on(C_SOAP) = (model%n_soap_turbo > 0)
+            contrib_on(C_VDW) = allocated(res%this_energies_vdw)
+            contrib_on(C_ESTAT) = allocated(res%this_energies_estat)
+            contrib_on(C_LP) = allocated(res%this_energies_lp)
+            contrib_on(C_PDF) = allocated(res%this_energies_pdf) .and. params%valid_pdf
+            contrib_on(C_SF) = allocated(res%this_energies_sf) .and. params%valid_sf
+            contrib_on(C_XRD) = allocated(res%this_energies_xrd) .and. params%valid_xrd
+            contrib_on(C_ND) = allocated(res%this_energies_nd) .and. params%valid_nd
+            contrib_on(C_2B) = (model%n_distance_2b > 0)
+            contrib_on(C_CP) = (model%n_core_pot > 0)
+            contrib_on(C_3B) = (model%n_angle_3b > 0)
 
             n_active = 0
             if (contrib_on(C_SOAP)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => energies_soap
-               contrib(n_active)%e_dst => energies_soap
+               contrib(n_active)%e_src => res%energies_soap
+               contrib(n_active)%e_dst => res%energies_soap
                contrib(n_active)%forces = params%do_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => forces_soap
-                  contrib(n_active)%v_src => virial_soap
-                  contrib(n_active)%f_dst => forces_soap
-                  contrib(n_active)%v_dst => virial_soap
+                  contrib(n_active)%f_src => res%forces_soap
+                  contrib(n_active)%v_src => res%virial_soap
+                  contrib(n_active)%f_dst => res%forces_soap
+                  contrib(n_active)%v_dst => res%virial_soap
                end if
             end if
             if (contrib_on(C_VDW)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => this_energies_vdw
-               contrib(n_active)%e_dst => energies_vdw
+               contrib(n_active)%e_src => res%this_energies_vdw
+               contrib(n_active)%e_dst => res%energies_vdw
                contrib(n_active)%forces = params%do_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => this_forces_vdw
-                  contrib(n_active)%v_src => this_virial_vdw
-                  contrib(n_active)%f_dst => forces_vdw
-                  contrib(n_active)%v_dst => virial_vdw
+                  contrib(n_active)%f_src => res%this_forces_vdw
+                  contrib(n_active)%v_src => res%this_virial_vdw
+                  contrib(n_active)%f_dst => res%forces_vdw
+                  contrib(n_active)%v_dst => res%virial_vdw
                end if
             end if
             if (contrib_on(C_ESTAT)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => this_energies_estat
-               contrib(n_active)%e_dst => energies_estat
+               contrib(n_active)%e_src => res%this_energies_estat
+               contrib(n_active)%e_dst => res%energies_estat
                contrib(n_active)%forces = params%do_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => this_forces_estat
-                  contrib(n_active)%v_src => this_virial_estat
-                  contrib(n_active)%f_dst => forces_estat
-                  contrib(n_active)%v_dst => virial_estat
+                  contrib(n_active)%f_src => res%this_forces_estat
+                  contrib(n_active)%v_src => res%this_virial_estat
+                  contrib(n_active)%f_dst => res%forces_estat
+                  contrib(n_active)%v_dst => res%virial_estat
                end if
             end if
             if (contrib_on(C_LP)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => this_energies_lp
-               contrib(n_active)%e_dst => energies_lp
+               contrib(n_active)%e_src => res%this_energies_lp
+               contrib(n_active)%e_dst => res%energies_lp
                contrib(n_active)%forces = params%do_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => this_forces_lp
-                  contrib(n_active)%v_src => this_virial_lp
-                  contrib(n_active)%f_dst => forces_lp
-                  contrib(n_active)%v_dst => virial_lp
+                  contrib(n_active)%f_src => res%this_forces_lp
+                  contrib(n_active)%v_src => res%this_virial_lp
+                  contrib(n_active)%f_dst => res%forces_lp
+                  contrib(n_active)%v_dst => res%virial_lp
                end if
             end if
             if (contrib_on(C_PDF)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => this_energies_pdf
-               contrib(n_active)%e_dst => energies_pdf
+               contrib(n_active)%e_src => res%this_energies_pdf
+               contrib(n_active)%e_dst => res%energies_pdf
                contrib(n_active)%forces = params%do_forces .and. params%exp_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => this_forces_pdf
-                  contrib(n_active)%v_src => this_virial_pdf
-                  contrib(n_active)%f_dst => forces_pdf
-                  contrib(n_active)%v_dst => virial_pdf
+                  contrib(n_active)%f_src => res%this_forces_pdf
+                  contrib(n_active)%v_src => res%this_virial_pdf
+                  contrib(n_active)%f_dst => res%forces_pdf
+                  contrib(n_active)%v_dst => res%virial_pdf
                end if
             end if
             if (contrib_on(C_SF)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => this_energies_sf
-               contrib(n_active)%e_dst => energies_sf
+               contrib(n_active)%e_src => res%this_energies_sf
+               contrib(n_active)%e_dst => res%energies_sf
                contrib(n_active)%forces = params%do_forces .and. params%exp_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => this_forces_sf
-                  contrib(n_active)%v_src => this_virial_sf
-                  contrib(n_active)%f_dst => forces_sf
-                  contrib(n_active)%v_dst => virial_sf
+                  contrib(n_active)%f_src => res%this_forces_sf
+                  contrib(n_active)%v_src => res%this_virial_sf
+                  contrib(n_active)%f_dst => res%forces_sf
+                  contrib(n_active)%v_dst => res%virial_sf
                end if
             end if
             if (contrib_on(C_XRD)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => this_energies_xrd
-               contrib(n_active)%e_dst => energies_xrd
+               contrib(n_active)%e_src => res%this_energies_xrd
+               contrib(n_active)%e_dst => res%energies_xrd
                contrib(n_active)%forces = params%do_forces .and. params%exp_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => this_forces_xrd
-                  contrib(n_active)%v_src => this_virial_xrd
-                  contrib(n_active)%f_dst => forces_xrd
-                  contrib(n_active)%v_dst => virial_xrd
+                  contrib(n_active)%f_src => res%this_forces_xrd
+                  contrib(n_active)%v_src => res%this_virial_xrd
+                  contrib(n_active)%f_dst => res%forces_xrd
+                  contrib(n_active)%v_dst => res%virial_xrd
                end if
             end if
             if (contrib_on(C_ND)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => this_energies_nd
-               contrib(n_active)%e_dst => energies_nd
+               contrib(n_active)%e_src => res%this_energies_nd
+               contrib(n_active)%e_dst => res%energies_nd
                contrib(n_active)%forces = params%do_forces .and. params%exp_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => this_forces_nd
-                  contrib(n_active)%v_src => this_virial_nd
-                  contrib(n_active)%f_dst => forces_nd
-                  contrib(n_active)%v_dst => virial_nd
+                  contrib(n_active)%f_src => res%this_forces_nd
+                  contrib(n_active)%v_src => res%this_virial_nd
+                  contrib(n_active)%f_dst => res%forces_nd
+                  contrib(n_active)%v_dst => res%virial_nd
                end if
             end if
             if (contrib_on(C_2B)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => energies_2b
-               contrib(n_active)%e_dst => energies_2b
+               contrib(n_active)%e_src => res%energies_2b
+               contrib(n_active)%e_dst => res%energies_2b
                contrib(n_active)%forces = params%do_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => forces_2b
-                  contrib(n_active)%v_src => virial_2b
-                  contrib(n_active)%f_dst => forces_2b
-                  contrib(n_active)%v_dst => virial_2b
+                  contrib(n_active)%f_src => res%forces_2b
+                  contrib(n_active)%v_src => res%virial_2b
+                  contrib(n_active)%f_dst => res%forces_2b
+                  contrib(n_active)%v_dst => res%virial_2b
                end if
             end if
             if (contrib_on(C_CP)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => energies_core_pot
-               contrib(n_active)%e_dst => energies_core_pot
+               contrib(n_active)%e_src => res%energies_core_pot
+               contrib(n_active)%e_dst => res%energies_core_pot
                contrib(n_active)%forces = params%do_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => forces_core_pot
-                  contrib(n_active)%v_src => virial_core_pot
-                  contrib(n_active)%f_dst => forces_core_pot
-                  contrib(n_active)%v_dst => virial_core_pot
+                  contrib(n_active)%f_src => res%forces_core_pot
+                  contrib(n_active)%v_src => res%virial_core_pot
+                  contrib(n_active)%f_dst => res%forces_core_pot
+                  contrib(n_active)%v_dst => res%virial_core_pot
                end if
             end if
             if (contrib_on(C_3B)) then
                n_active = n_active + 1
-               contrib(n_active)%e_src => energies_3b
-               contrib(n_active)%e_dst => energies_3b
+               contrib(n_active)%e_src => res%energies_3b
+               contrib(n_active)%e_dst => res%energies_3b
                contrib(n_active)%forces = params%do_forces
                if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => forces_3b
-                  contrib(n_active)%v_src => virial_3b
-                  contrib(n_active)%f_dst => forces_3b
-                  contrib(n_active)%v_dst => virial_3b
+                  contrib(n_active)%f_src => res%forces_3b
+                  contrib(n_active)%v_src => res%virial_3b
+                  contrib(n_active)%f_dst => res%forces_3b
+                  contrib(n_active)%v_dst => res%virial_3b
                end if
             end if
 
             counter2 = n_active
 
-            allocate (all_energies(1:n_sites, 1:counter2))
-            allocate (all_this_energies(1:n_sites, 1:counter2))
+            allocate (all_energies(1:state%n_sites, 1:counter2))
+            allocate (all_this_energies(1:state%n_sites, 1:counter2))
             if (params%do_forces) then
-               allocate (all_forces(1:3, 1:n_sites, 1:counter2))
-               allocate (all_this_forces(1:3, 1:n_sites, 1:counter2))
+               allocate (all_forces(1:3, 1:state%n_sites, 1:counter2))
+               allocate (all_this_forces(1:3, 1:state%n_sites, 1:counter2))
                allocate (all_virial(1:3, 1:3, 1:counter2))
                allocate (all_this_virial(1:3, 1:3, 1:counter2))
             end if
@@ -2412,29 +2287,29 @@ program turbogap
 !       allocated and never zeroed, and mpi_reduce below reads the whole array
 !       regardless of who wrote what into it.
             do i_contrib = 1, n_active
-               all_energies(1:n_sites, i_contrib) = contrib(i_contrib)%e_src(1:n_sites)
+               all_energies(1:state%n_sites, i_contrib) = contrib(i_contrib)%e_src(1:state%n_sites)
                if (contrib(i_contrib)%forces) then
-                  all_forces(1:3, 1:n_sites, i_contrib) = contrib(i_contrib)%f_src(1:3, 1:n_sites)
+                  all_forces(1:3, 1:state%n_sites, i_contrib) = contrib(i_contrib)%f_src(1:3, 1:state%n_sites)
                   all_virial(1:3, 1:3, i_contrib) = contrib(i_contrib)%v_src(1:3, 1:3)
                else if (params%do_forces) then
-                  all_forces(1:3, 1:n_sites, i_contrib) = 0.d0
+                  all_forces(1:3, 1:state%n_sites, i_contrib) = 0.d0
                   all_virial(1:3, 1:3, i_contrib) = 0.d0
                end if
             end do
 
             !       Here we communicate
-            call comm_sum_to_root(comm, all_energies, all_this_energies, n_sites*counter2)
+            call comm_sum_to_root(comm, all_energies, all_this_energies, state%n_sites*counter2)
             if (params%do_forces) then
-               call comm_sum_to_root(comm, all_forces, all_this_forces, 3*n_sites*counter2)
+               call comm_sum_to_root(comm, all_forces, all_this_forces, 3*state%n_sites*counter2)
                call comm_sum_to_root(comm, all_virial, all_this_virial, 9*counter2)
             end if
 
 !       Unpack. For the six families packed from a this_ array this is where
 !       the reduced result lands in the un-prefixed one.
             do i_contrib = 1, n_active
-               contrib(i_contrib)%e_dst(1:n_sites) = all_this_energies(1:n_sites, i_contrib)
+               contrib(i_contrib)%e_dst(1:state%n_sites) = all_this_energies(1:state%n_sites, i_contrib)
                if (contrib(i_contrib)%forces) then
-                  contrib(i_contrib)%f_dst(1:3, 1:n_sites) = all_this_forces(1:3, 1:n_sites, i_contrib)
+                  contrib(i_contrib)%f_dst(1:3, 1:state%n_sites) = all_this_forces(1:3, 1:state%n_sites, i_contrib)
                   contrib(i_contrib)%v_dst(1:3, 1:3) = all_this_virial(1:3, 1:3, i_contrib)
                end if
             end do
@@ -2444,32 +2319,32 @@ program turbogap
 !       be deallocated through a pointer, and this_local_virial_vdw_diag has no
 !       counterpart in the list.
             if (contrib_on(C_VDW)) then
-               deallocate (this_energies_vdw)
-               if (params%do_forces) deallocate (this_forces_vdw, this_local_virial_vdw_diag)
+               deallocate (res%this_energies_vdw)
+               if (params%do_forces) deallocate (res%this_forces_vdw, res%this_local_virial_vdw_diag)
             end if
             if (contrib_on(C_ESTAT)) then
-               deallocate (this_energies_estat)
-               if (params%do_forces) deallocate (this_forces_estat)
+               deallocate (res%this_energies_estat)
+               if (params%do_forces) deallocate (res%this_forces_estat)
             end if
             if (contrib_on(C_LP)) then
-               deallocate (this_energies_lp)
-               if (params%do_forces) deallocate (this_forces_lp)
+               deallocate (res%this_energies_lp)
+               if (params%do_forces) deallocate (res%this_forces_lp)
             end if
             if (contrib_on(C_PDF)) then
-               deallocate (this_energies_pdf)
-               if (params%do_forces .and. params%exp_forces) deallocate (this_forces_pdf)
+               deallocate (res%this_energies_pdf)
+               if (params%do_forces .and. params%exp_forces) deallocate (res%this_forces_pdf)
             end if
             if (contrib_on(C_SF)) then
-               deallocate (this_energies_sf)
-               if (params%do_forces .and. params%exp_forces) deallocate (this_forces_sf)
+               deallocate (res%this_energies_sf)
+               if (params%do_forces .and. params%exp_forces) deallocate (res%this_forces_sf)
             end if
             if (contrib_on(C_XRD)) then
-               deallocate (this_energies_xrd)
-               if (params%do_forces .and. params%exp_forces) deallocate (this_forces_xrd)
+               deallocate (res%this_energies_xrd)
+               if (params%do_forces .and. params%exp_forces) deallocate (res%this_forces_xrd)
             end if
             if (contrib_on(C_ND)) then
-               deallocate (this_energies_nd)
-               if (params%do_forces .and. params%exp_forces) deallocate (this_forces_nd)
+               deallocate (res%this_energies_nd)
+               if (params%do_forces .and. params%exp_forces) deallocate (res%this_forces_nd)
             end if
 
             !       Clean up
@@ -2482,50 +2357,50 @@ program turbogap
 #endif
 
             !       Add up all the energy terms
-            energies = energies + energies_soap + energies_2b +&
-                 & energies_3b + energies_core_pot + energies_vdw + energies_estat !+energies_lp
+            res%energies = res%energies + res%energies_soap + res%energies_2b +&
+                 & res%energies_3b + res%energies_core_pot + res%energies_vdw + res%energies_estat !+energies_lp
 
-            if (valid_xps) energies_exp = energies_exp + energies_lp
-            if (perform%pdf) energies_exp = energies_exp + energies_pdf
-            if (perform%sf) energies_exp = energies_exp + energies_sf
-            if (perform%xrd) energies_exp = energies_exp + energies_xrd
-            if (perform%nd) energies_exp = energies_exp + energies_nd
+            if (model%valid_xps) res%energies_exp = res%energies_exp + res%energies_lp
+            if (perform%pdf) res%energies_exp = res%energies_exp + res%energies_pdf
+            if (perform%sf) res%energies_exp = res%energies_exp + res%energies_sf
+            if (perform%xrd) res%energies_exp = res%energies_exp + res%energies_xrd
+            if (perform%nd) res%energies_exp = res%energies_exp + res%energies_nd
 
-            if (params%exp_energies) energies = energies + energies_exp
+            if (params%exp_energies) res%energies = res%energies + res%energies_exp
 
-            energy_prev = energy
+            res%energy_prev = res%energy
             instant_pressure_prev = instant_pressure
-            energy = sum(energies)
-            energy_exp = sum(energies_exp)
+            res%energy = sum(res%energies)
+            res%energy_exp = sum(res%energies_exp)
 
          end if
 
          if (.not. params%do_md .and. .not. params%do_mc) then
             if (rank == 0) then
                write (*, *) '                                       |'
-               write (*, '(A,1X,F22.8,1X,A)') ' SOAP energy:', sum(energies_soap), 'eV |'
-               write (*, '(A,1X,F24.8,1X,A)') ' 2b energy:', sum(energies_2b), 'eV |'
-               write (*, '(A,1X,F24.8,1X,A)') ' 3b energy:', sum(energies_3b), 'eV |'
-               write (*, '(A,1X,F18.8,1X,A)') ' core_pot energy:', sum(energies_core_pot), 'eV |'
-               write (*, '(A,1X,F23.8,1X,A)') ' vdw energy:', sum(energies_vdw), 'eV |'
-               write (*, '(A,1X,F21.8,1X,A)') ' estat energy:', sum(energies_estat), 'eV |'
-               write (*, '(A,1X,F22.8,1X,A)') ' Exp. energy:', sum(energies_exp), 'eV |'
-               if (valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', sum(energies_lp), 'eV |'
+               write (*, '(A,1X,F22.8,1X,A)') ' SOAP energy:', sum(res%energies_soap), 'eV |'
+               write (*, '(A,1X,F24.8,1X,A)') ' 2b energy:', sum(res%energies_2b), 'eV |'
+               write (*, '(A,1X,F24.8,1X,A)') ' 3b energy:', sum(res%energies_3b), 'eV |'
+               write (*, '(A,1X,F18.8,1X,A)') ' core_pot energy:', sum(res%energies_core_pot), 'eV |'
+               write (*, '(A,1X,F23.8,1X,A)') ' vdw energy:', sum(res%energies_vdw), 'eV |'
+               write (*, '(A,1X,F21.8,1X,A)') ' estat energy:', sum(res%energies_estat), 'eV |'
+               write (*, '(A,1X,F22.8,1X,A)') ' Exp. energy:', sum(res%energies_exp), 'eV |'
+               if (model%valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', sum(res%energies_lp), 'eV |'
                if (perform%pdf)&
                     & write (*, '(A,1X,F23.8,1X,A)') ' pdf energy:',&
-                    & sum(energies_pdf), 'eV |'
+                    & sum(res%energies_pdf), 'eV |'
                if (perform%sf)&
                     & write (*, '(A,1X,F24.8,1X,A)') ' sf energy:',&
-                    & sum(energies_sf), 'eV |'
+                    & sum(res%energies_sf), 'eV |'
                if (perform%xrd)&
                     & write (*, '(A,1X,F23.8,1X,A)') ' xrd energy:',&
-                    & sum(energies_xrd), 'eV |'
+                    & sum(res%energies_xrd), 'eV |'
                if (perform%nd)&
                     & write (*, '(A,1X,F23.8,1X,A)') ' nd energy:',&
-                    & sum(energies_nd), 'eV |'
+                    & sum(res%energies_nd), 'eV |'
 
-               if (.not. params%do_mc .or. (params%do_mc .and. mc_istep <= 1)) then
-                  write (*, '(A,1X,F21.8,1X,A)') ' Total energy:', sum(energies), 'eV |'
+               if (.not. params%do_mc .or. (params%do_mc .and. loop%mc_istep <= 1)) then
+                  write (*, '(A,1X,F21.8,1X,A)') ' Total energy:', sum(res%energies), 'eV |'
                else
                   write (*, '(A,1X,F21.8,1X,A)') ' Total energy:', sum(images(i_trial_image)%energies), 'eV |'
                end if
@@ -2535,7 +2410,7 @@ program turbogap
                   write (*, *) 'Energy & forces in "trajectory_out.xyz"|'
                   write (*, *) '                                       |'
                   write (*, *) '.......................................|'
-               else if (mc_istep == 0) then
+               else if (loop%mc_istep == 0) then
                   write (*, *) '                                       |'
                   write (*, *) ' MC configs in "mc_current.xyz" and    |'
                   write (*, *) '               "mc_trial.xyz"          |'
@@ -2546,8 +2421,8 @@ program turbogap
          end if
 
          if (params%do_forces) then
-            forces = forces_soap + forces_2b + forces_3b + forces_core_pot + forces_vdw
-            virial = virial_soap + virial_2b + virial_3b + virial_core_pot + virial_vdw
+            res%forces = res%forces_soap + res%forces_2b + res%forces_3b + res%forces_core_pot + res%forces_vdw
+            res%virial = res%virial_soap + res%virial_2b + res%virial_3b + res%virial_core_pot + res%virial_vdw
 
 !           MAD IR bias. The dipole of this configuration joins the ensemble,
 !           the spectrum is compared with the experiment, and the gradient of
@@ -2564,7 +2439,7 @@ program turbogap
 !                 every rank holds a slice, so a plain sum is the whole reduction;
 !                 all-reduce so each rank can form the same lambda and bias its own
 !                 atoms without a second broadcast of the forces
-                  call comm_sum_all(comm, mad_ir_dmu_dr, 9*n_sites)
+                  call comm_sum_all(comm, mad_ir_dmu_dr, 9*state%n_sites)
                   call time_end(time%mpi)
                end if
 !              The extended Lagrangian reduces a FORCE rather than a tensor, so
@@ -2574,7 +2449,7 @@ program turbogap
 !              so every rank must end the step holding the same forces.
                if (mad_ir_xl_collect) then
                   call time_start(time%mpi)
-                  call comm_sum_all(comm, mad_ir_xl_force, 3*n_sites)
+                  call comm_sum_all(comm, mad_ir_xl_force, 3*state%n_sites)
                   call time_end(time%mpi)
                end if
                call time_start(time%ir)
@@ -2583,7 +2458,7 @@ program turbogap
 !              called -- but it costs three doubles a frame and it is the only
 !              independent estimate of the same spectrum the bank is claiming,
 !              so ir_spectrum.dat stays meaningful as a cross-check.
-               call mad_ir_push(mad_ir_state, dipole)
+               call mad_ir_push(mad_ir_state, res%dipole)
 !              A prediction run has no experiment to compare against, so it
 !              does none of what follows: it only accumulates, and transforms
 !              once when the file is written.
@@ -2601,8 +2476,8 @@ program turbogap
 !                 the scheme trades for contracting inside the descriptor pass;
 !                 mad_ir_xl.f90's header has why it is the right trade here and
 !                 the wrong one for the ACF bias.
-                  call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
-                                        mc_istep, params%mc_nsteps, &
+                  call get_energy_scale(params%do_md, params%do_mc, loop%md_istep, params%md_nsteps, &
+                                        loop%mc_istep, params%mc_nsteps, &
                                         params%exp_energy_scales_initial(params%ir_idx), &
                                         params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
                   call time_start(time%ir_predict)
@@ -2612,17 +2487,17 @@ program turbogap
 !                 would make the weight the gradient of a loss the current
 !                 dipole had not yet entered -- which is identically zero, not
 !                 merely inaccurate.
-                  call mad_ir_xl_advance(mad_ir_xl_state, local_dipoles(1:3, 1:n_sites))
+                  call mad_ir_xl_advance(mad_ir_xl_state, res%local_dipoles(1:3, 1:state%n_sites))
                   call mad_ir_xl_evaluate(mad_ir_xl_state, mad_ir_scale, mad_ir_energy)
                   call time_end(time%ir_predict)
-                  energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
+                  res%energies_exp = res%energies_exp + mad_ir_energy/dfloat(state%n_sites)
                   exp_dissimilarity = exp_dissimilarity + mad_ir_xl_state%dissim
                   exp_dissim_ref = exp_dissim_ref + mad_ir_xl_state%dissim_ref
                   if (params%exp_energies) then
-                     energies = energies + mad_ir_energy/dfloat(n_sites)
-                     energy = sum(energies)
+                     res%energies = res%energies + mad_ir_energy/dfloat(state%n_sites)
+                     res%energy = sum(res%energies)
                   end if
-                  energy_exp = sum(energies_exp)
+                  res%energy_exp = sum(res%energies_exp)
 !                 mad_ir_xl_force is whatever the descriptor pass left, which is
 !                 identically zero while the bank is charging because the weight
 !                 it was contracted with was. There is no readiness test here for
@@ -2630,8 +2505,8 @@ program turbogap
 !                 applied once instead of in every consumer.
                   if (params%exp_forces .and. mad_ir_xl_collect) then
                      call time_start(time%ir_forces)
-                     forces(1:3, 1:n_sites) = forces(1:3, 1:n_sites) &
-                                              + mad_ir_xl_force(1:3, 1:n_sites)
+                     res%forces(1:3, 1:state%n_sites) = res%forces(1:3, 1:state%n_sites) &
+                                                        + mad_ir_xl_force(1:3, 1:state%n_sites)
 !                    And the weight the NEXT stored frame's descriptor pass
 !                    will contract, from the bank as it now stands.
                      call mad_ir_xl_weights(mad_ir_xl_state, mad_ir_xl_site_w)
@@ -2640,7 +2515,7 @@ program turbogap
                   if (mad_ir_xl_ready(mad_ir_xl_state) .and. .not. mad_ir_applied) then
                      call get_time(mad_ir_t_now)
                      mad_ir_t_first = mad_ir_t_now - time3
-                     mad_ir_step_first = md_istep
+                     mad_ir_step_first = loop%md_istep
                   end if
                   mad_ir_applied = mad_ir_xl_ready(mad_ir_xl_state)
                   if (.not. mad_ir_applied) mad_ir_energy = 0.d0
@@ -2714,21 +2589,21 @@ program turbogap
                      end if
                      call get_time(mad_ir_t_now)
                      mad_ir_t_first = mad_ir_t_now - time3
-                     mad_ir_step_first = md_istep
+                     mad_ir_step_first = loop%md_istep
                   end if
                   if (ir_aux_calibrated(ir_aux_state)) then
-                     call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
-                                           mc_istep, params%mc_nsteps, &
+                     call get_energy_scale(params%do_md, params%do_mc, loop%md_istep, params%md_nsteps, &
+                                           loop%mc_istep, params%mc_nsteps, &
                                            params%exp_energy_scales_initial(params%ir_idx), &
                                            params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
                      call time_start(time%ir_predict)
 !                    Advance before evaluate, for the same reason the extended
 !                    Lagrangian does: the energy and the force both belong to a
 !                    bank that already knows this frame's dipole.
-                     call ir_aux_advance(ir_aux_state, dipole)
-                     call ir_aux_evaluate(ir_aux_state, mad_ir_scale, dipole, mad_ir_energy)
+                     call ir_aux_advance(ir_aux_state, res%dipole)
+                     call ir_aux_evaluate(ir_aux_state, mad_ir_scale, res%dipole, mad_ir_energy)
                      call time_end(time%ir_predict)
-                     energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
+                     res%energies_exp = res%energies_exp + mad_ir_energy/dfloat(state%n_sites)
 !                    THE FIGURE OF MERIT IS THE ACF SPECTRUM, NOT THE BANK'S.
 !
 !                    The controller drives R_k onto R_target by construction, so
@@ -2747,14 +2622,14 @@ program turbogap
                      exp_dissimilarity = exp_dissimilarity + mad_ir_state%dissim
                      exp_dissim_ref = exp_dissim_ref + mad_ir_state%dissim_ref
                      if (params%exp_energies) then
-                        energies = energies + mad_ir_energy/dfloat(n_sites)
-                        energy = sum(energies)
+                        res%energies = res%energies + mad_ir_energy/dfloat(state%n_sites)
+                        res%energy = sum(res%energies)
                      end if
-                     energy_exp = sum(energies_exp)
+                     res%energy_exp = sum(res%energies_exp)
                      if (params%exp_forces) then
                         call time_start(time%ir_forces)
-                        call ir_aux_forces(ir_aux_state, mad_ir_scale, mad_ir_dmu_dr, forces, &
-                                           velocities(1:3, 1:n_sites), ir_aux_power)
+                        call ir_aux_forces(ir_aux_state, mad_ir_scale, mad_ir_dmu_dr, res%forces, &
+                                           state%velocities(1:3, 1:state%n_sites), ir_aux_power)
                         call time_end(time%ir_forces)
 !                       Integrated with the stored-frame interval, since that is
 !                       how often the force is refreshed.
@@ -2777,7 +2652,7 @@ program turbogap
 !                          far off target, much smaller number.
                            ir_aux_dT = 2.d0*(ir_aux_work - ir_aux_pump_prev) &
                                        /(md_time - ir_aux_pump_time)*params%tau_t &
-                                       /(3.d0*dfloat(n_sites)*8.6173303d-5)
+                                       /(3.d0*dfloat(state%n_sites)*8.6173303d-5)
                            if (rank == 0 .and. .not. ir_aux_warned_hot .and. &
                                dabs(ir_aux_dT) > 0.1d0*max(1.d0, params%t_beg)) then
                               write (*, '(A,F10.1,A)') " WARNING: ir_aux is pumping hard enough for a standing", &
@@ -2812,8 +2687,8 @@ program turbogap
 !                 is the whole reason this fits in as a branch rather than as a
 !                 second bias: the two estimators disagree about the spectrum
 !                 and agree exactly about what a bias on a dipole is.
-                  call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
-                                        mc_istep, params%mc_nsteps, &
+                  call get_energy_scale(params%do_md, params%do_mc, loop%md_istep, params%md_nsteps, &
+                                        loop%mc_istep, params%mc_nsteps, &
                                         params%exp_energy_scales_initial(params%ir_idx), &
                                         params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
                   call time_start(time%ir_predict)
@@ -2841,30 +2716,30 @@ program turbogap
                      write (*, *) "ERROR: ", trim(ir_fft_msg)
                      stop
                   end if
-                  energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
+                  res%energies_exp = res%energies_exp + mad_ir_energy/dfloat(state%n_sites)
                   exp_dissimilarity = exp_dissimilarity + ir_fft_dissim
                   exp_dissim_ref = exp_dissim_ref + ir_fft_dissim_ref
                   if (params%exp_energies) then
-                     energies = energies + mad_ir_energy/dfloat(n_sites)
-                     energy = sum(energies)
+                     res%energies = res%energies + mad_ir_energy/dfloat(state%n_sites)
+                     res%energy = sum(res%energies)
                   end if
-                  energy_exp = sum(energies_exp)
+                  res%energy_exp = sum(res%energies_exp)
                   if (params%exp_forces) then
                      call time_start(time%ir_forces)
-                     call mad_ir_forces(mad_ir_lambda, mad_ir_dmu_dr, forces)
+                     call mad_ir_forces(mad_ir_lambda, mad_ir_dmu_dr, res%forces)
                      call time_end(time%ir_forces)
                   end if
                   if (.not. mad_ir_applied) then
                      call get_time(mad_ir_t_now)
                      mad_ir_t_first = mad_ir_t_now - time3
-                     mad_ir_step_first = md_istep
+                     mad_ir_step_first = loop%md_istep
                   end if
                   mad_ir_applied = .true.
                else if (params%valid_ir .and. mad_ir_ready(mad_ir_state)) then
 !                 The weight is exp_energy_scales, ramped over the run exactly
 !                 as every other MAD observable's is.
-                  call get_energy_scale(params%do_md, params%do_mc, md_istep, params%md_nsteps, &
-                                        mc_istep, params%mc_nsteps, &
+                  call get_energy_scale(params%do_md, params%do_mc, loop%md_istep, params%md_nsteps, &
+                                        loop%mc_istep, params%mc_nsteps, &
                                         params%exp_energy_scales_initial(params%ir_idx), &
                                         params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
                   call time_start(time%ir_predict)
@@ -2872,7 +2747,7 @@ program turbogap
                   call time_end(time%ir_predict)
 !                 The mismatch is an energy like the others, spread over the
 !                 sites; the force is its gradient, and only if exp_forces.
-                  energies_exp = energies_exp + mad_ir_energy/dfloat(n_sites)
+                  res%energies_exp = res%energies_exp + mad_ir_energy/dfloat(state%n_sites)
 !                 IR does not go through get_exp_energies -- it has its own
 !                 fitted scale and offset -- so it contributes to the shared
 !                 dissimilarity accumulator here instead. Same definition:
@@ -2886,13 +2761,13 @@ program turbogap
 !                 reached the reported total energy at all: energies_exp is
 !                 zeroed at the top of the next step.
                   if (params%exp_energies) then
-                     energies = energies + mad_ir_energy/dfloat(n_sites)
-                     energy = sum(energies)
+                     res%energies = res%energies + mad_ir_energy/dfloat(state%n_sites)
+                     res%energy = sum(res%energies)
                   end if
-                  energy_exp = sum(energies_exp)
+                  res%energy_exp = sum(res%energies_exp)
                   if (params%exp_forces) then
                      call time_start(time%ir_forces)
-                     call mad_ir_forces(mad_ir_lambda, mad_ir_dmu_dr, forces)
+                     call mad_ir_forces(mad_ir_lambda, mad_ir_dmu_dr, res%forces)
                      call time_end(time%ir_forces)
                   end if
                   if (.not. mad_ir_applied) then
@@ -2900,7 +2775,7 @@ program turbogap
 !                    to fill, measured from the same origin as the total.
                      call get_time(mad_ir_t_now)
                      mad_ir_t_first = mad_ir_t_now - time3
-                     mad_ir_step_first = md_istep
+                     mad_ir_step_first = loop%md_istep
                   end if
                   mad_ir_applied = .true.
                else
@@ -2911,7 +2786,7 @@ program turbogap
 !              n_window samples of unbiased dynamics on the next restart.
                call time_start(time%ir_io)
                if (rank == 0 .and. params%write_xyz > 0 .and. params%valid_ir) then
-                  if (modulo(md_istep, params%write_xyz) == 0 .or. md_istep == params%md_nsteps) then
+                  if (modulo(loop%md_istep, params%write_xyz) == 0 .or. loop%md_istep == params%md_nsteps) then
                      if (trim(params%ir_restart_file) /= "none") then
                         call mad_ir_save(mad_ir_state, params%ir_restart_file, mad_ir_ok, mad_ir_msg)
                         if (.not. mad_ir_ok) write (*, *) "WARNING: ", trim(mad_ir_msg)
@@ -2954,7 +2829,7 @@ program turbogap
 !              wants one spectrum and no trajectory.
                if (params%write_xyz > 0) then
                   call get_write_condition(params%do_mc, params%do_md, &
-                                           mc_istep, md_istep, params%write_xyz, write_condition)
+                                           loop%mc_istep, loop%md_istep, params%write_xyz, write_condition)
                else
                   write_condition = .false.
                end if
@@ -2964,7 +2839,7 @@ program turbogap
 !                 ir_stride that does not divide md_nsteps the two differ, and
 !                 the final frame is the one the whole run was for.
                   write_condition = write_condition .or. &
-                                    (md_istep > params%md_nsteps - params%ir_stride)
+                                    (loop%md_istep > params%md_nsteps - params%ir_stride)
                else
                   mad_ir_have_spectrum = mad_ir_applied
                end if
@@ -3022,10 +2897,10 @@ program turbogap
                      end if
                   end if
                   call mad_ir_write_spectrum(mad_ir_state, "ir_spectrum.dat", &
-                                             params%valid_ir, md_istep, params%md_step)
+                                             params%valid_ir, loop%md_istep, params%md_step)
                   call mad_ir_append_spectrum(mad_ir_state, "ir_prediction.dat", &
-                                              .not. mad_ir_wrote_prediction, md_istep, &
-                                              dfloat(md_istep)*params%md_step)
+                                              .not. mad_ir_wrote_prediction, loop%md_istep, &
+                                              dfloat(loop%md_istep)*params%md_step)
                   if (.not. mad_ir_wrote_prediction) then
                      if (params%valid_ir) then
 !                       "<label>_exp.dat" is the convention, but for label
@@ -3063,57 +2938,57 @@ program turbogap
                call time_end(time%ir)
             end if
 
-            if (valid_estat_charges) forces = forces + forces_estat
-            if (valid_estat_charges) virial = virial + virial_estat
+            if (model%valid_estat_charges) res%forces = res%forces + res%forces_estat
+            if (model%valid_estat_charges) res%virial = res%virial + res%virial_estat
 
-            if (perform%xps_forces) forces = forces + forces_lp
-            if (perform%xps_forces) virial = virial + virial_lp
+            if (perform%xps_forces) res%forces = res%forces + res%forces_lp
+            if (perform%xps_forces) res%virial = res%virial + res%virial_lp
 
-            if (perform%pdf_forces) forces = forces + forces_pdf
-            if (perform%pdf_forces) virial = virial + virial_pdf
+            if (perform%pdf_forces) res%forces = res%forces + res%forces_pdf
+            if (perform%pdf_forces) res%virial = res%virial + res%virial_pdf
 
-            if (perform%sf_forces) forces = forces + forces_sf
-            if (perform%sf_forces) virial = virial + virial_sf
+            if (perform%sf_forces) res%forces = res%forces + res%forces_sf
+            if (perform%sf_forces) res%virial = res%virial + res%virial_sf
 
-            if (perform%xrd_forces) forces = forces + forces_xrd
-            if (perform%xrd_forces) virial = virial + virial_xrd
+            if (perform%xrd_forces) res%forces = res%forces + res%forces_xrd
+            if (perform%xrd_forces) res%virial = res%virial + res%virial_xrd
 
-            if (perform%nd_forces) forces = forces + forces_nd
-            if (perform%nd_forces) virial = virial + virial_nd
+            if (perform%nd_forces) res%forces = res%forces + res%forces_nd
+            if (perform%nd_forces) res%virial = res%virial + res%virial_nd
 
             if (rank == 0 .and. params%print_vdw_forces) then
                print *, "> Virial ESTAT "
                do i = 1, 3
                   do j = 1, 3
-                     print *, " i, ", i, " j ", j, " ", virial_estat(i, j)
+                     print *, " i, ", i, " j ", j, " ", res%virial_estat(i, j)
                   end do
                end do
 
                print *, "> Virial soap "
                do i = 1, 3
                   do j = 1, 3
-                     print *, " i, ", i, " j ", j, " ", virial_soap(i, j)
+                     print *, " i, ", i, " j ", j, " ", res%virial_soap(i, j)
                   end do
                end do
 
                print *, "> Virial 2b "
                do i = 1, 3
                   do j = 1, 3
-                     print *, " i, ", i, " j ", j, " ", virial_2b(i, j)
+                     print *, " i, ", i, " j ", j, " ", res%virial_2b(i, j)
                   end do
                end do
 
                print *, "> Virial 3b "
                do i = 1, 3
                   do j = 1, 3
-                     print *, " i, ", i, " j ", j, " ", virial_3b(i, j)
+                     print *, " i, ", i, " j ", j, " ", res%virial_3b(i, j)
                   end do
                end do
 
                print *, "> Virial core_pot "
                do i = 1, 3
                   do j = 1, 3
-                     print *, " i, ", i, " j ", j, " ", virial_core_pot(i, j)
+                     print *, " i, ", i, " j ", j, " ", res%virial_core_pot(i, j)
                   end do
                end do
 
@@ -3121,17 +2996,17 @@ program turbogap
                   print *, "> Virial xrd "
                   do i = 1, 3
                      do j = 1, 3
-                        print *, " i, ", i, " j ", j, " ", virial_xrd(i, j)
+                        print *, " i, ", i, " j ", j, " ", res%virial_xrd(i, j)
                      end do
                   end do
                   temp_string = ""
                   temp_string2 = ""
-                  write (temp_string, "(I8)") md_istep
+                  write (temp_string, "(I8)") loop%md_istep
                   write (temp_string2, "(A)") "forces_xrd_"//trim(adjustl(temp_string))
                   open (unit=90, file=temp_string2, status="unknown")
-                  do i = 1, n_sites
+                  do i = 1, state%n_sites
                      write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
-                        forces_xrd(1, i), forces_xrd(2, i), forces_xrd(3, i)
+                        res%forces_xrd(1, i), res%forces_xrd(2, i), res%forces_xrd(3, i)
                   end do
                   close (90)
 
@@ -3141,9 +3016,9 @@ program turbogap
 
             if (params%print_vdw_forces) then
                open (unit=90, file="forces_vdw", status="unknown")
-               do i = 1, n_sites
+               do i = 1, state%n_sites
                   write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
-                     forces_vdw(1, i), forces_vdw(2, i), forces_vdw(3, i)
+                     res%forces_vdw(1, i), res%forces_vdw(2, i), res%forces_vdw(3, i)
                end do
                close (90)
 
@@ -3151,18 +3026,18 @@ program turbogap
 
             if (rank == 0 .and. params%print_estat_forces) then
                open (unit=90, file="forces_estat", status="unknown")
-               do i = 1, n_sites
+               do i = 1, state%n_sites
                   write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
-                     forces_estat(1, i), forces_estat(2, i), forces_estat(3, i)
+                     res%forces_estat(1, i), res%forces_estat(2, i), res%forces_estat(3, i)
                end do
                close (90)
 
                open (unit=90, file="charge_gradients_estat", status="unknown")
-               do i = 1, n_atom_pairs_by_rank(rank + 1)
+               do i = 1, dom%n_atom_pairs_by_rank(rank + 1)
                   write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
-                     local_properties_cart_der(1, i, charge_lp_index), &
-                     local_properties_cart_der(2, i, charge_lp_index), &
-                     local_properties_cart_der(3, i, charge_lp_index)
+                     res%local_properties_cart_der(1, i, model%charge_lp_index), &
+                     res%local_properties_cart_der(2, i, model%charge_lp_index), &
+                     res%local_properties_cart_der(3, i, model%charge_lp_index)
                end do
                close (90)
 
@@ -3171,29 +3046,30 @@ program turbogap
          end if
          ! For debugging the virial implementation
          if (rank == 0 .and. .false.) then
-            write (*, *) "pressure_soap: ", virial_soap/3.d0/v_uc
-            write (*, *) "pressure_vdw: ", virial_vdw/3.d0/v_uc
-            write (*, *) "pressure_lp: ", virial_lp/3.d0/v_uc
-            write (*, *) "pressure_2b: ", virial_2b/3.d0/v_uc
-            write (*, *) "pressure_3b: ", virial_3b/3.d0/v_uc
-            write (*, *) "pressure_core_pot: ", virial_core_pot/3.d0/v_uc
+            write (*, *) "pressure_soap: ", res%virial_soap/3.d0/state%v_uc
+            write (*, *) "pressure_vdw: ", res%virial_vdw/3.d0/state%v_uc
+            write (*, *) "pressure_lp: ", res%virial_lp/3.d0/state%v_uc
+            write (*, *) "pressure_2b: ", res%virial_2b/3.d0/state%v_uc
+            write (*, *) "pressure_3b: ", res%virial_3b/3.d0/state%v_uc
+            write (*, *) "pressure_core_pot: ", res%virial_core_pot/3.d0/state%v_uc
          end if
 ! For debugging the virial implementation
          if (rank == 0 .and. .false.) then
-            write (*, *) "pressure_soap: ", virial_soap/3.d0/v_uc
-            write (*, *) "pressure_vdw: ", virial_vdw/3.d0/v_uc
+            write (*, *) "pressure_soap: ", res%virial_soap/3.d0/state%v_uc
+            write (*, *) "pressure_vdw: ", res%virial_vdw/3.d0/state%v_uc
             do i = 1, 3
-               write (*, *) virial_vdw(i, :)/v_uc
+               write (*, *) res%virial_vdw(i, :)/state%v_uc
             end do
-            write (*, *) "Trace of vdw pressure:", (virial_vdw(1, 1) + virial_vdw(2, 2) + virial_vdw(3, 3))/3.d0/v_uc
-            write (*, *) "pressure_2b: ", virial_2b/3.d0/v_uc
-            write (*, *) "pressure_3b: ", virial_3b/3.d0/v_uc
-            write (*, *) "pressure_core_pot: ", virial_core_pot/3.d0/v_uc
+            write (*, *) "Trace of vdw pressure:", (res%virial_vdw(1, 1) + res%virial_vdw(2, 2) + res%virial_vdw(3, &
+                                                                                                                 3))/3.d0/state%v_uc
+            write (*, *) "pressure_2b: ", res%virial_2b/3.d0/state%v_uc
+            write (*, *) "pressure_3b: ", res%virial_3b/3.d0/state%v_uc
+            write (*, *) "pressure_core_pot: ", res%virial_core_pot/3.d0/state%v_uc
             write (*, *) "full vdw forces"
-            do i = 1, n_sites
-               write (*, *) i, forces_vdw(1:3, i)
+            do i = 1, state%n_sites
+               write (*, *) i, res%forces_vdw(1:3, i)
             end do
-            write (*, *) "Local virial", local_virial_vdw_diag
+            write (*, *) "Local virial", res%local_virial_vdw_diag
          end if
 
          if (params%do_prediction .and. .not. params%do_md .and. .not. params%do_mc) then
@@ -3202,26 +3078,26 @@ program turbogap
                !       The masses should be divided by 103.6426965268d0 to have amu units, but
                !       since masses is not allocated for single point calculations, it would
                !       likely lead to a segfault
-               call wrap_pbc(positions(1:3, 1:n_sites), a_box&
-                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
-                    & c_box/dfloat(indices(3)))
-               call get_xyz_energy_string(energies_soap, energies_2b,&
-                    & energies_3b, energies_core_pot, energies_vdw, energies_exp&
-                    &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+               call wrap_pbc(state%positions(1:3, 1:state%n_sites), state%a_box&
+                    &/dfloat(state%indices(1)), state%b_box/dfloat(state%indices(2)),&
+                    & state%c_box/dfloat(state%indices(3)))
+               call get_xyz_energy_string(res%energies_soap, res%energies_2b,&
+                    & res%energies_3b, res%energies_core_pot, res%energies_vdw, res%energies_exp&
+                    &, res%energies_lp, res%energies_pdf, res%energies_sf, res%energies_xrd, res%energies_nd,&
                     & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                     & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
-                    & params%do_dipole, dipole, energies_dipole)
+                    & params%do_dipole, res%dipole, res%energies_dipole)
 
-               call write_extxyz(n_sites, -n_xyz, md_time, time_step,&
-                    & instant_temp, instant_pressure, a_box&
-                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
-                    & c_box/dfloat(indices(3)), virial, xyz_species,&
-                    & positions(1:3, 1:n_sites), velocities, forces,&
-                    & energies(1:n_sites), masses, params&
+               call write_extxyz(state%n_sites, -loop%n_xyz, md_time, time_step,&
+                    & instant_temp, instant_pressure, state%a_box&
+                    &/dfloat(state%indices(1)), state%b_box/dfloat(state%indices(2)),&
+                    & state%c_box/dfloat(state%indices(3)), res%virial, state%xyz_species,&
+                    & state%positions(1:3, 1:state%n_sites), state%velocities, res%forces,&
+                    & res%energies(1:state%n_sites), state%masses, params&
                     &%write_property, params%write_array_property,&
-                    & params%write_local_properties, local_property_labels, local_properties, &
-                    & fix_atom, "trajectory_out.xyz", string, .false.,&
-                    & params%do_dipole, local_dipoles(1:3, 1:n_sites))
+                    & params%write_local_properties, model%local_property_labels, res%local_properties, &
+                    & state%fix_atom, "trajectory_out.xyz", string, .false.,&
+                    & params%do_dipole, res%local_dipoles(1:3, 1:state%n_sites))
 
             end if
          end if
@@ -3242,28 +3118,31 @@ program turbogap
 !     compute_md does AROUND the integration -- the skin accounting, the
 !     supercell refresh, the broadcast -- happens inside the exchange.
       if (mode == "ipi") then
-         call ipi_driver_exchange(rank, n_sites, positions, positions_prev, positions_diff, &
-                                  velocities, a_box, b_box, c_box, indices, params%neighbors_buffer, &
-                                  forces, energy, virial, exit_loop, rebuild_neighbors_list)
+         call ipi_driver_exchange(rank, state%n_sites, state%positions, state%positions_prev, state%positions_diff, &
+                                  state%velocities, state%a_box, state%b_box, state%c_box, state%indices, params%neighbors_buffer, &
+                                  res%forces, res%energy, res%virial, loop%exit_loop, nl%rebuild_neighbors_list)
       else
-         call compute_md(params, rank, ierr, n_sites, n_species, md_istep, md_time, time_step, &
-                         positions, positions_prev, positions_diff, velocities, forces, forces_prev, masses, &
-                         masses_types, xyz, xyz_species, a_box, b_box, c_box, indices, v_uc, virial, energy, &
-                         energy_prev, energies, energies_soap, energies_2b, energies_3b, energies_core_pot, &
-                         energies_vdw, energies_lp, energies_exp, energies_pdf, energies_sf, energies_xrd, &
-                         energies_nd, local_properties, local_property_labels, instant_temp, &
+         call compute_md(params, rank, ierr, state%n_sites, model%n_species, loop%md_istep, md_time, time_step, &
+                         state%positions, state%positions_prev, state%positions_diff, state%velocities, res%forces, &
+                         state%forces_prev, state%masses, &
+                         masses_types, nl%xyz, state%xyz_species, state%a_box, state%b_box, state%c_box, state%indices, &
+                         state%v_uc, res%virial, res%energy, &
+                         res%energy_prev, res%energies, res%energies_soap, res%energies_2b, res%energies_3b, &
+                         res%energies_core_pot, &
+                         res%energies_vdw, res%energies_lp, res%energies_exp, res%energies_pdf, res%energies_sf, res%energies_xrd, &
+                         res%energies_nd, res%local_properties, model%local_property_labels, instant_temp, &
                          instant_pressure, instant_pressure_prev, e_kin, e_kinetic, kb, evpera3tobar, &
-                         fix_atom, exit_loop, rebuild_neighbors_list, i_image, i_nested, n_pos, nrows, &
+                         state%fix_atom, loop%exit_loop, nl%rebuild_neighbors_list, i_image, i_nested, n_pos, nrows, &
                          filename, string, allelstopdata, ephbeta, ephfdm, ephlsc, time, &
                          cum_eel, gd_istep, &
-                         target_temp, time_step_prev, dipole, local_dipoles, energies_dipole)
+                         target_temp, time_step_prev, res%dipole, res%local_dipoles, res%energies_dipole)
       end if
 
       !   Nested sampling
       !   PUT THIS INTO A MODULE!!!!!!!!!!!!!!
 
       !   This runs at the beginning to read in the initial images
-      if (params%do_nested_sampling .and. n_xyz > i_image .and. .not. params%do_md) then
+      if (params%do_nested_sampling .and. loop%n_xyz > i_image .and. .not. params%do_md) then
          i_image = i_image + 1
          if (.not. allocated(images)) then
             allocate (images(1:i_image))
@@ -3276,25 +3155,26 @@ program turbogap
             deallocate (images_temp)
          end if
          !     Save initial pool of structures
-         velocities = 0.d0
-         call from_properties_to_image(images(i_image), positions, velocities, masses, &
-                                       forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
-                                       species, species_supercell, n_sites, indices, fix_atom, &
-                                       xyz_species, xyz_species_supercell, local_properties, &
-                                       local_dipoles, energies_dipole, dipole)
+         state%velocities = 0.d0
+         call from_properties_to_image(images(i_image), state%positions, state%velocities, state%masses, &
+                                       res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
+                                       res%energy_exp, E_kinetic, &
+                                       state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
+                                       state%xyz_species, state%xyz_species_supercell, res%local_properties, &
+                                       res%local_dipoles, res%energies_dipole, res%dipole)
       end if
 
       !   This handles the nested sampling iterations after all images have
       !   been read and their energies computed
-      if (params%do_nested_sampling .and. .not. repeat_xyz) then
+      if (params%do_nested_sampling .and. .not. loop%repeat_xyz) then
          if (i_nested == 0) then
-            md_istep = -1
+            loop%md_istep = -1
             params%write_xyz = params%md_nsteps
             params%do_md = .true.
             if (rank == 0) then
                write (*, *) '                                       |'
                write (*, *) 'Running nested sampling algorithm with |'
-               write (*, '(1X,I6,A)') n_xyz, ' walkers.                        |'
+               write (*, '(1X,I6,A)') loop%n_xyz, ' walkers.                        |'
                write (*, *) '                                       |'
                write (*, *) 'Target pressure in nested sampling:    |'
                write (*, '(A,ES15.7,A)') ' P = ', params%p_nested, ' bar.               |'
@@ -3304,62 +3184,65 @@ program turbogap
             end if
          end if
          !     At the end of the MD/MC moves we add the image to the pool if its energy has decreased
-         if (md_istep == params%md_nsteps) then
-            md_istep = -1
-            velocities = 0.d0
+         if (loop%md_istep == params%md_nsteps) then
+            loop%md_istep = -1
+            state%velocities = 0.d0
             !       Unit cell volume
-            v_uc = dot_product(cross_product(a_box, b_box), c_box)/(dfloat(indices(1)*indices(2)*indices(3)))
+            state%v_uc = dot_product(cross_product(state%a_box, state%b_box), &
+                                     state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
             !       We check enthalpy, not internal energy (they are the same for P = 0)
-            if (energy + E_kinetic + params%p_nested/eVperA3tobar*v_uc < e_max) then
-               call from_properties_to_image(images(i_image), positions, velocities, masses, &
-                                             forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
-                                             species, species_supercell, n_sites, indices, fix_atom, &
-                                             xyz_species, xyz_species_supercell, local_properties, &
-                                             local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
+            if (res%energy + E_kinetic + params%p_nested/eVperA3tobar*state%v_uc < e_max) then
+               call from_properties_to_image(images(i_image), state%positions, state%velocities, state%masses, &
+                                             res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
+                                             res%energy_exp, E_kinetic, &
+                                             state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
+                                             state%xyz_species, state%xyz_species_supercell, res%local_properties, &
+                                             res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
             end if
          end if
          !     This selects the highest energy image from the pool
-         if (md_istep == -1 .and. i_nested < params%n_nested) then
+         if (loop%md_istep == -1 .and. i_nested < params%n_nested) then
             i_nested = i_nested + 1
-            rebuild_neighbors_list = .true.
+            nl%rebuild_neighbors_list = .true.
             i_max = 0
             e_max = -1.d100
-            do i = 1, n_xyz
-               v_uc = dot_product(cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box)/ &
-                      (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
+            do i = 1, loop%n_xyz
+               state%v_uc = dot_product(cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box)/ &
+                            (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
                !         We check enthalpy, not potential energy (they are the same for P = 0)
-               if (images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*v_uc > e_max) then
-                  e_max = images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*v_uc
+               if (images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*state%v_uc > e_max) then
+                  e_max = images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*state%v_uc
                   i_max = i
                end if
             end do
             i_image = i_max
-            deallocate (positions, velocities, masses, forces, species, &
-                        species_supercell, fix_atom, xyz_species, xyz_species_supercell)
+            deallocate (state%positions, state%velocities, state%masses, res%forces, state%species, &
+                        state%species_supercell, state%fix_atom, state%xyz_species, state%xyz_species_supercell)
             !       Make a copy of a randonmly chosen image which is not i_image
-            if (n_xyz == 1) then
+            if (loop%n_xyz == 1) then
                i = i_image
             else
                i = i_image
                do while (i == i_image)
-                  i = mod(irand(), n_xyz) + 1
+                  i = mod(irand(), loop%n_xyz) + 1
                end do
             end if
             if (rank == 0) then
-               counter = 1
+               loop%counter = 1
                write (*, *) '                                       |'
                write (*, '(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
                write (*, '(A,I8,A)') " - Highest enthalpy walker:    ", i_image, " |"
                write (*, '(A,I8,A)') " - Walker selected for cloning:", i, " |"
                write (*, '(A,F15.7,A)') " - Max. enthalpy: ", e_max, " eV |"
             end if
-            call from_image_to_properties(images(i), positions, velocities, masses, &
-                                          forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
-                                          species, species_supercell, n_sites, indices, fix_atom, &
-                                          xyz_species, xyz_species_supercell, local_properties, &
-                                          local_dipoles, energies_dipole, dipole)
-            v_uc = dot_product(cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box)/ &
-                   (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
+            call from_image_to_properties(images(i), state%positions, state%velocities, state%masses, &
+                                          res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
+                                          res%energy_exp, E_kinetic, &
+                                          state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
+                                          state%xyz_species, state%xyz_species_supercell, res%local_properties, &
+                                          res%local_dipoles, res%energies_dipole, res%dipole)
+            state%v_uc = dot_product(cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box)/ &
+                         (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
             !       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
             !       actual pressure for the atomic configuration) is > 0
 !!!!!!!!!!!!!!!!!!!!!!!!!! Temporary hack
@@ -3373,10 +3256,10 @@ program turbogap
                                                     rand_scale(6)/2.d0, 1.d0 + rand_scale(2), rand_scale(4)/2.d0, &
                                                     rand_scale(5)/2.d0, rand_scale(4)/2.d0, 1.d0 + rand_scale(3)], [3, 3])
                ! Make the transformation volume-preserving
-               call volume_preserving_strain_transformation(a_box, b_box, c_box, params%box_scaling_factor)
+               call volume_preserving_strain_transformation(state%a_box, state%b_box, state%c_box, params%box_scaling_factor)
                ! Volume scaling
                call get_ns_unbiased_volume_proposal(1.d0 - params%nested_max_volume_change, &
-                                                    1.d0 + params%nested_max_volume_change, n_sites, rand)
+                                                    1.d0 + params%nested_max_volume_change, state%n_sites, rand)
                params%box_scaling_factor = params%box_scaling_factor*(rand)**(1.d0/3.d0)
                ! Each MPI process has a different set of random numbers so we need to broadcast
                call comm_bcast(comm, params%box_scaling_factor, 9)
@@ -3384,33 +3267,35 @@ program turbogap
             !       This is the so-called total enthalpy Hamiltonian Montecarlo approach (with physical masses)
             !       We do not need to broadcast the velocities here since they get broadcasted later on; otherwise
             !       we would have to do it since each MPI rank may see a different random number
-            call random_number(velocities)
-            call remove_cm_vel(velocities(1:3, 1:n_sites), masses(1:n_sites))
+            call random_number(state%velocities)
+            call remove_cm_vel(state%velocities(1:3, 1:state%n_sites), state%masses(1:state%n_sites))
             e_kin = 0.d0
-            do i = 1, n_sites
-               e_kin = e_kin + 0.5d0*masses(i)*dot_product(velocities(1:3, i), velocities(1:3, i))
+            do i = 1, state%n_sites
+               e_kin = e_kin + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
             end do
             call random_number(rand)
-            velocities = velocities/sqrt(e_kin)*sqrt(rand*(e_max - energy - params%p_nested/eVperA3tobar*v_uc))
+            state%velocities = state%velocities/sqrt(e_kin)*sqrt(rand*(e_max - res%energy - &
+                                                                       params%p_nested/eVperA3tobar*state%v_uc))
          else if (i_nested == params%n_nested) then
-            exit_loop = .true.
+            loop%exit_loop = .true.
          end if
       end if
 
       if (rank == 0) then
 
          if (params%do_mc) then
-            if (mc_istep == params%mc_nsteps) then
-               exit_loop = .true.
+            if (loop%mc_istep == params%mc_nsteps) then
+               loop%exit_loop = .true.
             else
-               exit_loop = .false.
+               loop%exit_loop = .false.
             end if
 
-            if (.not. exit_loop .and. ( &
-                (md_istep == -1) .or. &
+            if (.not. loop%exit_loop .and. ( &
+                (loop%md_istep == -1) .or. &
                 (params%do_md .and. ( &
-                 (md_istep == params%md_nsteps) .or. &
-                 ((abs(energy - energy_prev) < params%e_tol*dfloat(n_sites)) .and. (maxval(abs(forces)) < params%f_tol)) &
+                 (loop%md_istep == params%md_nsteps) .or. &
+                 ((abs(res%energy - res%energy_prev) < params%e_tol*dfloat(state%n_sites)) .and. (maxval(abs(res%forces)) < &
+                                                                                                  params%f_tol)) &
                  )))) then
                !       Now we do a monte-carlo step: we choose what the steps are from the available list and then choose a random number
                !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
@@ -3422,7 +3307,7 @@ program turbogap
                !       -- We have the list of move types in params%mc_types and the number params%n_mc_types --
                !       >> First generate a random number in the range of the number of
 
-               if (mc_istep > 0) then
+               if (loop%mc_istep > 0) then
                   !       Evaluate the conditions for acceptance
                   !       > We have the mc conditions in mc.f90
                   !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
@@ -3430,7 +3315,7 @@ program turbogap
                   ! Reset the parameters for md / relaxation
                   trial_came_from_md = params%do_md
                   if (params%do_md) then
-                     md_istep = -1
+                     loop%md_istep = -1
                      params%do_md = .false.
                      do_mc_relax = .false.
                      ! Assume that the number of steps has already been set.
@@ -3455,17 +3340,19 @@ program turbogap
 !                 one step, which also pairs the stored positions with the
 !                 stored velocities.
                   if (trial_came_from_md) then
-                     positions(1:3, 1:n_sites) = positions_prev(1:3, 1:n_sites)
+                     state%positions(1:3, 1:state%n_sites) = state%positions_prev(1:3, 1:state%n_sites)
                   end if
 
-                  call from_properties_to_image(images(i_trial_image), positions, velocities, masses, &
-                                                forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
-                                                species, species_supercell, n_sites, indices, fix_atom, &
-                                                xyz_species, xyz_species_supercell, local_properties, &
-                                                local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
+                  call from_properties_to_image(images(i_trial_image), state%positions, state%velocities, state%masses, &
+                                                res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
+                                                res%energy_exp, E_kinetic, &
+                                                state%species, state%species_supercell, state%n_sites, state%indices, &
+                                                state%fix_atom, &
+                                                state%xyz_species, state%xyz_species_supercell, res%local_properties, &
+                                                res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
 
                   if (params%verb > 50) write (*, *) '.......................................|'
-                  if (params%verb > 50) write (*, '(A,1X,I0)') ' MC Iteration:', mc_istep
+                  if (params%verb > 50) write (*, '(A,1X,I0)') ' MC Iteration:', loop%mc_istep
                   if (params%verb > 50) write (*, '(A,1X,A)') '    Move type:', mc_move
 
                   if (params%verb > 50) write (*, '(A,1X,F22.8)') '   &
@@ -3480,25 +3367,26 @@ program turbogap
                        & Etot_new :', images(i_trial_image)%energy &
                        &+ images(i_trial_image)%e_kin
 
-                  v_uc = dot_product(cross_product(a_box, b_box), c_box)/(dfloat(indices(1)*indices(2)*indices(3)))
+                  state%v_uc = dot_product(cross_product(state%a_box, state%b_box), &
+                                           state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
 
                   if (params%accessible_volume) then
-                     call get_accessible_volume(v_uc, v_a_uc, species, params%radii)
+                     call get_accessible_volume(state%v_uc, v_a_uc, state%species, params%radii)
                      if (params%verb > 50) write (*, '(A,F12.6,A,F12.6&
                           &,1X,A)') ' V_acc new: ', v_a_uc, ' A^3&
                           & V_acc old ', v_a_uc_prev, 'A^3 |'
                   else
-                     v_a_uc = v_uc
+                     v_a_uc = state%v_uc
                   end if
 
                   call get_mc_acceptance(mc_move, p_accept, &
-                       energy + E_kinetic, &
+                       res%energy + E_kinetic, &
                        images(i_current_image)%energy + images(i_current_image)%e_kin, &
                        params%t_beg, mc_mu_id, &
-                       params%mc_mu, n_mc_species, v_uc, v_uc_prev,&
+                       params%mc_mu, n_mc_species, state%v_uc, v_uc_prev,&
                        & v_a_uc, v_a_uc_prev, params%mc_exchange_mass, &
                        & params%mc_exchange_e0, params%mc_mu_reference, &
-                       & params%p_beg, n_sites)
+                       & params%p_beg, state%n_sites)
 
 !                 call get_mc_acceptance(mc_move, p_accept, &
 !                      energy + E_kinetic, &
@@ -3520,9 +3408,9 @@ program turbogap
                        & ranf, ' p_accept =', p_accept, ' ranf = ',&
                        & ranf
 
-                  if (mc_istep == 1) then
+                  if (loop%mc_istep == 1) then
                      open (unit=200, file="mc.log", status="unknown")
-                     if (energy_exp > 0.d0) then
+                     if (res%energy_exp > 0.d0) then
                         write (200, '(A)') '# mc_istep  mc_move &
                              & accepted  E_trial              E_current             E_exp_trial&
                              &          E_exp_current  N_tot_trial &
@@ -3534,7 +3422,7 @@ program turbogap
                      end if
 
                   end if
-                  if (mc_istep > 1) then
+                  if (loop%mc_istep > 1) then
                      open (unit=200, file="mc.log", status="old", position="append")
                   end if
 
@@ -3548,32 +3436,32 @@ program turbogap
                      temp_string2 = trim(temp_string2)//" "//trim(temp_string)
                   end do
 
-                  if (energy_exp > 0.d0) then
+                  if (res%energy_exp > 0.d0) then
 
                      write (200, "(I8, 1X, A10, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, A)") &
-                          mc_istep, trim(adjustl(mc_move)), p_accept > ranf, energy + E_kinetic, &
+                          loop%mc_istep, trim(adjustl(mc_move)), p_accept > ranf, res%energy + E_kinetic, &
                           images(i_current_image)%energy +&
-                          & images(i_current_image)%e_kin, energy_exp,&
+                          & images(i_current_image)%e_kin, res%energy_exp,&
                           & images(i_current_image)%energy_exp,&
                           & images(i_trial_image)%n_sites,&
                           & trim(temp_string2)
                   else
                      write (200, "(I8, 1X, A10, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, A)") &
-                        mc_istep, trim(adjustl(mc_move)), p_accept > ranf, energy + E_kinetic, &
+                        loop%mc_istep, trim(adjustl(mc_move)), p_accept > ranf, res%energy + E_kinetic, &
                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
                         images(i_trial_image)%n_sites, trim(temp_string2)
 
                   end if
 
-                  if (mc_istep >= 1) close (200)
+                  if (loop%mc_istep >= 1) close (200)
 
                   if (p_accept > ranf) then
                      !             Accept
                      ! Set variables
-                     n_sites_prev = n_sites
-                     v_uc_prev = v_uc
+                     loop%n_sites_prev = state%n_sites
+                     v_uc_prev = state%v_uc
                      v_a_uc_prev = v_a_uc
-                     virial_prev = virial
+                     virial_prev = res%virial
                      !   Assigning the default image with the accepted one
                      images(i_current_image) = images(i_trial_image)
 
@@ -3582,18 +3470,18 @@ program turbogap
                      end if
 
                   end if
-                  if (n_sites > 1) then
-                     instant_temp = 2.d0/3.d0/dfloat(n_sites - 1)/kB*E_kinetic
-                     instant_pressure = (kB*dfloat(n_sites - 1)*instant_temp&
-                          &+ (virial(1, 1) + virial(2, 2) + virial(3, 3))/3.d0)&
-                          &/v_uc*eVperA3tobar
+                  if (state%n_sites > 1) then
+                     instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/kB*E_kinetic
+                     instant_pressure = (kB*dfloat(state%n_sites - 1)*instant_temp&
+                          &+ (res%virial(1, 1) + res%virial(2, 2) + res%virial(3, 3))/3.d0)&
+                          &/state%v_uc*eVperA3tobar
                   else
                      instant_temp = 0.0d0
                      instant_pressure = 0.0d0
                   end if
 
-                  if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
-                       modulo(mc_istep, params%write_xyz) == 0)) then
+                  if ((params%mc_write_xyz .or. loop%mc_istep == 0 .or. loop%mc_istep == params%mc_nsteps .or. &
+                       modulo(loop%mc_istep, params%write_xyz) == 0)) then
                      if (params%verb > 50) write (*, '(1X,A)') '&
                           & Writing mc_current.xyz and&
                           & mc_all.xyz '
@@ -3601,14 +3489,14 @@ program turbogap
                           &%positions(1:3,&
                           & 1:images(i_current_image)%n_sites),&
                           & images(i_current_image)%a_box&
-                          &/dfloat(indices(1)),&
+                          &/dfloat(state%indices(1)),&
                           & images(i_current_image)%b_box&
-                          &/dfloat(indices(2)),&
+                          &/dfloat(state%indices(2)),&
                           & images(i_current_image)%c_box&
-                          &/dfloat(indices(3)))
-                     call get_xyz_energy_string(energies_soap, energies_2b,&
-                          & energies_3b, energies_core_pot, energies_vdw, energies_exp&
-                          &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                          &/dfloat(state%indices(3)))
+                     call get_xyz_energy_string(res%energies_soap, res%energies_2b,&
+                          & res%energies_3b, res%energies_core_pot, res%energies_vdw, res%energies_exp&
+                          &, res%energies_lp, res%energies_pdf, res%energies_sf, res%energies_xrd, res%energies_nd,&
                           & params%valid_pdf, params%valid_sf,&
                           & params%valid_xrd, params%valid_nd,&
                           & params%do_pair_distribution, params&
@@ -3618,9 +3506,9 @@ program turbogap
                           & images(i_current_image)%energies_dipole)
 
                      call write_extxyz(images(i_current_image)%n_sites, 0, 1.0d0, 0.d0, instant_temp, instant_pressure, &
-                          images(i_current_image)%a_box/dfloat(indices(1)), &
-                          images(i_current_image)%b_box/dfloat(indices(2)), &
-                          images(i_current_image)%c_box/dfloat(indices(3)), &
+                          images(i_current_image)%a_box/dfloat(state%indices(1)), &
+                          images(i_current_image)%b_box/dfloat(state%indices(2)), &
+                          images(i_current_image)%c_box/dfloat(state%indices(3)), &
                           virial_prev, images(i_current_image)%xyz_species, &
                           images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
                           images(i_current_image)%velocities, &
@@ -3630,7 +3518,7 @@ program turbogap
                           params%write_property, params&
                           &%write_array_property, params&
                           &%write_local_properties,&
-                          & local_property_labels,&
+                          & model%local_property_labels,&
                           & images(i_current_image)%local_properties&
                           &, images(i_current_image)%fix_atom,&
                           & "mc_current.xyz", string, .true., &
@@ -3638,9 +3526,9 @@ program turbogap
                           & images(i_current_image)%local_dipoles)
 
                      call write_extxyz(images(i_current_image)%n_sites, 1, 1.0d0, 0.d0, instant_temp, instant_pressure, &
-                          images(i_current_image)%a_box/dfloat(indices(1)), &
-                          images(i_current_image)%b_box/dfloat(indices(2)), &
-                          images(i_current_image)%c_box/dfloat(indices(3)), &
+                          images(i_current_image)%a_box/dfloat(state%indices(1)), &
+                          images(i_current_image)%b_box/dfloat(state%indices(2)), &
+                          images(i_current_image)%c_box/dfloat(state%indices(3)), &
                           virial_prev, images(i_current_image)%xyz_species, &
                           images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
                           images(i_current_image)%velocities, &
@@ -3650,7 +3538,7 @@ program turbogap
                           params%write_property, params&
                           &%write_array_property, params&
                           &%write_local_properties,&
-                          & local_property_labels,&
+                          & model%local_property_labels,&
                           & images(i_current_image)%local_properties,&
                           & images(i_current_image)%fix_atom,&
                           & "mc_all.xyz", string, .false., &
@@ -3741,7 +3629,7 @@ program turbogap
                   end if
 
                   if (.not. allocated(mc_mol_id)) then
-                     allocate (mc_mol_id(1:n_sites), mc_mol_mu(1:n_sites))
+                     allocate (mc_mol_id(1:state%n_sites), mc_mol_mu(1:state%n_sites))
                      mc_mol_id = 0
                      mc_mol_mu = 0
                   end if
@@ -3757,7 +3645,7 @@ program turbogap
                      !    get the mc species types
 
                      do j = 1, params%n_mc_mu
-                        do i = 1, n_species
+                        do i = 1, model%n_species
                            if (params%species_types(i) == params%mc_species(j)) then
                               mc_id(j) = i
                            end if
@@ -3766,36 +3654,38 @@ program turbogap
                   end if
 
                   !       Now use the image construct to store this as the image to compare to
-                  call from_properties_to_image(images(i_current_image), positions, velocities, masses, &
-                                                forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
-                                                species, species_supercell, n_sites, indices, fix_atom, &
-                                                xyz_species, xyz_species_supercell, local_properties, &
-                                                local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
+                  call from_properties_to_image(images(i_current_image), state%positions, state%velocities, state%masses, &
+                                                res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
+                                                res%energy_exp, E_kinetic, &
+                                                state%species, state%species_supercell, state%n_sites, state%indices, &
+                                                state%fix_atom, &
+                                                state%xyz_species, state%xyz_species_supercell, res%local_properties, &
+                                                res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
 
-                  instant_temp = 2.d0/3.d0/dfloat(n_sites - 1)/kB*E_kinetic
-                  instant_pressure = (kB*dfloat(n_sites - 1)*instant_temp&
-                       &+ (virial(1, 1) + virial(2, 2) + virial(3, 3))/3.d0)&
-                       &/v_uc*eVperA3tobar
+                  instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/kB*E_kinetic
+                  instant_pressure = (kB*dfloat(state%n_sites - 1)*instant_temp&
+                       &+ (res%virial(1, 1) + res%virial(2, 2) + res%virial(3, 3))/3.d0)&
+                       &/state%v_uc*eVperA3tobar
 
-                  if ((mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
-                       modulo(mc_istep, params%write_xyz) == 0)) then
+                  if ((loop%mc_istep == 0 .or. loop%mc_istep == params%mc_nsteps .or. &
+                       modulo(loop%mc_istep, params%write_xyz) == 0)) then
                      if (params%verb > 50) write (*, '(1X,A)') ' Writing mc_current.xyz and mc_all.xyz '
                      call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                                   images(i_current_image)%a_box/dfloat(indices(1)), &
-                                   images(i_current_image)%b_box/dfloat(indices(2)), &
-                                   images(i_current_image)%c_box/dfloat(indices(3)))
-                     call get_xyz_energy_string(energies_soap, energies_2b,&
-                          & energies_3b, energies_core_pot, energies_vdw, energies_exp&
-                          &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                                   images(i_current_image)%a_box/dfloat(state%indices(1)), &
+                                   images(i_current_image)%b_box/dfloat(state%indices(2)), &
+                                   images(i_current_image)%c_box/dfloat(state%indices(3)))
+                     call get_xyz_energy_string(res%energies_soap, res%energies_2b,&
+                          & res%energies_3b, res%energies_core_pot, res%energies_vdw, res%energies_exp&
+                          &, res%energies_lp, res%energies_pdf, res%energies_sf, res%energies_xrd, res%energies_nd,&
                           & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                           & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
                           & params%do_dipole, images(i_current_image)%dipole,&
                           & images(i_current_image)%energies_dipole)
 
                      call write_extxyz(images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
-                          images(i_current_image)%a_box/dfloat(indices(1)), &
-                          images(i_current_image)%b_box/dfloat(indices(2)), &
-                          images(i_current_image)%c_box/dfloat(indices(3)), &
+                          images(i_current_image)%a_box/dfloat(state%indices(1)), &
+                          images(i_current_image)%b_box/dfloat(state%indices(2)), &
+                          images(i_current_image)%c_box/dfloat(state%indices(3)), &
                           virial_prev, images(i_current_image)%xyz_species, &
                           images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
                           images(i_current_image)%velocities, &
@@ -3805,16 +3695,16 @@ program turbogap
                           params%write_property, params&
                           &%write_array_property, params&
                           &%write_local_properties,&
-                          & local_property_labels, images(i_current_image)%local_properties&
+                          & model%local_property_labels, images(i_current_image)%local_properties&
                           &, images(i_current_image)%fix_atom,&
                           & "mc_current.xyz", string, .true., &
                           & params%do_dipole,&
                           & images(i_current_image)%local_dipoles)
 
                      call write_extxyz(images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
-                          images(i_current_image)%a_box/dfloat(indices(1)), &
-                          images(i_current_image)%b_box/dfloat(indices(2)), &
-                          images(i_current_image)%c_box/dfloat(indices(3)), &
+                          images(i_current_image)%a_box/dfloat(state%indices(1)), &
+                          images(i_current_image)%b_box/dfloat(state%indices(2)), &
+                          images(i_current_image)%c_box/dfloat(state%indices(3)), &
                           virial_prev, images(i_current_image)%xyz_species, &
                           images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
                           images(i_current_image)%velocities, &
@@ -3824,15 +3714,16 @@ program turbogap
                           params%write_property, params&
                           &%write_array_property, params&
                           &%write_local_properties,&
-                          & local_property_labels, images(i_current_image)%local_properties&
+                          & model%local_property_labels, images(i_current_image)%local_properties&
                           &, images(i_current_image)%fix_atom,&
                           & "mc_all.xyz", string, .true., &
                           & params%do_dipole,&
                           & images(i_current_image)%local_dipoles)
 
-                     v_uc_prev = dot_product(cross_product(a_box, b_box), c_box)/(dfloat(indices(1)*indices(2)*indices(3)))
+                     v_uc_prev = dot_product(cross_product(state%a_box, state%b_box), &
+                                             state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
                      if (params%accessible_volume) then
-                        call get_accessible_volume(v_uc_prev, v_a_uc_prev, species, params%radii)
+                        call get_accessible_volume(v_uc_prev, v_a_uc_prev, state%species, params%radii)
                      else
                         v_a_uc_prev = v_uc_prev
                      end if
@@ -3841,18 +3732,19 @@ program turbogap
                end if
 
                !  Now start the mc logic: first, use the stored images properties
-               call from_image_to_properties(images(i_current_image), positions, velocities, masses, &
-                                             forces, a_box, b_box, c_box, energy, energies, energy_exp, E_kinetic, &
-                                             species, species_supercell, n_sites, indices, fix_atom, &
-                                             xyz_species, xyz_species_supercell, local_properties, &
-                                             local_dipoles, energies_dipole, dipole, mc_mol_id, mc_mol_mu)
+               call from_image_to_properties(images(i_current_image), state%positions, state%velocities, state%masses, &
+                                             res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
+                                             res%energy_exp, E_kinetic, &
+                                             state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
+                                             state%xyz_species, state%xyz_species_supercell, res%local_properties, &
+                                             res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
 
                call perform_mc_step(&
-                    & positions, species, xyz_species, masses, fix_atom,&
-                    & velocities, positions_prev, positions_diff, disp, d_disp, params%n_local_properties,&
-                    & params%mc_acceptance, params%mc_mu_acceptance, local_properties, &
-                    images(i_current_image)%local_properties, energies,&
-                    & forces, forces_prev, n_sites, params%n_mc_mu, mc_mu_id, n_mc_species,&
+                    & state%positions, state%species, state%xyz_species, state%masses, state%fix_atom,&
+                    & state%velocities, state%positions_prev, state%positions_diff, disp, d_disp, params%n_local_properties,&
+                    & params%mc_acceptance, params%mc_mu_acceptance, res%local_properties, &
+                    images(i_current_image)%local_properties, res%energies,&
+                    & res%forces, state%forces_prev, state%n_sites, params%n_mc_mu, mc_mu_id, n_mc_species,&
                     & mc_move, params%mc_species,&
                     & params%mc_move_max, params%mc_min_dist, params%mc_max_dist, params%mc_max_insertion_trials, &
                     params%mc_lnvol_max, params%mc_types, params%masses_types, species_idx,&
@@ -3860,9 +3752,9 @@ program turbogap
                     & images(i_current_image)%species,&
                     & images(i_current_image)%xyz_species,&
                     & images(i_current_image)%fix_atom,&
-                    & images(i_current_image)%masses, a_box(1:3), b_box(1:3),&
-                    & c_box(1:3), indices, params%do_md, params%mc_relax,&
-                    & md_istep, mc_id, E_kinetic, instant_temp, params%t_beg,&
+                    & images(i_current_image)%masses, state%a_box(1:3), state%b_box(1:3),&
+                    & state%c_box(1:3), state%indices, params%do_md, params%mc_relax,&
+                    & loop%md_istep, mc_id, E_kinetic, instant_temp, params%t_beg,&
                     & params%n_mc_swaps, params%mc_swaps, params%mc_swaps_id, &
                     & params%species_types, params%mc_hamiltonian,&
                     & params%n_mc_relax_after, params&
@@ -3872,7 +3764,7 @@ program turbogap
                     params%mc_molecules, mc_mol_id, mc_mol_mu, &
                     images(i_current_image)%mc_mol_id, images(i_current_image)%mc_mol_mu, mc_mol_next)
 
-               rebuild_neighbors_list = .true.
+               nl%rebuild_neighbors_list = .true.
 
                ! NOTE: the species_supercell and xyz_species_supercell are
                ! not commensurate with the new image as these have not been
@@ -3883,16 +3775,16 @@ program turbogap
 
                if (params%mc_relax .and. do_mc_relax) then
                   ! Set the parameters for relaxatrino
-                  md_istep = -1
+                  loop%md_istep = -1
                   params%do_md = .true.
                   params%optimize = params%mc_relax_opt
                   params%md_nsteps = params%mc_nrelax
 
-                  if (n_sites == 1) then
+                  if (state%n_sites == 1) then
                      params%do_md = .false.
                   end if
 
-                  call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg, &
+                  call randomize_velocities(state%velocities, state%n_sites, E_kinetic, state%masses, instant_temp, params%t_beg, &
                                             params%velocity_distribution)
 
                   if (params%mc_hamiltonian) E_kinetic_prev = E_kinetic
@@ -3901,174 +3793,182 @@ program turbogap
                ! If doing md, don't relax
                if (mc_move == 'md') then
                   ! Set the parameters for relaxatrino
-                  md_istep = -1
+                  loop%md_istep = -1
                   params%do_md = .true.
                   params%optimize = params%mc_hybrid_opt
                   params%md_nsteps = temp_md_nsteps
 
-                  if (n_sites == 1) then
+                  if (state%n_sites == 1) then
                      params%do_md = .false.
                   end if
 
-                  call randomize_velocities(velocities, n_sites, E_kinetic, masses, instant_temp, params%t_beg, &
+                  call randomize_velocities(state%velocities, state%n_sites, E_kinetic, state%masses, instant_temp, params%t_beg, &
                                             params%velocity_distribution)
                   if (params%mc_hamiltonian) E_kinetic_prev = E_kinetic
                   ! Note, that this may override md steps if the same is chosen! More testing needed
                end if
 
-               if ((params%mc_write_xyz .or. mc_istep == 0 .or. mc_istep == params%mc_nsteps .or. &
-                    modulo(mc_istep, params%write_xyz) == 0)) then
+               if ((params%mc_write_xyz .or. loop%mc_istep == 0 .or. loop%mc_istep == params%mc_nsteps .or. &
+                    modulo(loop%mc_istep, params%write_xyz) == 0)) then
 
-                  call wrap_pbc(positions(1:3, 1:n_sites), &
-                                a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
-                  call get_xyz_energy_string(energies_soap, energies_2b,&
-                       & energies_3b, energies_core_pot, energies_vdw, energies_exp&
-                       &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+                  call wrap_pbc(state%positions(1:3, 1:state%n_sites), &
+                                state%a_box/dfloat(state%indices(1)), state%b_box/dfloat(state%indices(2)), &
+                                state%c_box/dfloat(state%indices(3)))
+                  call get_xyz_energy_string(res%energies_soap, res%energies_2b,&
+                       & res%energies_3b, res%energies_core_pot, res%energies_vdw, res%energies_exp&
+                       &, res%energies_lp, res%energies_pdf, res%energies_sf, res%energies_xrd, res%energies_nd,&
                        & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                        & params%do_structure_factor, params%do_xrd, params%do_nd, string)
 
-                  call write_extxyz(n_sites, 0, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
-                       a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                       virial, xyz_species, &
-                       positions(1:3, 1:n_sites), velocities, &
-                       forces, energies(1:n_sites), masses, &
+                  call write_extxyz(state%n_sites, 0, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
+                       state%a_box/dfloat(state%indices(1)), state%b_box/dfloat(state%indices(2)), &
+                          state%c_box/dfloat(state%indices(3)), &
+                       res%virial, state%xyz_species, &
+                       state%positions(1:3, 1:state%n_sites), state%velocities, &
+                       res%forces, res%energies(1:state%n_sites), state%masses, &
                        params%write_property, params&
                        &%write_array_property, params&
                        &%write_local_properties,&
-                       & local_property_labels, local_properties&
-                       &, fix_atom, mc_file, string, .true.)
+                       & model%local_property_labels, res%local_properties&
+                       &, state%fix_atom, mc_file, string, .true.)
                end if
                ! As we have moved/added/removed, we must check the supercell and  broadcast the results
 
                call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
-                             n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-                             positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-                             xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-                             n_sites, .true., fix_atom, params%t_beg, &
+                             model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
+                             state%positions, params%do_md, state%velocities, params%masses_types, state%masses, &
+                             state%xyz_species, &
+                             state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
+                             state%b_box, state%c_box, &
+                             state%n_sites, .true., state%fix_atom, params%t_beg, &
                              params%write_array_property(6), .true., params%randomize_velocities)
 
             else
                if (mc_move == 'md') then
-                  if (params%print_progress .and. md_istep == 0) then
+                  if (params%print_progress .and. loop%md_istep == 0) then
                      write (*, *) '                                       |'
                      write (*, *) 'Progress:                              |'
                      write (*, *) '                                       |'
                      write (*, '(1X,A)', advance='no') '[                                    ] |'
-                     update_bar = params%md_nsteps/36
-                     if (update_bar < 1) then
-                        update_bar = 1
+                     loop%update_bar = params%md_nsteps/36
+                     if (loop%update_bar < 1) then
+                        loop%update_bar = 1
                      end if
-                     counter = 1
-                  else if (md_istep == params%md_nsteps - 1 .or. &
-                           (abs(energy - energy_prev) < params%e_tol*dfloat(n_sites) .and. &
-                            maxval(abs(forces)) < params%f_tol) .and. md_istep > 0) then
+                     loop%counter = 1
+                  else if (loop%md_istep == params%md_nsteps - 1 .or. &
+                           (abs(res%energy - res%energy_prev) < params%e_tol*dfloat(state%n_sites) .and. &
+                            maxval(abs(res%forces)) < params%f_tol) .and. loop%md_istep > 0) then
                      write (*, *)
-                  else if (params%print_progress .and. counter == update_bar .and. md_istep < params%md_nsteps - 1) then
+                  else if (params%print_progress .and. loop%counter == loop%update_bar .and. loop%md_istep < params%md_nsteps &
+                           - 1) then
                      do j = 1, 36 + 3
                         write (*, "(A)", advance="no") creturn
                      end do
                      write (*, "(1X,A)", advance="no") "["
-                     do i = 1, 36*(md_istep + 1)/params%md_nsteps
+                     do i = 1, 36*(loop%md_istep + 1)/params%md_nsteps
                         write (*, "(A)", advance="no") "."
                      end do
-                     do i = 36*(md_istep + 1)/params%md_nsteps + 1, 36
+                     do i = 36*(loop%md_istep + 1)/params%md_nsteps + 1, 36
                         write (*, "(A)", advance="no") " "
                      end do
                      write (*, "(A)", advance="no") "] |"
-                     counter = 1
+                     loop%counter = 1
                   else
-                     counter = counter + 1
+                     loop%counter = loop%counter + 1
                   end if
 
                   if (params%mc_hamiltonian) then
                      if (params%verb > 50) write (*, '(1X,A,1X,F20.8,1X&
                           &,A,1X,I8,1X,A,1X,I8)') "Hybrid md step: H =&
-                          & T + V = ", energy + E_kinetic, ",&
-                          & iteration ", md_istep, "/", params&
+                          & T + V = ", res%energy + E_kinetic, ",&
+                          & iteration ", loop%md_istep, "/", params&
                           &%md_nsteps
                   else
                      if (params%verb > 50) write (*, '(1X,A,1X,F20.8,1X&
                           &,A,1X,I8,1X,A,1X,I8)') "Hybrid md step:&
-                          & energy = ", energy, ", iteration ",&
-                          & md_istep, "/", params%md_nsteps
+                          & energy = ", res%energy, ", iteration ",&
+                          & loop%md_istep, "/", params%md_nsteps
                   end if
 
-                  if (params%verb > 50) write (*, '(A,1X,F22.8,1X,A)') ' SOAP energy:', sum(energies_soap), 'eV |'
-                  if (params%verb > 50) write (*, '(A,1X,F24.8,1X,A)') ' 2b energy:', sum(energies_2b), 'eV |'
-                  if (params%verb > 50) write (*, '(A,1X,F24.8,1X,A)') ' 3b energy:', sum(energies_3b), 'eV |'
+                  if (params%verb > 50) write (*, '(A,1X,F22.8,1X,A)') ' SOAP energy:', sum(res%energies_soap), 'eV |'
+                  if (params%verb > 50) write (*, '(A,1X,F24.8,1X,A)') ' 2b energy:', sum(res%energies_2b), 'eV |'
+                  if (params%verb > 50) write (*, '(A,1X,F24.8,1X,A)') ' 3b energy:', sum(res%energies_3b), 'eV |'
                   if (params%verb > 50) write (*, '(A,1X,F18.8,1X,A)') '&
-                       & core_pot energy:', sum(energies_core_pot),&
+                       & core_pot energy:', sum(res%energies_core_pot),&
                        & 'eV |'
                   if (params%verb > 50) write (*, '(A,1X,F23.8,1X,A)') '&
-                       & vdw energy:', sum(energies_vdw), 'eV |'
-                  if (params%verb > 50 .and. valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', sum(energies_lp), 'eV |'
+                       & vdw energy:', sum(res%energies_vdw), 'eV |'
+                  if (params%verb > 50 .and. model%valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', &
+                     sum(res%energies_lp), 'eV |'
 
                   if (perform%pdf .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' pdf energy:',&
-                       & sum(energies_pdf), 'eV |'
+                       & sum(res%energies_pdf), 'eV |'
                   if (perform%sf .and. params%verb > 50)&
                        & write (*, '(A,1X,F24.8,1X,A)') ' sf energy:',&
-                       & sum(energies_sf), 'eV |'
+                       & sum(res%energies_sf), 'eV |'
                   if (perform%xrd .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' xrd energy:',&
-                       & sum(energies_xrd), 'eV |'
+                       & sum(res%energies_xrd), 'eV |'
                   if (perform%nd .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' nd energy:',&
-                       & sum(energies_nd), 'eV |'
+                       & sum(res%energies_nd), 'eV |'
 
                else
-                  if (params%print_progress .and. mc_istep == 0) then
+                  if (params%print_progress .and. loop%mc_istep == 0) then
                      write (*, *) '                                       |'
                      write (*, *) 'Progress:                              |'
                      write (*, *) '                                       |'
                      write (*, '(1X,A)', advance='no') '[                                    ] |'
-                     update_bar = params%mc_nsteps/36
-                     if (update_bar < 1) then
-                        update_bar = 1
+                     loop%update_bar = params%mc_nsteps/36
+                     if (loop%update_bar < 1) then
+                        loop%update_bar = 1
                      end if
-                     counter = 1
-                  else if (mc_istep == params%mc_nsteps - 1 .and. mc_istep > 0) then
+                     loop%counter = 1
+                  else if (loop%mc_istep == params%mc_nsteps - 1 .and. loop%mc_istep > 0) then
                      write (*, *)
-                  else if (params%print_progress .and. counter == update_bar .and. mc_istep < params%mc_nsteps - 1) then
+                  else if (params%print_progress .and. loop%counter == loop%update_bar .and. loop%mc_istep < params%mc_nsteps &
+                           - 1) then
                      do j = 1, 36 + 3
                         write (*, "(A)", advance="no") creturn
                      end do
                      write (*, "(1X,A)", advance="no") "["
-                     do i = 1, 36*(mc_istep + 1)/params%mc_nsteps
+                     do i = 1, 36*(loop%mc_istep + 1)/params%mc_nsteps
                         write (*, "(A)", advance="no") "."
                      end do
-                     do i = 36*(mc_istep + 1)/params%mc_nsteps + 1, 36
+                     do i = 36*(loop%mc_istep + 1)/params%mc_nsteps + 1, 36
                         write (*, "(A)", advance="no") " "
                      end do
                      write (*, "(A)", advance="no") "] |"
-                     counter = 1
+                     loop%counter = 1
                   else
-                     counter = counter + 1
+                     loop%counter = loop%counter + 1
                   end if
 
                   if (params%verb > 50 .and. do_mc_relax) write (*, '(1X,A,1X,F20.8,1X,A&
                        &,1X,I8,1X,A,1X,I8)') "MC Relax md step: energy &
-                       &= ", energy, ", iteration ", md_istep, "/",&
+                       &= ", res%energy, ", iteration ", loop%md_istep, "/",&
                        & params%mc_nrelax
-                  if (params%verb > 50) write (*, '(A,1X,F22.8,1X,A)') ' SOAP energy:', sum(energies_soap), 'eV |'
-                  if (params%verb > 50) write (*, '(A,1X,F24.8,1X,A)') ' 2b energy:', sum(energies_2b), 'eV |'
-                  if (params%verb > 50) write (*, '(A,1X,F24.8,1X,A)') ' 3b energy:', sum(energies_3b), 'eV |'
-                  if (params%verb > 50) write (*, '(A,1X,F18.8,1X,A)') ' core_pot energy:', sum(energies_core_pot), 'eV |'
-                  if (params%verb > 50) write (*, '(A,1X,F23.8,1X,A)') ' vdw energy:', sum(energies_vdw), 'eV |'
-                  if (params%verb > 50 .and. valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', sum(energies_lp), 'eV |'
+                  if (params%verb > 50) write (*, '(A,1X,F22.8,1X,A)') ' SOAP energy:', sum(res%energies_soap), 'eV |'
+                  if (params%verb > 50) write (*, '(A,1X,F24.8,1X,A)') ' 2b energy:', sum(res%energies_2b), 'eV |'
+                  if (params%verb > 50) write (*, '(A,1X,F24.8,1X,A)') ' 3b energy:', sum(res%energies_3b), 'eV |'
+                  if (params%verb > 50) write (*, '(A,1X,F18.8,1X,A)') ' core_pot energy:', sum(res%energies_core_pot), 'eV |'
+                  if (params%verb > 50) write (*, '(A,1X,F23.8,1X,A)') ' vdw energy:', sum(res%energies_vdw), 'eV |'
+                  if (params%verb > 50 .and. model%valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', &
+                     sum(res%energies_lp), 'eV |'
 
                   if (perform%pdf .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' pdf energy:',&
-                       & sum(energies_pdf), 'eV |'
+                       & sum(res%energies_pdf), 'eV |'
                   if (perform%sf .and. params%verb > 50)&
                        & write (*, '(A,1X,F24.8,1X,A)') ' sf energy:',&
-                       & sum(energies_sf), 'eV |'
+                       & sum(res%energies_sf), 'eV |'
                   if (perform%xrd .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' xrd energy:',&
-                       & sum(energies_xrd), 'eV |'
+                       & sum(res%energies_xrd), 'eV |'
                   if (perform%nd .and. params%verb > 50)&
                        & write (*, '(A,1X,F23.8,1X,A)') ' nd energy:',&
-                       & sum(energies_nd), 'eV |'
+                       & sum(res%energies_nd), 'eV |'
 
                end if
             end if
@@ -4096,95 +3996,97 @@ program turbogap
 
       ! This can be optimised, so please do if you are smarter than me
 
-      if (params%do_mc .and. md_istep == -1 .and. rank == 0) then
-         n_pos = size(positions, 2)
-         n_sp = size(xyz_species, 1)
-         n_sp_sc = size(xyz_species_supercell, 1)
+      if (params%do_mc .and. loop%md_istep == -1 .and. rank == 0) then
+         n_pos = size(state%positions, 2)
+         n_sp = size(state%xyz_species, 1)
+         n_sp_sc = size(state%xyz_species_supercell, 1)
       end if
       call time_start(time%mpi)
       call comm_bcast(comm, n_pos)
       call comm_bcast(comm, n_sp)
       call comm_bcast(comm, n_sp_sc)
       call comm_bcast(comm, params%do_md)
-      call comm_bcast(comm, md_istep)
+      call comm_bcast(comm, loop%md_istep)
       call time_end(time%mpi)
       if (rank /= 0) then !.and. (mc_move == "insertion" .or. mc_move == "removal")
-         if (allocated(positions)) deallocate (positions)
-         allocate (positions(1:3, n_pos))
+         if (allocated(state%positions)) deallocate (state%positions)
+         allocate (state%positions(1:3, n_pos))
          if (params%do_md .or. params%do_nested_sampling .or. params%do_mc) then
-            if (allocated(velocities)) deallocate (velocities)
-            allocate (velocities(1:3, n_pos))
-            if (allocated(masses)) deallocate (masses)
-            allocate (masses(1:n_sp))
-            if (allocated(fix_atom)) deallocate (fix_atom)
-            allocate (fix_atom(1:3, 1:n_sp))
+            if (allocated(state%velocities)) deallocate (state%velocities)
+            allocate (state%velocities(1:3, n_pos))
+            if (allocated(state%masses)) deallocate (state%masses)
+            allocate (state%masses(1:n_sp))
+            if (allocated(state%fix_atom)) deallocate (state%fix_atom)
+            allocate (state%fix_atom(1:3, 1:n_sp))
 
          end if
-         if (allocated(xyz_species)) deallocate (xyz_species)
-         allocate (xyz_species(1:n_sp))
-         if (allocated(species)) deallocate (species)
-         allocate (species(1:n_sp))
-         if (allocated(xyz_species_supercell)) deallocate (xyz_species_supercell)
-         allocate (xyz_species_supercell(1:n_sp_sc))
-         if (allocated(species_supercell)) deallocate (species_supercell)
-         allocate (species_supercell(1:n_sp_sc))
+         if (allocated(state%xyz_species)) deallocate (state%xyz_species)
+         allocate (state%xyz_species(1:n_sp))
+         if (allocated(state%species)) deallocate (state%species)
+         allocate (state%species(1:n_sp))
+         if (allocated(state%xyz_species_supercell)) deallocate (state%xyz_species_supercell)
+         allocate (state%xyz_species_supercell(1:n_sp_sc))
+         if (allocated(state%species_supercell)) deallocate (state%species_supercell)
+         allocate (state%species_supercell(1:n_sp_sc))
       end if
       call time_start(time%mpi_positions)
-      call comm_bcast(comm, positions, 3*n_pos)
+      call comm_bcast(comm, state%positions, 3*n_pos)
       if (params%do_md .or. params%do_nested_sampling .or. params%do_mc) then
-         call comm_bcast(comm, velocities, 3*n_pos)
-         call comm_bcast(comm, masses, n_sp)
-         call comm_bcast(comm, fix_atom, 3*n_sp)
+         call comm_bcast(comm, state%velocities, 3*n_pos)
+         call comm_bcast(comm, state%masses, n_sp)
+         call comm_bcast(comm, state%fix_atom, 3*n_sp)
       end if
-      call comm_bcast(comm, xyz_species, 8*n_sp)
-      call comm_bcast(comm, xyz_species_supercell, 8*n_sp_sc)
-      call comm_bcast(comm, species, n_sp)
-      call comm_bcast(comm, species_supercell, n_sp_sc)
-      call comm_bcast(comm, indices, 3)
-      call comm_bcast(comm, a_box, 3)
-      call comm_bcast(comm, b_box, 3)
-      call comm_bcast(comm, c_box, 3)
-      call comm_bcast(comm, n_sites)
+      call comm_bcast(comm, state%xyz_species, 8*n_sp)
+      call comm_bcast(comm, state%xyz_species_supercell, 8*n_sp_sc)
+      call comm_bcast(comm, state%species, n_sp)
+      call comm_bcast(comm, state%species_supercell, n_sp_sc)
+      call comm_bcast(comm, state%indices, 3)
+      call comm_bcast(comm, state%a_box, 3)
+      call comm_bcast(comm, state%b_box, 3)
+      call comm_bcast(comm, state%c_box, 3)
+      call comm_bcast(comm, state%n_sites)
       call time_end(time%mpi_positions)
       !   Now that all ranks know the size of n_sites, we allocate do_list
-      if (.not. params%do_md .or. (params%do_md .and. md_istep == 0) .or. &
+      if (.not. params%do_md .or. (params%do_md .and. loop%md_istep == 0) .or. &
           (params%do_mc)) then
-         if (allocated(do_list)) deallocate (do_list)
-         allocate (do_list(1:n_sites))
-         do_list = .true.
+         if (allocated(dom%do_list)) deallocate (dom%do_list)
+         allocate (dom%do_list(1:state%n_sites))
+         dom%do_list = .true.
       end if
       call get_time(time1)
       !   Parallel neighbors list build
-      call comm_bcast(comm, rebuild_neighbors_list)
+      call comm_bcast(comm, nl%rebuild_neighbors_list)
 
-      if (rebuild_neighbors_list) then
-         deallocate (rjs, xyz, thetas, phis, neighbor_species)
-         deallocate (neighbors_list, n_neigh)
-         deallocate (n_neigh_local)
+      if (nl%rebuild_neighbors_list) then
+         deallocate (nl%rjs, nl%xyz, nl%thetas, nl%phis, nl%neighbor_species)
+         deallocate (nl%neighbors_list, nl%n_neigh)
+         deallocate (nl%n_neigh_local)
       end if
       if ((params%do_nested_sampling .and. .not. params%do_mc) .and. &
-          (params%do_md .and. (md_istep == params%md_nsteps .or. exit_loop))) then
-         deallocate (positions, xyz_species, xyz_species_supercell, species, species_supercell, do_list)
-         if (allocated(velocities)) deallocate (velocities)
+          (params%do_md .and. (loop%md_istep == params%md_nsteps .or. loop%exit_loop))) then
+         deallocate (state%positions, state%xyz_species, state%xyz_species_supercell, state%species, state%species_supercell, &
+                     dom%do_list)
+         if (allocated(state%velocities)) deallocate (state%velocities)
       end if
       if (params%do_mc .and. params%do_md) then
-         if (params%do_mc .and. (mc_istep == params%mc_nsteps .or. exit_loop)) then
-            deallocate (positions, xyz_species, xyz_species_supercell, species, species_supercell, do_list)
-            if (allocated(velocities)) deallocate (velocities)
+         if (params%do_mc .and. (loop%mc_istep == params%mc_nsteps .or. loop%exit_loop)) then
+            deallocate (state%positions, state%xyz_species, state%xyz_species_supercell, state%species, &
+                        state%species_supercell, dom%do_list)
+            if (allocated(state%velocities)) deallocate (state%velocities)
          end if
       end if
 
       if ((params%do_md .and. .not. params%do_mc) .and. &
-          (md_istep == params%md_nsteps .or. exit_loop) .and. rank == 0) then
-         deallocate (positions_prev, forces_prev)
+          (loop%md_istep == params%md_nsteps .or. loop%exit_loop) .and. rank == 0) then
+         deallocate (state%positions_prev, state%forces_prev)
       end if
-      if (params%do_mc .and. (mc_istep == params%mc_nsteps .or. exit_loop) .and. rank == 0) then
-         if (allocated(forces_prev)) deallocate (forces_prev)
-         if (allocated(positions_prev)) deallocate (positions_prev)
+      if (params%do_mc .and. (loop%mc_istep == params%mc_nsteps .or. loop%exit_loop) .and. rank == 0) then
+         if (allocated(state%forces_prev)) deallocate (state%forces_prev)
+         if (allocated(state%positions_prev)) deallocate (state%positions_prev)
       end if
 
-      if (params%exp_forces .and. (md_istep == params%md_nsteps .or.&
-           & mc_istep == params%mc_nsteps .or. exit_loop)) then
+      if (params%exp_forces .and. (loop%md_istep == params%md_nsteps .or.&
+           & loop%mc_istep == params%mc_nsteps .or. loop%exit_loop)) then
          do i = 1, params%n_exp
             if (allocated(params%exp_data(i)%x)) deallocate (params%exp_data(i)%x)
             if (allocated(params%exp_data(i)%y)) deallocate (params%exp_data(i)%y)
@@ -4196,7 +4098,7 @@ program turbogap
 !     boundary this step fell on. mad_ir_applied was set for THIS step in the
 !     force block above, so the two accumulators separate exactly at the step
 !     the ensemble filled.
-      if (params%valid_ir .and. params%do_md .and. md_istep >= 0) then
+      if (params%valid_ir .and. params%do_md .and. loop%md_istep >= 0) then
          call get_time(mad_ir_t_now)
          if (mad_ir_applied) then
             mad_ir_t_post = mad_ir_t_post + (mad_ir_t_now - mad_ir_step_beg)
@@ -4207,11 +4109,11 @@ program turbogap
          end if
       end if
 
-      if (.not. params%do_mc) n_sites_prev = n_sites
-      n_atom_pairs_by_rank_prev = n_atom_pairs_by_rank(rank + 1)
+      if (.not. params%do_mc) loop%n_sites_prev = state%n_sites
+      dom%n_atom_pairs_by_rank_prev = dom%n_atom_pairs_by_rank(rank + 1)
 
-      call comm_bcast(comm, exit_loop)
-      if (exit_loop) exit
+      call comm_bcast(comm, loop%exit_loop)
+      if (loop%exit_loop) exit
       ! End of loop through structures in the xyz file or MD steps
    end do
 
@@ -4305,12 +4207,12 @@ program turbogap
       if (rank == 0) then
          if (params%do_md .and. .not. params%do_nested_sampling) then
             write (*, *) '                                       |'
-            write (*, '(I8,A,F13.3,A)') md_istep, ' MD steps:', time2 - time3, ' seconds |'
+            write (*, '(I8,A,F13.3,A)') loop%md_istep, ' MD steps:', time2 - time3, ' seconds |'
          end if
          if (params%do_mc) then
             write (*, *)
             write (*, *) '                                       |'
-            write (*, '(I8,A,F13.3,A)') mc_istep, ' MC steps:', time2 - time3, ' seconds |'
+            write (*, '(I8,A,F13.3,A)') loop%mc_istep, ' MC steps:', time2 - time3, ' seconds |'
          end if
 
          write (*, *) '                                       |'
@@ -4332,11 +4234,11 @@ program turbogap
          if (params%vdw_type /= "none") then
             write (*, '(A,F13.3,A)') ' *            vdw:', time%vdw(3), ' seconds |'
          end if
-         if (valid_xps .or. params%do_pair_distribution .or. params&
+         if (model%valid_xps .or. params%do_pair_distribution .or. params&
               &%do_structure_factor .or. params%do_xrd .or. params%do_nd) write (*, '(A&
               &,F13.3,A)') ' *  Exp. pred.   :', time%pdf(3) + time%sf(3) + time%xrd(3) + time%nd(3), ' seconds&
               & |'
-         if (valid_xps) write (*, '(A,F13.3,A)') '     -        xps:',&
+         if (model%valid_xps) write (*, '(A,F13.3,A)') '     -        xps:',&
               & time%xps(3), ' seconds |'
          if (params%do_pair_distribution) write (*, '(A,F13.3,A)') '     -        pdf:', time%pdf(3), ' seconds |'
          if (params%do_structure_factor) write (*, '(A,F13.3,A)') '     -         sf:', time%sf(3), ' seconds |'
@@ -4449,91 +4351,91 @@ program turbogap
    end if
 
 #ifdef _GPU
-   do i = 1, n_soap_turbo
-      if (.not. soap_turbo_hypers(i)%recompute_basis) then
-         call gpu_free_async(soap_turbo_hypers(i)%W_d, gpu_stream)
-         call gpu_free_async(soap_turbo_hypers(i)%S_d, gpu_stream)
-         call gpu_free_async(soap_turbo_hypers(i)%multiplicity_array_d, gpu_stream)
+   do i = 1, model%n_soap_turbo
+      if (.not. model%soap_turbo_hypers(i)%recompute_basis) then
+         call gpu_free_async(model%soap_turbo_hypers(i)%W_d, gpu_stream)
+         call gpu_free_async(model%soap_turbo_hypers(i)%S_d, gpu_stream)
+         call gpu_free_async(model%soap_turbo_hypers(i)%multiplicity_array_d, gpu_stream)
       end if
    end do
 #endif
-   if (allocated(fix_atom)) deallocate (fix_atom)
-   if (allocated(positions)) deallocate (positions)
-   if (allocated(velocities)) deallocate (velocities)
-   if (allocated(positions_diff)) deallocate (positions_diff)
+   if (allocated(state%fix_atom)) deallocate (state%fix_atom)
+   if (allocated(state%positions)) deallocate (state%positions)
+   if (allocated(state%velocities)) deallocate (state%velocities)
+   if (allocated(state%positions_diff)) deallocate (state%positions_diff)
 
-   if (allocated(energies)) deallocate (energies)
-   if (allocated(local_dipoles)) deallocate (local_dipoles, this_local_dipoles)
-   if (allocated(energies_dipole)) deallocate (energies_dipole, this_energies_dipole)
-   if (allocated(energies_soap)) deallocate (energies_soap)
-   if (allocated(energies_2b)) deallocate (energies_2b)
-   if (allocated(energies_3b)) deallocate (energies_3b)
-   if (allocated(energies_core_pot)) deallocate (energies_core_pot)
-   if (allocated(energies_vdw)) deallocate (energies_vdw)
-   if (allocated(energies_exp)) deallocate (energies_exp)
-   if (allocated(energies_lp)) deallocate (energies_lp)
-   if (allocated(energies_pdf)) deallocate (energies_pdf)
-   if (allocated(energies_sf)) deallocate (energies_sf)
-   if (allocated(energies_xrd)) deallocate (energies_xrd)
-   if (allocated(energies_nd)) deallocate (energies_nd)
+   if (allocated(res%energies)) deallocate (res%energies)
+   if (allocated(res%local_dipoles)) deallocate (res%local_dipoles, res%this_local_dipoles)
+   if (allocated(res%energies_dipole)) deallocate (res%energies_dipole, res%this_energies_dipole)
+   if (allocated(res%energies_soap)) deallocate (res%energies_soap)
+   if (allocated(res%energies_2b)) deallocate (res%energies_2b)
+   if (allocated(res%energies_3b)) deallocate (res%energies_3b)
+   if (allocated(res%energies_core_pot)) deallocate (res%energies_core_pot)
+   if (allocated(res%energies_vdw)) deallocate (res%energies_vdw)
+   if (allocated(res%energies_exp)) deallocate (res%energies_exp)
+   if (allocated(res%energies_lp)) deallocate (res%energies_lp)
+   if (allocated(res%energies_pdf)) deallocate (res%energies_pdf)
+   if (allocated(res%energies_sf)) deallocate (res%energies_sf)
+   if (allocated(res%energies_xrd)) deallocate (res%energies_xrd)
+   if (allocated(res%energies_nd)) deallocate (res%energies_nd)
 
-   if (allocated(this_energies)) deallocate (this_energies)
-   if (allocated(this_energies_vdw)) deallocate (this_energies_vdw)
-   if (allocated(this_energies_lp)) deallocate (this_energies_lp)
-   if (allocated(this_energies_pdf)) deallocate (this_energies_pdf)
-   if (allocated(this_energies_sf)) deallocate (this_energies_sf)
-   if (allocated(this_energies_xrd)) deallocate (this_energies_xrd)
-   if (allocated(this_energies_nd)) deallocate (this_energies_nd)
+   if (allocated(res%this_energies)) deallocate (res%this_energies)
+   if (allocated(res%this_energies_vdw)) deallocate (res%this_energies_vdw)
+   if (allocated(res%this_energies_lp)) deallocate (res%this_energies_lp)
+   if (allocated(res%this_energies_pdf)) deallocate (res%this_energies_pdf)
+   if (allocated(res%this_energies_sf)) deallocate (res%this_energies_sf)
+   if (allocated(res%this_energies_xrd)) deallocate (res%this_energies_xrd)
+   if (allocated(res%this_energies_nd)) deallocate (res%this_energies_nd)
 
-   if (allocated(forces)) deallocate (forces)
-   if (allocated(forces_soap)) deallocate (forces_soap)
-   if (allocated(forces_2b)) deallocate (forces_2b)
-   if (allocated(forces_3b)) deallocate (forces_3b)
-   if (allocated(forces_core_pot)) deallocate (forces_core_pot)
-   if (allocated(forces_vdw)) deallocate (forces_vdw)
-   if (allocated(forces_lp)) deallocate (forces_lp)
-   if (allocated(forces_pdf)) deallocate (forces_pdf)
-   if (allocated(forces_sf)) deallocate (forces_sf)
-   if (allocated(forces_xrd)) deallocate (forces_xrd)
-   if (allocated(forces_nd)) deallocate (forces_nd)
+   if (allocated(res%forces)) deallocate (res%forces)
+   if (allocated(res%forces_soap)) deallocate (res%forces_soap)
+   if (allocated(res%forces_2b)) deallocate (res%forces_2b)
+   if (allocated(res%forces_3b)) deallocate (res%forces_3b)
+   if (allocated(res%forces_core_pot)) deallocate (res%forces_core_pot)
+   if (allocated(res%forces_vdw)) deallocate (res%forces_vdw)
+   if (allocated(res%forces_lp)) deallocate (res%forces_lp)
+   if (allocated(res%forces_pdf)) deallocate (res%forces_pdf)
+   if (allocated(res%forces_sf)) deallocate (res%forces_sf)
+   if (allocated(res%forces_xrd)) deallocate (res%forces_xrd)
+   if (allocated(res%forces_nd)) deallocate (res%forces_nd)
 
-   if (allocated(this_forces)) deallocate (this_forces)
-   if (allocated(this_forces_vdw)) deallocate (this_forces_vdw)
-   if (allocated(this_forces_lp)) deallocate (this_forces_lp)
-   if (allocated(this_forces_pdf)) deallocate (this_forces_pdf)
-   if (allocated(this_forces_sf)) deallocate (this_forces_sf)
-   if (allocated(this_forces_xrd)) deallocate (this_forces_xrd)
-   if (allocated(this_forces_nd)) deallocate (this_forces_nd)
+   if (allocated(res%this_forces)) deallocate (res%this_forces)
+   if (allocated(res%this_forces_vdw)) deallocate (res%this_forces_vdw)
+   if (allocated(res%this_forces_lp)) deallocate (res%this_forces_lp)
+   if (allocated(res%this_forces_pdf)) deallocate (res%this_forces_pdf)
+   if (allocated(res%this_forces_sf)) deallocate (res%this_forces_sf)
+   if (allocated(res%this_forces_xrd)) deallocate (res%this_forces_xrd)
+   if (allocated(res%this_forces_nd)) deallocate (res%this_forces_nd)
 
-   if (allocated(local_properties)) deallocate (local_properties)
-   if (allocated(local_properties_cart_der)) deallocate (local_properties_cart_der)
-   if (allocated(this_local_properties)) deallocate (this_local_properties)
-   if (allocated(this_local_properties_cart_der)) deallocate (this_local_properties_cart_der)
+   if (allocated(res%local_properties)) deallocate (res%local_properties)
+   if (allocated(res%local_properties_cart_der)) deallocate (res%local_properties_cart_der)
+   if (allocated(res%this_local_properties)) deallocate (res%this_local_properties)
+   if (allocated(res%this_local_properties_cart_der)) deallocate (res%this_local_properties_cart_der)
 
-   if (allocated(soap_turbo_hypers)) deallocate (soap_turbo_hypers)
-   if (allocated(distance_2b_hypers)) deallocate (distance_2b_hypers)
-   if (allocated(angle_3b_hypers)) deallocate (angle_3b_hypers)
-   if (allocated(core_pot_hypers)) deallocate (core_pot_hypers)
+   if (allocated(model%soap_turbo_hypers)) deallocate (model%soap_turbo_hypers)
+   if (allocated(model%distance_2b_hypers)) deallocate (model%distance_2b_hypers)
+   if (allocated(model%angle_3b_hypers)) deallocate (model%angle_3b_hypers)
+   if (allocated(model%core_pot_hypers)) deallocate (model%core_pot_hypers)
 
-   deallocate (n_atom_pairs_by_rank)
-   if (allocated(n_local_properties_mpi)) deallocate (n_local_properties_mpi)
-   if (allocated(local_properties_n_sparse_mpi_soap_turbo)) deallocate (local_properties_n_sparse_mpi_soap_turbo)
-   if (allocated(local_properties_dim_mpi_soap_turbo)) deallocate (local_properties_dim_mpi_soap_turbo)
-   if (allocated(has_local_properties_mpi)) deallocate (has_local_properties_mpi)
+   deallocate (dom%n_atom_pairs_by_rank)
+   if (allocated(model%n_local_properties_mpi)) deallocate (model%n_local_properties_mpi)
+   if (allocated(model%local_properties_n_sparse_mpi_soap_turbo)) deallocate (model%local_properties_n_sparse_mpi_soap_turbo)
+   if (allocated(model%local_properties_dim_mpi_soap_turbo)) deallocate (model%local_properties_dim_mpi_soap_turbo)
+   if (allocated(model%has_local_properties_mpi)) deallocate (model%has_local_properties_mpi)
 
-   if (allocated(local_property_labels)) deallocate (local_property_labels)
-   if (allocated(local_property_indexes)) deallocate (local_property_indexes)
-   if (allocated(do_list)) deallocate (do_list)
+   if (allocated(model%local_property_labels)) deallocate (model%local_property_labels)
+   if (allocated(model%local_property_indexes)) deallocate (model%local_property_indexes)
+   if (allocated(dom%do_list)) deallocate (dom%do_list)
    if (allocated(params%write_local_properties)) deallocate (params%write_local_properties)
 
    if (params%vdw_type == "ts+mbd") then
       if (rank == 0) then
          open (unit=30, file="mbd_ts_scaling.dat", status="unknown")
-         do i = 1, n_sites
+         do i = 1, state%n_sites
 #ifdef _MPIF90
-            write (30, *) this_mbd_ts_scaling(i)
+            write (30, *) res%this_mbd_ts_scaling(i)
 #else
-            write (30, *) mbd_ts_scaling(i)
+            write (30, *) res%mbd_ts_scaling(i)
 #endif
          end do
          close (30)
