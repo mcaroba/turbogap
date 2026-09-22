@@ -34,10 +34,16 @@
 module turbogap_results
 
    use kinds, only: dp
+   use types, only: input_parameters, perform_t, any_has_local_properties
+   use turbogap_structure, only: state_t
+   use turbogap_setup, only: model_t
+   use turbogap_loop, only: loop_t
+   use exp_utils, only: exp_dissimilarity, exp_dissim_ref
 
    implicit none
 
    private
+   public :: results_prepare
 
    type, public :: results_t
       real(dp) :: energy
@@ -131,5 +137,243 @@ module turbogap_results
       real(dp), allocatable :: this_energies_dipole(:)
       real(dp) :: dipole(1:3)
    end type results_t
+
+contains
+
+!  Size the result arrays for this structure, reallocating only when the site
+!  count changed (or under MC, which can change it silently), and zero what this
+!  evaluation accumulates into. RESIZED says whether the arrays were rebuilt.
+   subroutine results_prepare(res, state, params, model, perform, loop, n_pairs, n_pairs_prev, resized)
+      type(results_t), target, intent(inout) :: res
+      type(state_t), intent(in) :: state
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+      type(perform_t), intent(in) :: perform
+      type(loop_t), intent(in) :: loop
+      integer, intent(in) :: n_pairs
+      integer, intent(in) :: n_pairs_prev
+      logical, intent(out) :: resized
+
+      resized = (state%n_sites /= loop%n_sites_prev .or. params%do_mc)
+
+      !     We only need to reallocate the arrays if the number of sites changes
+      ! REMOVE TRUE FROM IF STATEMENT
+      if (state%n_sites /= loop%n_sites_prev .or. params%do_mc) then
+         if (allocated(res%energies)) deallocate (res%energies, &
+                                                  res%energies_soap, &
+                                                  res%energies_2b, &
+                                                  res%energies_3b, &
+                                                  res%energies_core_pot, &
+                                                  res%this_energies, &
+                                                  res%energies_vdw, &
+                                                  res%energies_vdw_corr, &
+                                                  res%mbd_ts_scaling, &
+                                                  res%this_forces, &
+                                                  res%energies_lp, &
+                                                  res%energies_exp, &
+                                                  res%energies_estat, &
+                                                  res%this_mbd_ts_scaling)
+         allocate (res%energies(1:state%n_sites))
+         allocate (res%this_energies(1:state%n_sites))
+         allocate (res%energies_soap(1:state%n_sites))
+         allocate (res%energies_2b(1:state%n_sites))
+         allocate (res%energies_3b(1:state%n_sites))
+         allocate (res%energies_core_pot(1:state%n_sites))
+         allocate (res%energies_vdw(1:state%n_sites))
+         allocate (res%energies_vdw_corr(1:state%n_sites))
+         allocate (res%energies_lp(1:state%n_sites))
+         allocate (res%energies_estat(1:state%n_sites))
+         allocate (res%energies_exp(1:state%n_sites))
+!          We do this allocations for van der Waals corrections
+         allocate (res%mbd_ts_scaling(1:state%n_sites))
+         allocate (res%this_mbd_ts_scaling(1:state%n_sites))
+!          Allocated whether or not a dipole model is loaded: they are passed to
+!          get_gap_soap unconditionally, and 4 doubles per atom is not worth a
+!          second code path.
+         if (allocated(res%local_dipoles)) deallocate (res%local_dipoles, res%this_local_dipoles, &
+                                                       res%energies_dipole, res%this_energies_dipole)
+         allocate (res%local_dipoles(1:3, 1:state%n_sites))
+         allocate (res%this_local_dipoles(1:3, 1:state%n_sites))
+         allocate (res%energies_dipole(1:state%n_sites))
+         allocate (res%this_energies_dipole(1:state%n_sites))
+
+         if (perform%pdf) then
+            if (allocated(res%energies_pdf)) deallocate (res%energies_pdf)
+            allocate (res%energies_pdf(1:state%n_sites))
+         end if
+
+         if (perform%sf) then
+            if (allocated(res%energies_sf)) deallocate (res%energies_sf)
+            allocate (res%energies_sf(1:state%n_sites))
+         end if
+
+         if (perform%xrd) then
+            if (allocated(res%energies_xrd)) deallocate (res%energies_xrd)
+            allocate (res%energies_xrd(1:state%n_sites))
+         end if
+
+         if (perform%nd) then
+            if (allocated(res%energies_nd)) deallocate (res%energies_nd)
+            allocate (res%energies_nd(1:state%n_sites))
+         end if
+
+         !       This needs to be allocated even if no force prediction is needed:
+         allocate (res%this_forces(1:3, 1:state%n_sites))
+      end if
+      res%energies = 0.d0
+      res%energies_soap = 0.d0
+      res%energies_2b = 0.d0
+      res%energies_3b = 0.d0
+      res%energies_core_pot = 0.d0
+      res%energies_vdw = 0.d0
+      res%energies_estat = 0.d0
+      res%energies_lp = 0.d0
+      res%energies_exp = 0.d0
+!        The dissimilarity accumulators belong to the same step as energies_exp
+!        and are zeroed with it. This is the only point that knows a new
+!        evaluation has begun; get_exp_energies is called once per observable
+!        and mad_ir separately again, so neither can reset them itself.
+      exp_dissimilarity = 0.d0
+      exp_dissim_ref = 0.d0
+      res%local_dipoles = 0.d0
+      res%energies_dipole = 0.d0
+      res%dipole = 0.d0
+
+      if (perform%pdf) res%energies_pdf = 0.d0
+      if (perform%sf) res%energies_sf = 0.d0
+      if (perform%xrd) res%energies_xrd = 0.d0
+      if (perform%nd) res%energies_nd = 0.d0
+
+      ! Adding allocation of local properties
+
+      ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
+      if (any_has_local_properties(model%soap_turbo_hypers)) then
+         if (state%n_sites /= loop%n_sites_prev .or. params%do_mc) then
+            if (allocated(res%local_properties)) then
+               nullify (res%this_local_properties_pt)
+               deallocate (res%this_local_properties, res%local_properties)
+               if (params%do_forces) then
+                  nullify (res%this_local_properties_cart_der_pt)
+                  deallocate (res%this_local_properties_cart_der, res%local_properties_cart_der)
+               end if
+            end if
+            allocate (res%local_properties(1:state%n_sites, 1:params%n_local_properties))
+            allocate (res%this_local_properties(1:state%n_sites, 1:params%n_local_properties))
+            res%this_local_properties_pt => res%this_local_properties
+
+            !         I don't remember why this needs a pointer <----------------------------------------- CHECK
+
+         end if
+         res%local_properties = 0.d0
+
+         if (params%do_forces) then
+            if (n_pairs /= n_pairs_prev) then
+               if (allocated(res%local_properties_cart_der)) deallocate (res%local_properties_cart_der, &
+                                                                         res%this_local_properties_cart_der)
+               allocate (res%local_properties_cart_der(1:3, 1:n_pairs, 1:params%n_local_properties))
+               allocate (res%this_local_properties_cart_der(1:3, 1:n_pairs, &
+                                                            1:params%n_local_properties))
+            end if
+            if (.not. allocated(res%local_properties_cart_der)) then
+               allocate (res%local_properties_cart_der(1:3, 1:n_pairs, 1:params%n_local_properties))
+               allocate (res%this_local_properties_cart_der(1:3, 1:n_pairs, &
+                                                            1:params%n_local_properties))
+            end if
+
+            res%local_properties_cart_der = 0.d0
+            res%this_local_properties_cart_der_pt =>&
+                 & res%this_local_properties_cart_der(1:3,&
+                 & 1:n_pairs, 1:params&
+                 &%n_local_properties)
+         end if
+      end if
+
+      ! Now go through the soap turbo hypers, and see if any are vdw or
+      ! otherwise, if vdw, one can have pointers to point to the data
+      ! structures such that it makes things clearer. One needs to check
+      ! that this allocation still works iwth if(allocated(hirsh_v))
+      ! statements
+
+      if (params%do_forces) then
+         if (state%n_sites /= loop%n_sites_prev .or. params%do_mc) then
+            if (allocated(res%forces)) deallocate (res%forces, res%forces_soap, res%forces_2b, res%forces_3b, &
+               res%forces_core_pot, res%forces_vdw,&
+                 & res%forces_lp, res%forces_estat, res%local_virial_vdw_diag, res%local_virial_vdw_diag_corr)
+            allocate (res%forces(1:3, 1:state%n_sites))
+            allocate (res%forces_soap(1:3, 1:state%n_sites))
+            allocate (res%forces_2b(1:3, 1:state%n_sites))
+            allocate (res%forces_3b(1:3, 1:state%n_sites))
+            allocate (res%forces_core_pot(1:3, 1:state%n_sites))
+            allocate (res%forces_vdw(1:3, 1:state%n_sites))
+            if (allocated(res%forces_vdw_corr)) deallocate (res%forces_vdw_corr)
+            allocate (res%forces_vdw_corr(1:3, 1:state%n_sites))
+            allocate (res%forces_lp(1:3, 1:state%n_sites))
+            allocate (res%forces_estat(1:3, 1:state%n_sites))
+            allocate (res%local_virial_vdw_diag_corr(1:3, 1:state%n_sites))
+            allocate (res%local_virial_vdw_diag(1:3, 1:state%n_sites))
+
+            if (perform%pdf_forces) then
+               if (allocated(res%forces_pdf)) deallocate (res%forces_pdf)
+               allocate (res%forces_pdf(1:3, 1:state%n_sites))
+            end if
+
+            if (perform%sf_forces) then
+               if (allocated(res%forces_sf)) deallocate (res%forces_sf)
+               allocate (res%forces_sf(1:3, 1:state%n_sites))
+            end if
+
+            if (perform%xrd_forces) then
+               if (allocated(res%forces_xrd)) deallocate (res%forces_xrd)
+               allocate (res%forces_xrd(1:3, 1:state%n_sites))
+            end if
+
+            if (perform%nd_forces) then
+               if (allocated(res%forces_nd)) deallocate (res%forces_nd)
+               allocate (res%forces_nd(1:3, 1:state%n_sites))
+            end if
+
+         end if
+         res%forces = 0.d0
+         res%forces_soap = 0.d0
+         res%forces_2b = 0.d0
+         res%forces_3b = 0.d0
+         res%forces_core_pot = 0.d0
+         res%forces_vdw = 0.d0
+         res%forces_estat = 0.d0
+         res%forces_lp = 0.d0
+         res%virial = 0.d0
+         res%virial_soap = 0.d0
+         res%virial_2b = 0.d0
+         res%virial_3b = 0.d0
+         res%virial_core_pot = 0.d0
+         res%virial_vdw = 0.d0
+         res%virial_estat = 0.d0
+         res%virial_lp = 0.d0
+         res%local_virial_vdw_diag = 0.d0
+         if (perform%pdf_forces) then
+            res%forces_pdf = 0.d0
+            res%virial_pdf = 0.d0
+            res%this_virial_pdf = 0.d0
+         end if
+
+         if (perform%sf_forces) then
+            res%forces_sf = 0.d0
+            res%virial_sf = 0.d0
+            res%this_virial_sf = 0.d0
+         end if
+
+         if (perform%xrd_forces) then
+            res%forces_xrd = 0.d0
+            res%virial_xrd = 0.d0
+            res%this_virial_xrd = 0.d0
+         end if
+
+         if (perform%nd_forces) then
+            res%forces_nd = 0.d0
+            res%virial_nd = 0.d0
+            res%this_virial_nd = 0.d0
+         end if
+      end if
+   end subroutine results_prepare
 
 end module turbogap_results

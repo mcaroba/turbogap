@@ -23,6 +23,10 @@ module turbogap_vdw
    use types
    use vdw
    use misc
+   use turbogap_comm, only: comm_t, comm_bcast
+   use turbogap_structure, only: state_t
+   use turbogap_results, only: results_t
+   use turbogap_loop, only: loop_t
 #ifdef _MPIF90
    use mpi
    use mpi_helper
@@ -33,6 +37,7 @@ module turbogap_vdw
    private
    public :: vdw_state
    public :: compute_vdw
+   public :: vdw_read_ts_scaling
 
 ! Persistent state of the ts+mbd correction.
 !
@@ -696,5 +701,47 @@ contains
       end if
 
    end subroutine compute_vdw
+
+!  The ts+mbd scaling factors: from mbd_ts_scaling.dat when rank 0 finds one,
+!  otherwise 1, on the first step or outside MD.
+   subroutine vdw_read_ts_scaling(res, state, params, loop, comm)
+      type(results_t), intent(inout) :: res
+      type(state_t), intent(in) :: state
+      type(input_parameters), intent(in) :: params
+      type(loop_t), intent(in) :: loop
+      type(comm_t), intent(in) :: comm
+      integer :: i
+      integer :: iostatus
+
+! Read in file for ts+mbd van der Waals mode if it exists
+! Initialise the TS scaling factors. md_istep <= 0 rather than == 0 because
+! predict and mc never advance md_istep past -1, and without this they reach
+! get_ts_energy_and_forces with mbd_ts_scaling never having been set. For MD
+! this is still exactly the first step, so the MD path is unchanged.
+      if (params%vdw_type == "ts+mbd" .and. loop%md_istep <= 0) then
+         if (comm%rank == 0) then
+            open (unit=30, file="mbd_ts_scaling.dat", status="old", iostat=iostatus)
+            if (iostatus == 0) then
+               write (*, *) '                                       |'
+               write (*, *) '.......................................|'
+               write (*, *) '                                       |'
+               write (*, *) 'Reading TS scaling factors from file   |'
+               write (*, *) 'mbd_ts_scaling.dat                     |'
+               write (*, *) '                                       |'
+               write (*, *) '.......................................|'
+               write (*, *) '                                       |'
+               do i = 1, state%n_sites
+                  read (30, *) res%mbd_ts_scaling(i)
+               end do
+               res%update_mbd_ts_scaling = .false.
+            else
+               res%mbd_ts_scaling = 1.d0
+            end if
+            close (30)
+            res%this_mbd_ts_scaling = res%mbd_ts_scaling
+         end if
+         call comm_bcast(comm, res%this_mbd_ts_scaling, state%n_sites)
+      end if
+   end subroutine vdw_read_ts_scaling
 
 end module turbogap_vdw
