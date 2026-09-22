@@ -408,8 +408,8 @@ contains
 !                 mad_ir_state, so the experiment is still read exactly once.
 !                 What it does NOT do here is calibrate -- the couplings come
 !                 from the autocorrelation by linear response, and there is no
-!                 autocorrelation until the ensemble fills. That happens in the
-!                 bias block below, on the first step mad_ir_ready holds.
+!                 autocorrelation until the ensemble fills. That happens in
+!                 ir_after_forces, on the first step mad_ir_ready holds.
             if (trim(params%ir_bias_mode) == "aux") then
                if (.not. params%valid_ir) then
                   write (*, *) "ERROR: ir_bias_mode = aux needs an experimental spectrum."
@@ -839,7 +839,7 @@ contains
 !                 the residual sum of squares with no energy scale on it.
             exp_dissimilarity = exp_dissimilarity + mad_ir_state%dissim
             exp_dissim_ref = exp_dissim_ref + mad_ir_state%dissim_ref
-!                 The sum of energies_exp into energies happened above, before
+!                 The sum of energies_exp into energies happened in evaluate, before
 !                 the dipole of this configuration existed. Folding the IR term
 !                 in there is not possible -- it needs the forces pass -- so it
 !                 is folded in here instead. Without this the mismatch never
@@ -1030,8 +1030,8 @@ contains
       type(loop_t), intent(in) :: loop
 
 !     Close the per-step stopwatch and charge it to whichever side of the
-!     boundary this step fell on. mad_ir_applied was set for THIS step in the
-!     force block above, so the two accumulators separate exactly at the step
+!     boundary this step fell on. mad_ir_applied was set for THIS step in
+!     ir_after_forces, so the two accumulators separate exactly at the step
 !     the ensemble filled.
       if (params%valid_ir .and. params%do_md .and. loop%md_istep >= 0) then
          call get_time(ir%mad_ir_t_now)

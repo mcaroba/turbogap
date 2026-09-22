@@ -54,60 +54,38 @@ program turbogap
 
    implicit none
 
-   ! Variable definitions
-
-   real(dp) :: time1
-   real(dp) :: time3
-!   Every wall-clock bucket lives in one times_t (src/timing.f90), so the
-!   extracted modules take a single argument instead of thirteen and the two
-!   branches' signatures agree.
-   type(times_t) :: time
-
    type(comm_t) :: comm
+   type(input_parameters) :: params
+   type(model_t), target :: model
    type(state_t) :: state
    type(domain_t) :: dom
    type(neighbors_t) :: nl
-   type(model_t), target :: model
    type(results_t), target :: res
    type(loop_t) :: loop
    type(dynamics_t) :: dyn
    type(ir_run_t) :: ir
    type(sampling_t) :: smp
-
    type(perform_t) :: perform
-   integer :: n_omp = 1
-
-   ! This is the mode in which we run TurboGAP
-   character*16 :: mode = "none"
-
-   ! Here we store the input parameters
-   type(input_parameters) :: params
-
-   logical :: do_electrostatics = .true.
-! Persistent ts+mbd correction state, owned by turbogap_vdw
    type(vdw_state) :: vdw_ws
+   type(times_t) :: time
+   real(dp) :: time1
+   real(dp) :: time3
+   integer :: n_omp = 1
+   character*16 :: mode = "none"
+   logical :: do_electrostatics = .true.
 
    call handle_help_request()
 
-!  Bring the device context up. Empty on this branch (src/gpu_context.f90);
-!  on the GPU branch the same two names create the streams and cuBLAS handles.
+!  Device streams and handles; empty in the host build.
    call time_start(time%create_streams)
 !  Before comm_init, so every rank passes 0: slurm gives each rank one device.
    call gpu_context_init(params, comm%rank, n_omp)
    call gap_backend_init()
    call time_end(time%create_streams)
 
-   ! Start recording the time
    call get_time(time1)
    time3 = time1
-!  Everything before the first pass of the main loop: the input file, the
-!  potential files, and the allocation and broadcast that follow them. Without
-!  this bucket the pre-loop cost fell into Miscellaneous, which is why a run
-!  whose real work took 1.2 s reported 0.4 s "miscellaneous" and a 31 s run
-!  reported the same 0.4 s -- a constant, and therefore obviously a setup cost,
-!  but not one the report could name.
    call time_start(time%setup)
-   ! Start random seed
    call srand(int(time1*1000))
 
    call comm_init(comm)
@@ -117,7 +95,6 @@ program turbogap
 
    call print_banner(comm)
 
-   ! Read input file and other files
    call read_input_and_gap_files(mode, comm%rank, comm%size, params, &
                                  model%soap_turbo_hypers, model%distance_2b_hypers, model%angle_3b_hypers, model%core_pot_hypers, &
                                  model%n_soap_turbo, model%n_distance_2b, model%n_angle_3b, model%n_core_pot, model%n_species, &
@@ -129,31 +106,15 @@ program turbogap
                                  model%local_properties_dim_mpi_soap_turbo, dyn%nrows, dyn%allelstopdata, &
                                  dyn%ephbeta, dyn%ephfdm, dyn%ephlsc, time)
 
-!  The host memory budget, which has to sit exactly here.
-!
-!  After read_input_and_gap_files, because it reads mem_fraction and writes
-!  max_Gbytes_per_process -- placed next to gpu_context_init it would run before
-!  the input existed and size the loop from defaults whatever the input said.
-!
-!  ntasks is passed for the case where MPI cannot say how the ranks are laid
-!  out; the routine prefers to ask MPI which ranks share a node, because that is
-!  the set that shares the memory it is dividing.
-!
-!  The GPU branch calls the same name in the same place, where it budgets from
-!  the device instead of from the node.
+!  After the input: it reads mem_fraction and writes max_Gbytes_per_process.
    call gpu_memory_budget_init(params, comm%rank, comm%size)
 
    call print_options(comm, params, model)
-
-   ! Print progress bar and initialize timers
 
    model%xps_idx = params%xps_idx
    call sampling_init(smp)
 
    call loop_init(loop, params, comm)
-
-   ! This checks if we need to do the SOAP calculation more than once, if there are several concatenated
-   ! structures in the xyz file provided or we're doing molecular dynamics
 
    call exp_decide(perform, params, model)
 
@@ -161,8 +122,7 @@ program turbogap
 
    call time_end(time%setup)
 
-!  Connect before the first force call, so that a missing or unstarted i-PI
-!  server is reported now rather than after the first GAP evaluation.
+!  Connect now, so a missing i-PI server is reported before the first force call.
    if (mode == "ipi") call ipi_driver_open(params%ipi_address, comm%rank)
 
    do while (loop_continues(loop, params))
@@ -171,8 +131,6 @@ program turbogap
       call loop_begin_step(loop, params, comm)
 
       call structure_acquire(state, nl%rebuild_neighbors_list, loop, params, model, comm, smp%mc_file, time)
-      !   Broadcast the info in the XYZ file: positions, velocities, masses, xyz_species, xyz_species_supercell,
-      !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
 
       call md_prepare_velocities(dyn, state, params, loop, comm)
       call mc_prepare_step(smp, dyn, state, params, loop, comm)
@@ -180,7 +138,6 @@ program turbogap
       call domain_build(dom, nl, comm, state, params, model, loop, smp%mc_file, time)
       call structure_update_volume(state)
 
-      !   If we are doing prediction, we run this chunk of code
       if (params%do_prediction .or. params%write_soap .or. params%write_derivatives) then
          call evaluate(res, state, nl, dom, model, params, perform, loop, dyn, ir, vdw_ws, comm, &
                        do_electrostatics, n_omp, time3, time)
@@ -188,12 +145,7 @@ program turbogap
          call print_nothing_to_do(comm)
       end if
 
-      !   Do MD stuff here. Moved to src/turbogap_md.f90; the rank guard and the
-      !   position broadcast moved with it.
-!     In i-PI mode the integrator is i-PI's, so the forces just computed go
-!     out over the socket and the next coordinates come back in. Everything
-!     compute_md does AROUND the integration -- the skin accounting, the
-!     supercell refresh, the broadcast -- happens inside the exchange.
+!     Under i-PI the forces go out over the socket and the next positions come back.
       if (mode == "ipi") then
          call ipi_driver_exchange(comm%rank, state%n_sites, state%positions, state%positions_prev, state%positions_diff, &
                                   state%velocities, state%a_box, state%b_box, state%c_box, state%indices, params%neighbors_buffer, &
@@ -218,12 +170,9 @@ program turbogap
 
       call loop_end_step(loop, state%n_sites, params, comm)
       if (loop%exit_loop) exit
-      ! End of loop through structures in the xyz file or MD steps
    end do
 
-!  i-PI has said EXIT, or something else ended the loop. Close the socket
-!  before the reports below, so that i-PI sees the driver leave cleanly
-!  rather than timing out on a half-open connection.
+!  Close before the reports, so i-PI sees a clean exit rather than a timeout.
    if (mode == "ipi") call ipi_driver_close(comm%rank)
 
    call ir_finish(ir, params, comm, time)
@@ -241,12 +190,7 @@ program turbogap
 
    call print_end(comm)
 
-!  The high-water mark, which is the number that sizes the next run.
-!
-!  Before gpu_context_finalize, which calls hipDeviceReset and takes the whole
-!  context down -- after it there is nothing left to ask. Printed unconditionally
-!  and to stderr: it costs one line, and "what did that actually use" is the
-!  first question asked after any run that was close to the limit.
+!  Before gpu_context_finalize, which resets the device.
    if (comm%rank == 0) call gpu_memory_report("end of run")
    call comm_finalize(comm)
 

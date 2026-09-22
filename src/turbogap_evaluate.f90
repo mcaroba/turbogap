@@ -145,8 +145,6 @@ contains
 !        Three doubles a frame; a 100 ps trajectory at 1 fs is 2.4 MB.
       call ir_push_frame(ir, res, state)
 
-      !     Compute vdW energies and forces
-
 !        Compute ELECTROSTATIC energies and forces
 !
 !        Ported from the GPU branch. That branch additionally routes the gsf

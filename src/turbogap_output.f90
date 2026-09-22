@@ -26,7 +26,8 @@
 ! HND X
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-!  What the driver itself prints: the banner and the options summary.
+!  What a run prints outside the physics: command line, banner, options,
+!  energies, single-point output and the timing report.
 module turbogap_output
 
    use kinds, only: dp
@@ -480,7 +481,7 @@ contains
 !       three numbers below have to add up, and a reader can see at a glance how
 !       much of the run the buckets actually name.  A large Miscellaneous is a
 !       statement that something real is not being measured -- which is how the
-!       setup bucket above came to exist.
+!       setup bucket came to exist.
             time%total(3) = time2 - time3
             write (*, *) '                                       |'
             write (*, '(A,F13.3,A)') ' *  Accounted for:', sum_times(time), ' seconds |'
