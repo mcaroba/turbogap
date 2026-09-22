@@ -51,7 +51,8 @@ program turbogap
    use turbogap_structure, only: state_t
    use turbogap_domain, only: domain_t, neighbors_t, domain_sync_state, domain_build, &
                               domain_complete_sites, domain_complete_e0, &
-                              domain_complete_contributions
+                              domain_complete_contributions, domain_sync_after_md, &
+                              domain_sync_after_ipi
    use turbogap_results, only: results_t
    use turbogap_loop, only: loop_t
    use turbogap_exp
@@ -2628,6 +2629,7 @@ program turbogap
          call ipi_driver_exchange(rank, state%n_sites, state%positions, state%positions_prev, state%positions_diff, &
                                   state%velocities, state%a_box, state%b_box, state%c_box, state%indices, params%neighbors_buffer, &
                                   res%forces, res%energy, res%virial, loop%exit_loop, nl%rebuild_neighbors_list)
+         call domain_sync_after_ipi(dom, comm, state, nl, loop)
       else
          call compute_md(params, rank, ierr, state%n_sites, model%n_species, loop%md_istep, md_time, time_step, &
                          state%positions, state%positions_prev, state%positions_diff, state%velocities, res%forces, &
@@ -2643,6 +2645,7 @@ program turbogap
                          filename, string, allelstopdata, ephbeta, ephfdm, ephlsc, time, &
                          cum_eel, gd_istep, &
                          target_temp, time_step_prev, res%dipole, res%local_dipoles, res%energies_dipole)
+         call domain_sync_after_md(dom, comm, state, nl, params, time)
       end if
 
       !   Nested sampling

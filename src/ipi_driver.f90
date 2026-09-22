@@ -166,7 +166,6 @@ contains
       integer :: j
       integer :: j2
       integer :: k2
-      integer :: n_pos
       integer :: ierr
 
       a_new = a_box
@@ -333,16 +332,6 @@ contains
 
 #ifdef _MPIF90
       END IF
-
-      call mpi_bcast(exit_loop, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-      if (.not. exit_loop) then
-         n_pos = size(positions, 2)
-         call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-         call mpi_bcast(a_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-         call mpi_bcast(b_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-         call mpi_bcast(c_box, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-      end if
 #endif
 
    end subroutine ipi_driver_exchange

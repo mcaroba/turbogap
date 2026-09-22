@@ -46,6 +46,8 @@ module turbogap_domain
 
    private
    public :: domain_sync_state
+   public :: domain_sync_after_md
+   public :: domain_sync_after_ipi
    public :: domain_build
    public :: domain_complete_sites
    public :: domain_complete_e0
@@ -160,6 +162,49 @@ contains
       call comm_bcast(comm, state%c_box, 3)
       call time_end(time%mpi_positions)
    end subroutine domain_sync_state
+
+!  After the integrator. Replicated data: rank 0 moved the atoms, so its
+!  positions and velocities, and whether the neighbour list went stale, go to
+!  every rank.
+   subroutine domain_sync_after_md(dom, comm, state, nl, params, time)
+      type(domain_t), intent(inout) :: dom
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      type(neighbors_t), intent(inout) :: nl
+      type(input_parameters), intent(in) :: params
+      type(times_t), intent(inout) :: time
+      integer :: n_pos
+
+      call comm_bcast(comm, nl%rebuild_neighbors_list)
+      if (params%do_md) then
+         call time_start(time%mpi_positions)
+         n_pos = size(state%positions, 2)
+         call comm_bcast(comm, state%positions, 3*n_pos)
+         call comm_bcast(comm, state%velocities, 3*n_pos)
+         call time_end(time%mpi_positions)
+      end if
+   end subroutine domain_sync_after_md
+
+!  After an i-PI exchange: rank 0 holds i-PI's next configuration, or the
+!  instruction to stop.
+   subroutine domain_sync_after_ipi(dom, comm, state, nl, loop)
+      type(domain_t), intent(inout) :: dom
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      type(neighbors_t), intent(inout) :: nl
+      type(loop_t), intent(inout) :: loop
+      integer :: n_pos
+
+      call comm_bcast(comm, loop%exit_loop)
+      call comm_bcast(comm, nl%rebuild_neighbors_list)
+      if (.not. loop%exit_loop) then
+         n_pos = size(state%positions, 2)
+         call comm_bcast(comm, state%positions, 3*n_pos)
+         call comm_bcast(comm, state%a_box, 3)
+         call comm_bcast(comm, state%b_box, 3)
+         call comm_bcast(comm, state%c_box, 3)
+      end if
+   end subroutine domain_sync_after_ipi
 
 !  Split the sites over the ranks and build each rank's neighbour list for its
 !  share. Replicated data: a contiguous block of sites per rank, every rank

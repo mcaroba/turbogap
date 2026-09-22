@@ -673,17 +673,6 @@ contains
          end if
 #ifdef _MPIF90
       END IF
-      call mpi_bcast(rebuild_neighbors_list, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-#endif
-      !   Make sure all ranks have correct positions and velocities
-#ifdef _MPIF90
-      if (params%do_md) then
-         call time_start(time%mpi_positions)
-         n_pos = size(positions, 2)
-         call mpi_bcast(positions, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-         call mpi_bcast(velocities, 3*n_pos, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
-         call time_end(time%mpi_positions)
-      end if
 #endif
 
    end subroutine compute_md
