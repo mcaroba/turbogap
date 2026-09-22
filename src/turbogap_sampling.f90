@@ -50,6 +50,7 @@ module turbogap_sampling
    implicit none
 
    private
+   public :: sampling_init
    public :: mc_prepare_step
    public :: nested_step
    public :: mc_step
@@ -139,6 +140,13 @@ contains
          end if
       end if
    end subroutine mc_prepare_step
+
+   subroutine sampling_init(smp)
+      type(sampling_t), intent(inout) :: smp
+
+      smp%i_nested = 0
+      smp%i_image = 0
+   end subroutine sampling_init
 
 !  Nested sampling: collect the initial walkers, then replace the highest-
 !  enthalpy walker with an MD-decorrelated clone of another one.

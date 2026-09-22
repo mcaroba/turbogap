@@ -39,6 +39,9 @@ module turbogap_md
    use turbogap_comm, only: comm_t
    use turbogap_structure, only: state_t
    use turbogap_loop, only: loop_t
+   use turbogap_setup, only: model_t
+   use turbogap_results, only: results_t
+   use turbogap_domain, only: neighbors_t
    use types
    use md
    use bussi
@@ -62,6 +65,7 @@ module turbogap_md
    private
    public :: compute_md
    public :: md_prepare_velocities
+   public :: md_step
 
 !  What the integrator carries from step to step: time, the thermodynamic
 !  observables, and the electronic-stopping data read at setup.
@@ -722,5 +726,40 @@ contains
          end if
       end if
    end subroutine md_prepare_velocities
+
+!  One step of the integrator on rank 0. Nested sampling drives it too, which
+!  is why the walker indices come in.
+   subroutine md_step(dyn, state, res, nl, model, params, loop, i_image, i_nested, comm, time)
+      type(dynamics_t), intent(inout) :: dyn
+      type(state_t), intent(inout) :: state
+      type(results_t), intent(inout) :: res
+      type(neighbors_t), intent(inout) :: nl
+      type(model_t), intent(inout) :: model
+      type(input_parameters), intent(inout) :: params
+      type(loop_t), intent(inout) :: loop
+      integer, intent(inout) :: i_image
+      integer, intent(inout) :: i_nested
+      type(comm_t), intent(in) :: comm
+      type(times_t), intent(inout) :: time
+      character*1024 :: filename
+      character*1024 :: string
+      integer :: ierr
+      integer :: n_pos
+
+      call compute_md(params, comm%rank, ierr, state%n_sites, model%n_species, loop%md_istep, dyn%md_time, dyn%time_step, &
+                      state%positions, state%positions_prev, state%positions_diff, state%velocities, res%forces, &
+                      state%forces_prev, state%masses, &
+                      dyn%masses_types, nl%xyz, state%xyz_species, state%a_box, state%b_box, state%c_box, state%indices, &
+                      state%v_uc, res%virial, res%energy, &
+                      res%energy_prev, res%energies, res%energies_soap, res%energies_2b, res%energies_3b, &
+                      res%energies_core_pot, &
+                      res%energies_vdw, res%energies_lp, res%energies_exp, res%energies_pdf, res%energies_sf, res%energies_xrd, &
+                      res%energies_nd, res%local_properties, model%local_property_labels, dyn%instant_temp, &
+                      dyn%instant_pressure, dyn%instant_pressure_prev, dyn%e_kin, dyn%e_kinetic, dyn%kb, dyn%evpera3tobar, &
+                      state%fix_atom, loop%exit_loop, nl%rebuild_neighbors_list, i_image, i_nested, n_pos, dyn%nrows, &
+                      filename, string, dyn%allelstopdata, dyn%ephbeta, dyn%ephfdm, dyn%ephlsc, time, &
+                      dyn%cum_eel, dyn%gd_istep, &
+                      dyn%target_temp, dyn%time_step_prev, res%dipole, res%local_dipoles, res%energies_dipole)
+   end subroutine md_step
 
 end module turbogap_md

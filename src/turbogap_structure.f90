@@ -37,12 +37,14 @@ module turbogap_structure
    use turbogap_setup, only: model_t
    use turbogap_loop, only: loop_t
    use read_files, only: read_xyz
+   use soap_turbo_functions, only: cross_product
 
    implicit none
 
    private
    public :: structure_free
    public :: structure_acquire
+   public :: structure_update_volume
 
    type, public :: state_t
       integer :: n_sites
@@ -168,6 +170,14 @@ contains
          rebuild = .true.
       end if
    end subroutine structure_acquire
+
+!  Volume of the primitive cell the supercell was built from.
+   subroutine structure_update_volume(state)
+      type(state_t), intent(inout) :: state
+
+      state%v_uc = dot_product(cross_product(state%a_box, state%b_box), &
+                               state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
+   end subroutine structure_update_volume
 
    subroutine structure_free(state)
       type(state_t), intent(inout) :: state

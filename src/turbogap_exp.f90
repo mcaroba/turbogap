@@ -20,6 +20,7 @@
 
 module turbogap_exp
    use turbogap_loop, only: loop_t
+   use turbogap_setup, only: model_t
 #ifdef _GPU
 
    use kinds
@@ -41,6 +42,7 @@ module turbogap_exp
    private
    public :: compute_exp_xps
    public :: exp_end_run
+   public :: exp_decide
    public :: compute_exp_spectra
 
 contains
@@ -1732,5 +1734,34 @@ contains
          end do
       end if
    end subroutine exp_end_run
+
+!   The exp-observable decisions, evaluated once.  Every input is a params
+!   field or valid_xps, none of which changes inside the main loop.
+!
+!   This closes a defect.  The allocation guards asked do_X .and. valid_X, the
+!   zeroing guards asked do_X .and. exp_forces .and. valid_X, and the force
+!   accumulation asked only exp_forces .and. valid_X -- so a deck supplying an
+!   experimental dataset for an observable it had not switched on, with
+!   exp_forces set, accumulated forces_X and virial_X that the allocation
+!   guard had skipped.  do_X and valid_X are independent: valid_X is set from
+!   a label in the experimental data file, do_X is its own input keyword.
+!   Same shape as the electrostatics guard and as has_vdw against
+!   has_local_properties.
+   subroutine exp_decide(perform, params, model)
+      type(perform_t), intent(out) :: perform
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+
+      perform%pdf = params%do_pair_distribution .and. params%valid_pdf
+      perform%sf = params%do_structure_factor .and. params%valid_sf
+      perform%xrd = params%do_xrd .and. params%valid_xrd
+      perform%nd = params%do_nd .and. params%valid_nd
+
+      perform%pdf_forces = perform%pdf .and. params%exp_forces
+      perform%sf_forces = perform%sf .and. params%exp_forces
+      perform%xrd_forces = perform%xrd .and. params%exp_forces
+      perform%nd_forces = perform%nd .and. params%exp_forces
+      perform%xps_forces = model%valid_xps .and. params%exp_forces
+   end subroutine exp_decide
 
 end module turbogap_exp

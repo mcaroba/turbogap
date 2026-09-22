@@ -48,7 +48,7 @@ program turbogap
    use vdw
    use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane
    use turbogap_setup
-   use turbogap_structure, only: state_t, structure_acquire, structure_free
+   use turbogap_structure, only: state_t, structure_acquire, structure_update_volume, structure_free
    use turbogap_domain, only: domain_t, neighbors_t, domain_sync_state, domain_build, &
                               domain_complete_sites, domain_complete_e0, &
                               domain_complete_contributions, domain_sync_after_md, &
@@ -56,7 +56,7 @@ program turbogap
    use turbogap_results, only: results_t, results_prepare, results_free
    use turbogap_soap, only: soap_free_device
    use turbogap_evaluate, only: evaluate
-   use turbogap_sampling, only: sampling_t, mc_prepare_step, nested_step, mc_step
+   use turbogap_sampling, only: sampling_t, sampling_init, mc_prepare_step, nested_step, mc_step
    use turbogap_ir, only: ir_run_t, ir_init, ir_step_begin, ir_before_evaluate, ir_push_frame, &
                           ir_after_forces, ir_step_end, ir_finish, ir_report
    use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, loop_sync, &
@@ -214,36 +214,14 @@ program turbogap
    ! Print progress bar and initialize timers
 
    model%xps_idx = params%xps_idx
-   smp%i_nested = 0
-   smp%i_image = 0
+   call sampling_init(smp)
 
    call loop_init(loop, params, comm)
 
    ! This checks if we need to do the SOAP calculation more than once, if there are several concatenated
    ! structures in the xyz file provided or we're doing molecular dynamics
 
-!   The exp-observable decisions, evaluated once.  Every input is a params
-!   field or valid_xps, none of which changes inside the main loop.
-!
-!   This closes a defect.  The allocation guards asked do_X .and. valid_X, the
-!   zeroing guards asked do_X .and. exp_forces .and. valid_X, and the force
-!   accumulation asked only exp_forces .and. valid_X -- so a deck supplying an
-!   experimental dataset for an observable it had not switched on, with
-!   exp_forces set, accumulated forces_X and virial_X that the allocation
-!   guard had skipped.  do_X and valid_X are independent: valid_X is set from
-!   a label in the experimental data file, do_X is its own input keyword.
-!   Same shape as the electrostatics guard and as has_vdw against
-!   has_local_properties.
-   perform%pdf = params%do_pair_distribution .and. params%valid_pdf
-   perform%sf = params%do_structure_factor .and. params%valid_sf
-   perform%xrd = params%do_xrd .and. params%valid_xrd
-   perform%nd = params%do_nd .and. params%valid_nd
-
-   perform%pdf_forces = perform%pdf .and. params%exp_forces
-   perform%sf_forces = perform%sf .and. params%exp_forces
-   perform%xrd_forces = perform%xrd .and. params%exp_forces
-   perform%nd_forces = perform%nd .and. params%exp_forces
-   perform%xps_forces = model%valid_xps .and. params%exp_forces
+   call exp_decide(perform, params, model)
 
    call ir_init(ir, params, comm)
 
@@ -268,9 +246,7 @@ program turbogap
       call mc_prepare_step(smp, dyn, state, params, loop, comm)
       call domain_sync_state(dom, comm, state, params, time)
       call domain_build(dom, nl, comm, state, params, model, loop, smp%mc_file, time)
-      !   Compute the volume of the "primitive" unit cell
-      state%v_uc = dot_product(cross_product(state%a_box, state%b_box), &
-                               state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
+      call structure_update_volume(state)
 
       !   If we are doing prediction, we run this chunk of code
       if (params%do_prediction .or. params%write_soap .or. params%write_derivatives) then
@@ -292,20 +268,7 @@ program turbogap
                                   res%forces, res%energy, res%virial, loop%exit_loop, nl%rebuild_neighbors_list)
          call domain_sync_after_ipi(dom, comm, state, nl, loop)
       else
-         call compute_md(params, rank, ierr, state%n_sites, model%n_species, loop%md_istep, dyn%md_time, dyn%time_step, &
-                         state%positions, state%positions_prev, state%positions_diff, state%velocities, res%forces, &
-                         state%forces_prev, state%masses, &
-                         dyn%masses_types, nl%xyz, state%xyz_species, state%a_box, state%b_box, state%c_box, state%indices, &
-                         state%v_uc, res%virial, res%energy, &
-                         res%energy_prev, res%energies, res%energies_soap, res%energies_2b, res%energies_3b, &
-                         res%energies_core_pot, &
-                         res%energies_vdw, res%energies_lp, res%energies_exp, res%energies_pdf, res%energies_sf, res%energies_xrd, &
-                         res%energies_nd, res%local_properties, model%local_property_labels, dyn%instant_temp, &
-                         dyn%instant_pressure, dyn%instant_pressure_prev, dyn%e_kin, dyn%e_kinetic, dyn%kb, dyn%evpera3tobar, &
-                         state%fix_atom, loop%exit_loop, nl%rebuild_neighbors_list, smp%i_image, smp%i_nested, n_pos, dyn%nrows, &
-                         filename, string, dyn%allelstopdata, dyn%ephbeta, dyn%ephfdm, dyn%ephlsc, time, &
-                         dyn%cum_eel, dyn%gd_istep, &
-                         dyn%target_temp, dyn%time_step_prev, res%dipole, res%local_dipoles, res%energies_dipole)
+         call md_step(dyn, state, res, nl, model, params, loop, smp%i_image, smp%i_nested, comm, time)
          call domain_sync_after_md(dom, comm, state, nl, params, time)
       end if
 
