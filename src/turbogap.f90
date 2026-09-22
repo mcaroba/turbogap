@@ -54,7 +54,8 @@ program turbogap
                               domain_complete_contributions, domain_sync_after_md, &
                               domain_sync_after_ipi
    use turbogap_results, only: results_t
-   use turbogap_loop, only: loop_t
+   use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, creturn
+   use turbogap_output, only: print_banner, print_options
    use turbogap_exp
    use turbogap_md
    use ipi_driver, only: ipi_driver_open, ipi_driver_exchange, ipi_driver_close
@@ -199,7 +200,6 @@ program turbogap
    integer :: gd_istep = 0
    logical :: write_condition = .false.
    logical :: overwrite_condition = .false.
-   character*1 :: creturn = achar(13)
 
   !! these decalarations are for time step and electronic stopping by different methods
    real(dp) :: time_step_prev
@@ -394,61 +394,7 @@ program turbogap
       mode = "soap"
    end if
 
-   ! Prints some welcome message and reads in the input file
-   if (rank == 0) then
-      write (*, *) '_________________________________________________________________ '
-      write (*, *) '                             _                                   \'
-      write (*, *) ' ___________            __   \\ /\        _____     ___   _____  |'
-      write (*, *) '/____  ____/           / / /\|*\|*\/\    / ___ \   /   | |  _  \ |'
-      write (*, *) '    / / __  __  __    / /  \********/   / /  /_/  / /| | | / | | |'
-      write (*, *) '   / / / / / / / /_  / /__  \**__**/   / / ____  / / | | | |_/ / |'
-      write (*, *) '  / / / / / / / __/ / ___ \ /*/  \*\  / / /_  / / /__| | |  __/  |'
-      write (*, *) ' / / / /_/ / / /   / /__/ / \ \__/ / / /___/ / / ____  | | |     |'
-      write (*, *) '/_/_/_____/_/_/___/______/___\____/__\______/_/_/____|_|_|_|____ |'
-      write (*, *) '_____________________________________________________________  / |'
-      write (*, *) '*************************************************************|/  |'
-      write (*, *) '                  Welcome to the TurboGAP code                   |'
-      write (*, *) '                         Maintained by                           |'
-      write (*, *) '                                                                 |'
-      write (*, *) '               Miguel A. Caro and Tigany Zarrouk                 |'
-      write (*, *) '                       mcaroba@gmail.com                         |'
-      write (*, *) '                      miguel.caro@aalto.fi                       |'
-      write (*, *) '                                                                 |'
-      write (*, *) '          Department of Chemistry and Materials Science          |'
-      write (*, *) '                     Aalto University, Finland                   |'
-      write (*, *) '                                                                 |'
-      write (*, *) '.................................................................|'
-      write (*, *) '                                                                 |'
-      write (*, *) '====================>>>>>  turbogap.fi  <<<<<====================|'
-      write (*, *) '                                                                 |'
-      write (*, *) '.................................................................|'
-      write (*, *) '                                                                 |'
-      write (*, *) 'Contributors (code and methodology) in chronological order:      |'
-      write (*, *) '                                                                 |'
-      write (*, *) 'Miguel A. Caro, Patricia Hernández-León, Suresh Kondati          |'
-      write (*, *) 'Natarajan, Albert P. Bartók, Eelis V. Mielonen, Heikki Muhli,    |'
-      write (*, *) 'Mikhail Kuklin, Gábor Csányi, Jan Kloppenburg, Richard Jana,     |'
-      write (*, *) 'Tigany Zarrouk, Cristian V. Achim                                |'
-      write (*, *) '                                                                 |'
-      write (*, *) '.................................................................|'
-      write (*, *) '                                                                 |'
-      write (*, *) '                     Last updated: Jun. 2026                     |'
-      write (*, *) '                                        _________________________/'
-      write (*, *) '.......................................|'
-      if (comm_with_mpi) then
-         write (*, *) '                                       |'
-         write (*, *) 'Running TurboGAP with MPI support:     |'
-         write (*, *) '                                       |'
-         write (*, '(A,I6,A)') ' Running TurboGAP on ', ntasks, ' MPI tasks   |'
-         write (*, *) '                                       |'
-         write (*, *) '.......................................|'
-      else
-         write (*, *) '                                       |'
-         write (*, *) 'Running the serial version of TurboGAP |'
-         write (*, *) '                                       |'
-         write (*, *) '.......................................|'
-      end if
-   end if
+   call print_banner(comm)
 
    ! Read input file and other files
    call read_input_and_gap_files(mode, rank, ntasks, params, &
@@ -476,58 +422,15 @@ program turbogap
 !  the device instead of from the node.
    call gpu_memory_budget_init(params, rank, ntasks)
 
-   ! <----------------------------------------------------------------------------------------------- Finish printouts
-   if (rank == 0) then
-      ! Print out chosen options:
-      write (*, *) '                                       |'
-      write (*, '(1X,A)') 'You specified the following options:   |'
-      write (*, *) '                                       |'
-      write (*, *) '---------------------------------      |'
-      if (len(trim(params%atoms_file)) > 20) then
-         write (*, '(1X,A,A20,A)') 'Atoms file = ', adjustr(trim(params%atoms_file)), '...   |'
-      else
-         write (*, '(1X,A,A20,A)') 'Atoms file = ', adjustr(trim(params%atoms_file)), '      |'
-      end if
-      write (*, *) '---------------------------------      |'
-      write (i_char, '(I8)') model%n_species
-      write (*, '(1X,A,A8,A)') 'No. of species   = ', adjustl(i_char), '            |'
-      do i = 1, model%n_species
-         write (i_char, '(I8)') i
-         write (*, '(1X,A,A2,A,A8,A)') '  *) Species #', adjustl(i_char), ' =       ', adjustr(params%species_types(i)), '      |'
-      end do
-      write (*, *) '---------------------------------      |'
-      write (*, '(1X,A,F15.4,A)') 'rcut_max = ', model%rcut_max, ' Angst.      |'
-      write (*, *) '---------------------------------      |'
-      write (*, *) '                                       |'
-      write (*, *) '.......................................|'
-   end if
+   call print_options(comm, params, model)
 
    ! Print progress bar and initialize timers
 
    model%xps_idx = params%xps_idx
-   loop%md_istep = -1
-   loop%mc_istep = -1
-   loop%n_xyz = 0
    i_nested = 0
    i_image = 0
 
-   if (params%do_md) then
-      if (rank == 0) then
-         write (*, *) '                                       |'
-         write (*, *) 'Doing molecular dynamics...            |'
-         if (params%print_progress .and. loop%md_istep > 0) then
-            write (*, *) '                                       |'
-            write (*, *) 'Progress:                              |'
-            write (*, *) '                                       |'
-            write (*, '(1X,A)', advance='no') '[                                    ] |'
-         end if
-      end if
-      loop%update_bar = params%md_nsteps/36
-      if (loop%update_bar < 1) then
-         loop%update_bar = 1
-      end if
-      loop%counter = 1
-   end if
+   call loop_init(loop, params, comm)
 
    ! This checks if we need to do the SOAP calculation more than once, if there are several concatenated
    ! structures in the xyz file provided or we're doing molecular dynamics
@@ -631,8 +534,7 @@ program turbogap
 !  server is reported now rather than after the first GAP evaluation.
    if (mode == "ipi") call ipi_driver_open(params%ipi_address, rank)
 
-   do while (loop%repeat_xyz .or. (params%do_md .and. loop%md_istep < params%md_nsteps) &
-             .or. (params%do_mc .and. loop%mc_istep < params%mc_nsteps))
+   do while (loop_continues(loop, params))
       loop%exit_loop = .false.
 
 !     One stamp per iteration, so that the cost of a step with the IR bias
@@ -640,49 +542,7 @@ program turbogap
 !     bottom of the loop.
       if (params%valid_ir) call get_time(mad_ir_step_beg)
 
-      if (params%do_mc) then
-         loop%mc_istep = loop%mc_istep + 1
-         ! Undo if the step is md related
-         if (loop%md_istep > -1) loop%mc_istep = loop%mc_istep - 1
-
-      end if
-
-      if (params%do_md) then
-         loop%md_istep = loop%md_istep + 1
-      else
-         loop%n_xyz = loop%n_xyz + 1
-      end if
-
-      !   Update progress bar
-      !
-      !   md_nsteps = 0 is a legitimate input -- one configuration, forces, no
-      !   dynamics -- and the bar divides by it. Integer division by zero is a
-      !   SIGFPE, so the run died on the first step with a backtrace and no
-      !   message rather than producing the single frame it was asked for.
-      loop%bar_frac = 0
-      if (params%md_nsteps > 0) loop%bar_frac = 36*loop%md_istep/params%md_nsteps
-      if (loop%bar_frac > 36) loop%bar_frac = 36
-      if (params%print_progress .and. loop%counter == loop%update_bar .and. (.not. params%do_mc)) then
-         if (rank == 0) then
-            do j = 1, 36 + 3
-               write (*, "(A)", advance="no") creturn
-            end do
-            write (*, "(1X,A)", advance="no") "["
-            do i = 1, loop%bar_frac
-               write (*, "(A)", advance="no") "."
-            end do
-            do i = loop%bar_frac + 1, 36
-               write (*, "(A)", advance="no") " "
-            end do
-            write (*, "(A)", advance="no") "] |"
-            if (loop%md_istep == params%md_nsteps) then
-               write (*, *)
-            end if
-         end if
-         loop%counter = 1
-      else
-         loop%counter = loop%counter + 1
-      end if
+      call loop_begin_step(loop, params, comm)
 
       !   This chunk of code does all the reading/neighbor builds etc for each snapshot
       !   or MD step

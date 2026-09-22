@@ -57,3 +57,5 @@ $(BUILD_DIR)/turbogap_setup.o: $(BUILD_DIR)/adaptive_time.o $(BUILD_DIR)/electro
 $(BUILD_DIR)/turbogap_structure.o: $(BUILD_DIR)/kinds.o
 $(BUILD_DIR)/turbogap_domain.o: $(BUILD_DIR)/kinds.o $(BUILD_DIR)/neighbors.o $(BUILD_DIR)/read_files.o $(BUILD_DIR)/timing.o $(BUILD_DIR)/turbogap_comm.o $(BUILD_DIR)/turbogap_loop.o $(BUILD_DIR)/turbogap_results.o $(BUILD_DIR)/turbogap_setup.o $(BUILD_DIR)/turbogap_structure.o $(BUILD_DIR)/types.o
 $(BUILD_DIR)/turbogap_results.o: $(BUILD_DIR)/kinds.o
+$(BUILD_DIR)/turbogap_loop.o: $(BUILD_DIR)/turbogap_comm.o $(BUILD_DIR)/types.o
+$(BUILD_DIR)/turbogap_output.o: $(BUILD_DIR)/turbogap_comm.o $(BUILD_DIR)/turbogap_setup.o $(BUILD_DIR)/types.o
