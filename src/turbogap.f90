@@ -104,8 +104,6 @@ program turbogap
    logical :: write_condition = .false.
    logical :: overwrite_condition = .false.
 
-   ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   integer, allocatable :: alpha_max(:)
    integer, allocatable :: i_beg_list(:)
    integer, allocatable :: i_end_list(:)
    integer, allocatable :: j_beg_list(:)
@@ -132,15 +130,8 @@ program turbogap
    integer :: this_j_beg
    integer :: this_j_end
 
-   integer :: l_max
-   integer :: n_max
-   integer :: central_species = 0
-   integer :: iostatus
-
    type(perform_t) :: perform
-   integer :: which_atom = 0
    integer :: n_omp = 1
-   integer :: radial_enhancement = 0
 
    character*1024 :: filename
    character*1024 :: string
@@ -162,8 +153,6 @@ program turbogap
    character*32 :: implemented_exp_observables(1:5)
 #ifdef _GPU
    integer :: omp_task
-   type(c_ptr) :: alphas_d
-   type(c_ptr) :: qs_d
    integer :: n_pairs_temp
    integer :: n_sites_temp
    character*8, allocatable, target :: species_types_actual(:)
@@ -614,24 +603,12 @@ program turbogap
                     & write (*, '(A,1X,F23.8,1X,A)') ' nd energy:',&
                     & sum(res%energies_nd), 'eV |'
 
-               if (.not. params%do_mc .or. (params%do_mc .and. loop%mc_istep <= 1)) then
-                  write (*, '(A,1X,F21.8,1X,A)') ' Total energy:', sum(res%energies), 'eV |'
-               else
-                  write (*, '(A,1X,F21.8,1X,A)') ' Total energy:', sum(smp%images(smp%i_trial_image)%energies), 'eV |'
-               end if
+               write (*, '(A,1X,F21.8,1X,A)') ' Total energy:', sum(res%energies), 'eV |'
 
-               if (.not. params%do_mc) then
-                  write (*, *) '                                       |'
-                  write (*, *) 'Energy & forces in "trajectory_out.xyz"|'
-                  write (*, *) '                                       |'
-                  write (*, *) '.......................................|'
-               else if (loop%mc_istep == 0) then
-                  write (*, *) '                                       |'
-                  write (*, *) ' MC configs in "mc_current.xyz" and    |'
-                  write (*, *) '               "mc_trial.xyz"          |'
-                  write (*, *) '               "mc_all.xyz"            |'
-                  write (*, *) '.......................................|'
-               end if
+               write (*, *) '                                       |'
+               write (*, *) 'Energy & forces in "trajectory_out.xyz"|'
+               write (*, *) '                                       |'
+               write (*, *) '.......................................|'
             end if
          end if
 
@@ -755,33 +732,6 @@ program turbogap
             end if
 
          end if
-         ! For debugging the virial implementation
-         if (rank == 0 .and. .false.) then
-            write (*, *) "pressure_soap: ", res%virial_soap/3.d0/state%v_uc
-            write (*, *) "pressure_vdw: ", res%virial_vdw/3.d0/state%v_uc
-            write (*, *) "pressure_lp: ", res%virial_lp/3.d0/state%v_uc
-            write (*, *) "pressure_2b: ", res%virial_2b/3.d0/state%v_uc
-            write (*, *) "pressure_3b: ", res%virial_3b/3.d0/state%v_uc
-            write (*, *) "pressure_core_pot: ", res%virial_core_pot/3.d0/state%v_uc
-         end if
-! For debugging the virial implementation
-         if (rank == 0 .and. .false.) then
-            write (*, *) "pressure_soap: ", res%virial_soap/3.d0/state%v_uc
-            write (*, *) "pressure_vdw: ", res%virial_vdw/3.d0/state%v_uc
-            do i = 1, 3
-               write (*, *) res%virial_vdw(i, :)/state%v_uc
-            end do
-            write (*, *) "Trace of vdw pressure:", (res%virial_vdw(1, 1) + res%virial_vdw(2, 2) + res%virial_vdw(3, &
-                                                                                                                 3))/3.d0/state%v_uc
-            write (*, *) "pressure_2b: ", res%virial_2b/3.d0/state%v_uc
-            write (*, *) "pressure_3b: ", res%virial_3b/3.d0/state%v_uc
-            write (*, *) "pressure_core_pot: ", res%virial_core_pot/3.d0/state%v_uc
-            write (*, *) "full vdw forces"
-            do i = 1, state%n_sites
-               write (*, *) i, res%forces_vdw(1:3, i)
-            end do
-            write (*, *) "Local virial", res%local_virial_vdw_diag
-         end if
 
          if (params%do_prediction .and. .not. params%do_md .and. .not. params%do_mc) then
             if (rank == 0) then
@@ -887,7 +837,6 @@ program turbogap
          allocate (dom%do_list(1:state%n_sites))
          dom%do_list = .true.
       end if
-      call get_time(time1)
       !   Parallel neighbors list build
       call comm_bcast(comm, nl%rebuild_neighbors_list)
 

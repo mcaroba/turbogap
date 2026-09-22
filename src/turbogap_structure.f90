@@ -31,7 +31,7 @@
 module turbogap_structure
 
    use kinds, only: dp
-   use turbogap_comm, only: comm_t, comm_bcast, comm_finalize
+   use turbogap_comm, only: comm_t, comm_bcast
    use types, only: input_parameters
    use timing, only: times_t, time_start, time_end
    use turbogap_setup, only: model_t
@@ -131,16 +131,6 @@ contains
          !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
          loop%repeat_xyz = .false.
          !     At the moment, we can't do prediction if the unit cell doesn't fit a whole cutoff sphere
-         if (comm%rank == 0) then
-            !     CLEAN THIS UP <------------------------------------------------------------------- LOOK HERE
-            !      if( size(positions,2) /= n_sites )then
-            if (.false.) then
-               write (*, *) "Sorry, at the moment TurboGAP can't do MD for unit cells smaller than ", &
-                  "a cutoff sphere <-- ERROR"
-               call comm_finalize(comm)
-               stop
-            end if
-         end if
       else if (.not. params%do_md) then
          call time_start(time%read_xyz)
          if (comm%rank == 0) then
