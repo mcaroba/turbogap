@@ -31,11 +31,17 @@
 module turbogap_sampling
 
    use kinds, only: dp
-   use types, only: image
+   use types, only: image, input_parameters
+   use md, only: remove_cm_vel
+   use turbogap_comm, only: comm_t
+   use turbogap_structure, only: state_t
+   use turbogap_loop, only: loop_t
+   use turbogap_md, only: dynamics_t
 
    implicit none
 
    private
+   public :: mc_prepare_step
 
    type, public :: sampling_t
 !     The image pool: the nested-sampling walkers, or MC's current and trial
@@ -81,5 +87,46 @@ module turbogap_sampling
       real(dp) :: p_accept
       real(dp) :: virial_prev(1:3, 1:3)
    end type sampling_t
+
+contains
+
+!  Hamiltonian MC: before each move rank 0 redraws the velocities at t_beg,
+!  keeping the kinetic energy of the current state after the first move.
+   subroutine mc_prepare_step(smp, dyn, state, params, loop, comm)
+      type(sampling_t), intent(inout) :: smp
+      type(dynamics_t), intent(inout) :: dyn
+      type(state_t), intent(inout) :: state
+      type(input_parameters), intent(in) :: params
+      type(loop_t), intent(in) :: loop
+      type(comm_t), intent(in) :: comm
+      integer :: i
+
+      if (comm%rank == 0) then
+         if (params%do_mc .and. (smp%mc_move /= "md" .or. loop%md_istep == 0) .and. params%mc_hamiltonian) then
+            if (loop%mc_istep > 0) dyn%E_kinetic_prev = dyn%E_kinetic
+            call random_number(state%velocities)
+            call remove_cm_vel(state%velocities(1:3, 1:state%n_sites), state%masses(1:state%n_sites))
+            dyn%E_kinetic = 0.d0
+            do i = 1, state%n_sites
+               dyn%E_kinetic = dyn%E_kinetic + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
+            end do
+            dyn%instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/dyn%kB*dyn%E_kinetic
+            state%velocities = state%velocities*dsqrt(params%t_beg/dyn%instant_temp)
+            if (loop%mc_istep > 0) then
+               dyn%E_kinetic = dyn%E_kinetic_prev
+               dyn%instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/dyn%kB*dyn%E_kinetic
+               ! Reversing as we want it to be at the instant temp and not at t_beg
+               state%velocities = state%velocities*dsqrt(dyn%instant_temp/params%t_beg)
+
+               do i = 1, state%n_sites
+                  dyn%E_kinetic = dyn%E_kinetic + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), &
+                                                                                    state%velocities(1:3, i))
+               end do
+            else
+               dyn%E_kinetic = dyn%E_kinetic*params%t_beg/dyn%instant_temp
+            end if
+         end if
+      end if
+   end subroutine mc_prepare_step
 
 end module turbogap_sampling

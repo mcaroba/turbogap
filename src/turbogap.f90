@@ -55,7 +55,7 @@ program turbogap
                               domain_sync_after_ipi
    use turbogap_results, only: results_t, results_prepare
    use turbogap_soap, only: compute_soap
-   use turbogap_sampling, only: sampling_t
+   use turbogap_sampling, only: sampling_t, mc_prepare_step
    use turbogap_ir, only: ir_run_t, ir_init, ir_step_begin, ir_before_evaluate, ir_push_frame, &
                           ir_after_forces, ir_step_end, ir_finish, ir_report
    use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, creturn
@@ -317,38 +317,8 @@ program turbogap
       !   Broadcast the info in the XYZ file: positions, velocities, masses, xyz_species, xyz_species_supercell,
       !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
 
-      if (rank == 0) then
-         if (params%randomize_velocities .and. loop%md_istep == 0) then
-            call randomize_velocities(state%velocities, state%n_sites, dyn%E_kinetic, state%masses, dyn%instant_temp, &
-                                      params%t_beg, &
-                                      params%velocity_distribution)
-         end if
-         if (params%do_mc .and. (smp%mc_move /= "md" .or. loop%md_istep == 0) .and. params%mc_hamiltonian) then
-            if (loop%mc_istep > 0) dyn%E_kinetic_prev = dyn%E_kinetic
-            call random_number(state%velocities)
-            call remove_cm_vel(state%velocities(1:3, 1:state%n_sites), state%masses(1:state%n_sites))
-            dyn%E_kinetic = 0.d0
-            do i = 1, state%n_sites
-               dyn%E_kinetic = dyn%E_kinetic + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
-            end do
-            dyn%instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/dyn%kB*dyn%E_kinetic
-            state%velocities = state%velocities*dsqrt(params%t_beg/dyn%instant_temp)
-            if (loop%mc_istep > 0) then
-               dyn%E_kinetic = dyn%E_kinetic_prev
-               dyn%instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/dyn%kB*dyn%E_kinetic
-               ! Reversing as we want it to be at the instant temp and not at t_beg
-               state%velocities = state%velocities*dsqrt(dyn%instant_temp/params%t_beg)
-
-               do i = 1, state%n_sites
-                  dyn%E_kinetic = dyn%E_kinetic + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), &
-                                                                                    state%velocities(1:3, i))
-               end do
-            else
-               dyn%E_kinetic = dyn%E_kinetic*params%t_beg/dyn%instant_temp
-            end if
-         end if
-
-      end if
+      call md_prepare_velocities(dyn, state, params, loop, comm)
+      call mc_prepare_step(smp, dyn, state, params, loop, comm)
       call domain_sync_state(dom, comm, state, params, time)
       call domain_build(dom, nl, comm, state, params, model, loop, smp%mc_file, time)
       !   Compute the volume of the "primitive" unit cell

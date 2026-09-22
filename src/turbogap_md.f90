@@ -36,6 +36,9 @@
 module turbogap_md
 
    use kinds
+   use turbogap_comm, only: comm_t
+   use turbogap_structure, only: state_t
+   use turbogap_loop, only: loop_t
    use types
    use md
    use bussi
@@ -58,6 +61,7 @@ module turbogap_md
 
    private
    public :: compute_md
+   public :: md_prepare_velocities
 
 !  What the integrator carries from step to step: time, the thermodynamic
 !  observables, and the electronic-stopping data read at setup.
@@ -701,5 +705,22 @@ contains
 #endif
 
    end subroutine compute_md
+
+!  Rank 0 draws the starting velocities on the first MD step, if asked to.
+   subroutine md_prepare_velocities(dyn, state, params, loop, comm)
+      type(dynamics_t), intent(inout) :: dyn
+      type(state_t), intent(inout) :: state
+      type(input_parameters), intent(in) :: params
+      type(loop_t), intent(in) :: loop
+      type(comm_t), intent(in) :: comm
+
+      if (comm%rank == 0) then
+         if (params%randomize_velocities .and. loop%md_istep == 0) then
+            call randomize_velocities(state%velocities, state%n_sites, dyn%E_kinetic, state%masses, dyn%instant_temp, &
+                                      params%t_beg, &
+                                      params%velocity_distribution)
+         end if
+      end if
+   end subroutine md_prepare_velocities
 
 end module turbogap_md
