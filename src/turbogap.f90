@@ -54,6 +54,7 @@ program turbogap
                               domain_complete_contributions, domain_sync_after_md, &
                               domain_sync_after_ipi
    use turbogap_results, only: results_t
+   use turbogap_ir, only: ir_run_t
    use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, creturn
    use turbogap_output, only: print_banner, print_options
    use turbogap_exp
@@ -101,84 +102,6 @@ program turbogap
    real(dp) :: p_accept
    real(dp) :: virial_prev(1:3, 1:3)
    real(dp), allocatable :: masses_types(:)
-
-!  MAD IR bias. lambda is dL/dmu of the newest configuration; mad_ir_applied
-!  says whether the ensemble was full enough for a force to have been added.
-   real(dp) :: mad_ir_lambda(1:3) = 0.d0
-   real(dp) :: mad_ir_energy = 0.d0
-   real(dp) :: mad_ir_scale = 0.d0
-   logical :: mad_ir_applied = .false.
-   logical :: mad_ir_ok, mad_ir_resumed
-!  The envelope-targeted bank, ir_bias_mode = aux. Calibrated once, when the
-!  ACF ensemble first fills, so the flag says whether that has happened yet.
-   logical :: ir_aux_ok, ir_aux_resumed
-   character(len=512) :: ir_aux_msg
-!  The largest back-reaction scale the run will reach, and the temperature the
-!  ensemble was collected at: the two inputs to the stability bound.
-   real(dp) :: ir_aux_escale_top = 0.d0
-   real(dp) :: ir_aux_temp = 0.d0
-!  mad_ir_evaluate is called under aux purely for the INDEPENDENT dissimilarity
-!  it leaves behind, so its energy is discarded here.
-   real(dp) :: ir_aux_acf_energy = 0.d0
-!  The SECOND constraint. Lambda < 1 stops the bilinear runaway, but the
-!  controller still pumps the bank and the bank still pumps the atoms, and a
-!  thermostat of time constant tau_t absorbs a steady power P only at the cost
-!  of a standing temperature offset
-!
-!     dT = 2 P tau_t / (3 N kB)
-!
-!  which is what a bias that is stable but too strong looks like: bounded, and
-!  a thousand degrees hot. Measured here from the pumped-energy ledger rather
-!  than predicted, because P depends on the dynamics in a way Lambda does not.
-   real(dp) :: ir_aux_power = 0.d0
-   real(dp) :: ir_aux_work = 0.d0
-   real(dp) :: ir_aux_pump_prev = 0.d0
-   real(dp) :: ir_aux_pump_time = 0.d0
-   real(dp) :: ir_aux_dT = 0.d0
-   logical :: ir_aux_warned_hot = .false.
-   character(len=512) :: mad_ir_msg
-!  Has anything been appended to ir_prediction.dat yet? The first block cannot
-!  be identified by its step number the way the per-frame observables' can --
-!  it appears whenever the ensemble first fills, which is not step zero -- and
-!  appending to a file that does not exist is a runtime error, so the flag is
-!  carried rather than derived.
-   logical :: mad_ir_wrote_prediction = .false.
-!  The extended-Lagrangian bias (ir_bias_mode = "xl"). mad_ir_xl_ok/msg mirror
-!  the ACF ones; mad_ir_xl_resumed says whether a saved resonator bank was
-!  adopted, which is the difference between biasing from the first stored frame
-!  and charging a fresh bank for ir_xl_warm_factor memory times first.
-   logical :: mad_ir_xl_ok = .false., mad_ir_xl_resumed = .false.
-   character(len=512) :: mad_ir_xl_msg
-!  What the bias costs. The ensemble fills partway into the run, so the same
-!  run measures both sides of the question: mad_ir_t_pre accumulates the
-!  wall-clock of the steps before the first spectrum and mad_ir_t_post that of
-!  the steps after, and their per-step means are directly comparable because
-!  nothing else about the step changes at that boundary.
-   real(dp) :: mad_ir_t_first = -1.d0
-   integer :: mad_ir_step_first = -1
-   real(dp) :: mad_ir_t_pre = 0.d0, mad_ir_t_post = 0.d0
-   integer :: mad_ir_n_pre = 0, mad_ir_n_post = 0
-   real(dp) :: mad_ir_step_beg = 0.d0, mad_ir_t_now = 0.d0
-   real(dp) :: mad_ir_rate_pre, mad_ir_rate_post
-   real(dp) :: mad_ir_res_ask
-   logical :: mad_ir_have_spectrum = .false.
-!  The FFT estimator (ir_bias_mode = fft, and the only estimator `turbogap
-!  predict` can use). ir_from_traj distinguishes the two ways in: reading a
-!  trajectory off disk frame by frame, versus riding along on an MD run and
-!  transforming mad_ir's rolling buffer.
-   logical :: ir_fft_active = .false.
-   logical :: ir_from_traj = .false.
-   logical :: ir_fft_ok
-   character(len=1024) :: ir_fft_msg
-   type(ir_fft_config_type) :: ir_fft_cfg
-   type(ir_fft_result_type) :: ir_fft_res
-   real(dp) :: ir_fft_dt_used = 0.d0
-   real(dp) :: ir_fft_scale_fit = 1.d0, ir_fft_offset_fit = 0.d0
-   real(dp) :: ir_fft_dissim = 0.d0, ir_fft_dissim_ref = 0.d0
-   real(dp), allocatable :: ir_fft_mu_chron(:, :)
-   real(dp), allocatable :: ir_nu_exp(:), ir_I_exp(:), ir_wgt_exp(:)
-   real(dp), allocatable :: ir_fft_I_fit(:)
-   integer :: ir_fft_n_chron = 0
 
    real(dp) :: instant_temp
    real(dp) :: kB = 8.6173303d-5
@@ -238,6 +161,7 @@ program turbogap
    type(model_t), target :: model
    type(results_t), target :: res
    type(loop_t) :: loop
+   type(ir_run_t) :: ir
    integer :: n_sp
    integer :: n_pos
    integer :: this_i_beg
@@ -471,27 +395,27 @@ program turbogap
 !
 !  Otherwise: MD or MC, where mad_ir sizes and fills a rolling buffer as
 !  before and ir_bias_mode picks which estimator transforms it.
-   ir_from_traj = params%do_ir .and. .not. params%do_md .and. .not. params%do_mc
-   ir_fft_active = ir_from_traj .or. &
-                   ((params%valid_ir .or. params%do_ir) .and. &
-                    trim(params%ir_bias_mode) == "fft")
+   ir%ir_from_traj = params%do_ir .and. .not. params%do_md .and. .not. params%do_mc
+   ir%ir_fft_active = ir%ir_from_traj .or. &
+                      ((params%valid_ir .or. params%do_ir) .and. &
+                       trim(params%ir_bias_mode) == "fft")
 
 !  One config for both routes; only dt_fs differs, and it is filled in at the
 !  point of use because in one route it comes from the file and in the other
 !  from md_step*ir_stride. normalise is off for MD: under a bias the spectrum
 !  is fitted against the experiment with a scale, and dividing by max|I| as
 !  well would be a second, discontinuous, normalisation of the same freedom.
-   if (ir_fft_active) then
+   if (ir%ir_fft_active) then
       call ir_fft_config_from_params(1.d0, params%ir_window, params%ir_fft_acf_ratio, &
                                      params%ir_nu_max, params%ir_fft_smooth_k, &
                                      params%ir_fft_smooth_kind, &
                                      params%ir_fft_quantum_correction, &
                                      params%ir_fft_temperature, params%t_beg, &
                                      params%ir_fft_power_dc_cutoff, &
-                                     params%ir_subtract_mean, ir_from_traj, ir_fft_cfg)
+                                     params%ir_subtract_mean, ir%ir_from_traj, ir%ir_fft_cfg)
    end if
 
-   if (ir_from_traj) then
+   if (ir%ir_from_traj) then
 !     Without do_prediction the descriptor pass never runs, so no dipole is
 !     ever formed and the frame buffer stays empty. That surfaces much later as
 !     "a spectrum needs at least two frames", which is true and unhelpful.
@@ -540,7 +464,7 @@ program turbogap
 !     One stamp per iteration, so that the cost of a step with the IR bias
 !     active can be compared with the cost of one without. Closed at the
 !     bottom of the loop.
-      if (params%valid_ir) call get_time(mad_ir_step_beg)
+      if (params%valid_ir) call get_time(ir%mad_ir_step_beg)
 
       call loop_begin_step(loop, params, comm)
 
@@ -798,7 +722,7 @@ program turbogap
 !           contributes a configuration to the IR ensemble: get_soap has to be
 !           told to produce second derivatives before it builds anything, and
 !           gap_interface reads mad_ir_collect to do that.
-            if ((params%valid_ir .or. params%do_ir) .and. .not. ir_from_traj) then
+            if ((params%valid_ir .or. params%do_ir) .and. .not. ir%ir_from_traj) then
 !              Set up on first use: n_sites is known by now, and doing it here
 !              rather than in the setup phase keeps the sizing next to the
 !              place that consumes it.
@@ -823,34 +747,34 @@ program turbogap
                                        trim(params%ir_estimator) /= "unbiased", &
                                        params%ir_taper_partial, params%ir_match_offset, &
                                        params%ir_weight_by_spacing, &
-                                       state%n_sites, mad_ir_ok, mad_ir_resumed, mad_ir_msg, &
+                                       state%n_sites, ir%mad_ir_ok, ir%mad_ir_resumed, ir%mad_ir_msg, &
                                        params%ir_acf_mode, params%ir_tau_mem)
                   else
 !                    Prediction: the ensemble is the whole trajectory, so its
 !                    length is md_nsteps/ir_stride + 1 -- every step for which
 !                    modulo(md_istep, ir_stride) is zero, counting step zero.
-                     mad_ir_resumed = .false.
+                     ir%mad_ir_resumed = .false.
 !                    A negative resolution means "whatever the run gives"; the
 !                    default value of ir_resolution cannot be told from a
 !                    chosen one by its value, hence the flag.
                      if (params%ir_resolution_set) then
-                        mad_ir_res_ask = params%ir_resolution
+                        ir%mad_ir_res_ask = params%ir_resolution
                      else
-                        mad_ir_res_ask = -1.d0
+                        ir%mad_ir_res_ask = -1.d0
                      end if
                      call mad_ir_setup_predict(params%md_step, params%ir_stride, &
                                                params%md_nsteps/params%ir_stride + 1, &
-                                               mad_ir_res_ask, params%ir_nu_min, &
+                                               ir%mad_ir_res_ask, params%ir_nu_min, &
                                                params%ir_nu_max, params%ir_lag_factor, &
                                                params%ir_n_samples, params%ir_nu_power, &
                                                params%ir_window, params%ir_subtract_mean, &
                                                trim(params%ir_estimator) /= "unbiased", &
                                                params%ir_taper_partial, &
-                                               state%n_sites, mad_ir_ok, mad_ir_msg, &
+                                               state%n_sites, ir%mad_ir_ok, ir%mad_ir_msg, &
                                                params%ir_acf_mode, params%ir_tau_mem)
                   end if
-                  if (.not. mad_ir_ok) then
-                     write (*, *) "ERROR: ", trim(mad_ir_msg)
+                  if (.not. ir%mad_ir_ok) then
+                     write (*, *) "ERROR: ", trim(ir%mad_ir_msg)
                      stop
                   end if
                   if (rank == 0) then
@@ -871,12 +795,12 @@ program turbogap
                      if (.not. params%valid_ir) then
                         write (*, *) '  *) no experiment and no bias; the   |'
                         write (*, *) '     spectrum is written at the end.  |'
-                     else if (mad_ir_resumed) then
+                     else if (ir%mad_ir_resumed) then
                         write (*, '(A,I12,A)') '  *) resumed, frames:   ', mad_ir_state%n_stored, '         |'
                      else
                         write (*, *) '  *) fresh ensemble; no bias is       |'
                         write (*, *) '     applied until it is full.        |'
-                        if (len_trim(mad_ir_msg) > 0) write (*, *) '     ', trim(mad_ir_msg)
+                        if (len_trim(ir%mad_ir_msg) > 0) write (*, *) '     ', trim(ir%mad_ir_msg)
                      end if
                      write (*, *) '.......................................|'
                   end if
@@ -900,10 +824,10 @@ program turbogap
                                           trim(params%ir_xl_amplitude) == "coherent", &
                                           params%ir_xl_warm_factor, &
                                           params%ir_xl_max_memory*1.048576d6, &
-                                          params%ir_xl_restart_file, mad_ir_xl_ok, &
-                                          mad_ir_xl_resumed, mad_ir_xl_msg)
-                     if (.not. mad_ir_xl_ok) then
-                        write (*, *) "ERROR: ", trim(mad_ir_xl_msg)
+                                          params%ir_xl_restart_file, ir%mad_ir_xl_ok, &
+                                          ir%mad_ir_xl_resumed, ir%mad_ir_xl_msg)
+                     if (.not. ir%mad_ir_xl_ok) then
+                        write (*, *) "ERROR: ", trim(ir%mad_ir_xl_msg)
                         stop
                      end if
                      mad_ir_xl_active = .true.
@@ -924,13 +848,13 @@ program turbogap
                         else
                            write (*, *) '  *) amplitude:          incoherent   |'
                         end if
-                        if (mad_ir_xl_resumed) then
+                        if (ir%mad_ir_xl_resumed) then
                            write (*, '(A,I12,A)') '  *) resumed, advances: ', &
                               mad_ir_xl_state%n_steps, '         |'
                         else
                            write (*, '(A,I12,A)') '  *) charging, advances:', &
                               mad_ir_xl_state%n_warm, '         |'
-                           if (len_trim(mad_ir_xl_msg) > 0) write (*, *) '     ', trim(mad_ir_xl_msg)
+                           if (len_trim(ir%mad_ir_xl_msg) > 0) write (*, *) '     ', trim(ir%mad_ir_xl_msg)
                         end if
                         write (*, *) '  *) the ACF ensemble above is still  |'
                         write (*, *) '     filled, but only as a check: it  |'
@@ -968,9 +892,9 @@ program turbogap
                                        params%ir_aux_eff_mass, params%ir_aux_damping, &
                                        params%ir_aux_tau, params%ir_aux_gain, &
                                        params%ir_aux_eta_max, params%ir_aux_restart_file, &
-                                       ir_aux_ok, ir_aux_resumed, ir_aux_msg)
-                     if (.not. ir_aux_ok) then
-                        write (*, *) "ERROR: ", trim(ir_aux_msg)
+                                       ir%ir_aux_ok, ir%ir_aux_resumed, ir%ir_aux_msg)
+                     if (.not. ir%ir_aux_ok) then
+                        write (*, *) "ERROR: ", trim(ir%ir_aux_msg)
                         stop
                      end if
                      if (rank == 0) then
@@ -987,7 +911,7 @@ program turbogap
                            ir_aux_state%kappa(1), ' 1/fs    |'
                         write (*, '(A,F12.4,A)') '  *) critical gain:     ', &
                            2.d0/ir_aux_state%tau(1), ' 1/fs    |'
-                        if (ir_aux_resumed) then
+                        if (ir%ir_aux_resumed) then
                            write (*, '(A,I12,A)') '  *) resumed, advances: ', &
                               ir_aux_state%n_steps, '         |'
                         else
@@ -996,7 +920,7 @@ program turbogap
                            write (*, *) '     and applies no force until it  |'
                            write (*, *) '     does.                          |'
                         end if
-                        if (len_trim(ir_aux_msg) > 0) write (*, *) '     ', trim(ir_aux_msg)
+                        if (len_trim(ir%ir_aux_msg) > 0) write (*, *) '     ', trim(ir%ir_aux_msg)
                         write (*, *) '.......................................|'
                      end if
                   end if
@@ -1424,7 +1348,7 @@ program turbogap
 !        broadcast just above, so the sums agree bit for bit, and having the
 !        ensemble replicated means the final transform needs no communication.
 !        Three doubles a frame; a 100 ps trajectory at 1 fs is 2.4 MB.
-         if (ir_from_traj) then
+         if (ir%ir_from_traj) then
             call ir_fft_frames_push(ir_fft_frames, res%dipole, state%frame_time, state%has_frame_time)
          end if
 
@@ -1755,7 +1679,7 @@ program turbogap
                   call get_energy_scale(params%do_md, params%do_mc, loop%md_istep, params%md_nsteps, &
                                         loop%mc_istep, params%mc_nsteps, &
                                         params%exp_energy_scales_initial(params%ir_idx), &
-                                        params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
+                                        params%exp_energy_scales_final(params%ir_idx), ir%mad_ir_scale)
                   call time_start(time%ir_predict)
 !                 Advance BEFORE evaluate: the loss and the gradient both belong
 !                 to a bank that already knows this frame's dipole. Evaluating
@@ -1764,13 +1688,13 @@ program turbogap
 !                 dipole had not yet entered -- which is identically zero, not
 !                 merely inaccurate.
                   call mad_ir_xl_advance(mad_ir_xl_state, res%local_dipoles(1:3, 1:state%n_sites))
-                  call mad_ir_xl_evaluate(mad_ir_xl_state, mad_ir_scale, mad_ir_energy)
+                  call mad_ir_xl_evaluate(mad_ir_xl_state, ir%mad_ir_scale, ir%mad_ir_energy)
                   call time_end(time%ir_predict)
-                  res%energies_exp = res%energies_exp + mad_ir_energy/dfloat(state%n_sites)
+                  res%energies_exp = res%energies_exp + ir%mad_ir_energy/dfloat(state%n_sites)
                   exp_dissimilarity = exp_dissimilarity + mad_ir_xl_state%dissim
                   exp_dissim_ref = exp_dissim_ref + mad_ir_xl_state%dissim_ref
                   if (params%exp_energies) then
-                     res%energies = res%energies + mad_ir_energy/dfloat(state%n_sites)
+                     res%energies = res%energies + ir%mad_ir_energy/dfloat(state%n_sites)
                      res%energy = sum(res%energies)
                   end if
                   res%energy_exp = sum(res%energies_exp)
@@ -1788,13 +1712,13 @@ program turbogap
                      call mad_ir_xl_weights(mad_ir_xl_state, mad_ir_xl_site_w)
                      call time_end(time%ir_forces)
                   end if
-                  if (mad_ir_xl_ready(mad_ir_xl_state) .and. .not. mad_ir_applied) then
-                     call get_time(mad_ir_t_now)
-                     mad_ir_t_first = mad_ir_t_now - time3
-                     mad_ir_step_first = loop%md_istep
+                  if (mad_ir_xl_ready(mad_ir_xl_state) .and. .not. ir%mad_ir_applied) then
+                     call get_time(ir%mad_ir_t_now)
+                     ir%mad_ir_t_first = ir%mad_ir_t_now - time3
+                     ir%mad_ir_step_first = loop%md_istep
                   end if
-                  mad_ir_applied = mad_ir_xl_ready(mad_ir_xl_state)
-                  if (.not. mad_ir_applied) mad_ir_energy = 0.d0
+                  ir%mad_ir_applied = mad_ir_xl_ready(mad_ir_xl_state)
+                  if (.not. ir%mad_ir_applied) ir%mad_ir_energy = 0.d0
                else if (ir_aux_active) then
 !                 THE ENVELOPE-TARGETED BANK (ir_bias_mode = aux).
 !
@@ -1816,21 +1740,21 @@ program turbogap
 !                    The bound is tested against the WORST case the ramp will
 !                    reach, and at the LOWER of the two temperatures, since a
 !                    colder signal is a softer one and softens the threshold.
-                     ir_aux_escale_top = max(params%exp_energy_scales_initial(params%ir_idx), &
-                                             params%exp_energy_scales_final(params%ir_idx))
-                     ir_aux_temp = min(params%t_beg, params%t_end)
-                     if (ir_aux_temp <= 0.d0) ir_aux_temp = max(params%t_beg, params%t_end)
-                     call ir_aux_calibrate(ir_aux_state, mad_ir_state, ir_aux_temp, &
-                                           ir_aux_escale_top, ir_aux_ok, ir_aux_msg)
+                     ir%ir_aux_escale_top = max(params%exp_energy_scales_initial(params%ir_idx), &
+                                                params%exp_energy_scales_final(params%ir_idx))
+                     ir%ir_aux_temp = min(params%t_beg, params%t_end)
+                     if (ir%ir_aux_temp <= 0.d0) ir%ir_aux_temp = max(params%t_beg, params%t_end)
+                     call ir_aux_calibrate(ir_aux_state, mad_ir_state, ir%ir_aux_temp, &
+                                           ir%ir_aux_escale_top, ir%ir_aux_ok, ir%ir_aux_msg)
                      call time_end(time%ir_predict)
                      if (rank == 0) then
-                        if (ir_aux_ok) then
-                           write (*, *) 'MAD IR: ', trim(ir_aux_msg)
+                        if (ir%ir_aux_ok) then
+                           write (*, *) 'MAD IR: ', trim(ir%ir_aux_msg)
                         else
-                           write (*, *) 'WARNING: ', trim(ir_aux_msg)
+                           write (*, *) 'WARNING: ', trim(ir%ir_aux_msg)
                         end if
                      end if
-                     if (.not. ir_aux_ok) then
+                     if (.not. ir%ir_aux_ok) then
                         write (*, *) "ERROR: ir_bias_mode = aux could not calibrate the bank."
                         stop
                      end if
@@ -1854,7 +1778,7 @@ program turbogap
                            write (*, *) "        Lambda must be below 1; the bilinear coupling runs away above it."
                            write (*, '(A,ES12.4)') "        largest usable exp_energy_scales = ", &
                               ir_aux_escale_max(ir_aux_state)
-                           write (*, '(A,ES12.4)') "        this run asked for               = ", ir_aux_escale_top
+                           write (*, '(A,ES12.4)') "        this run asked for               = ", ir%ir_aux_escale_top
                            write (*, *) "        Lower exp_energy_scales, or raise ir_aux_damping"
                            write (*, *) "        (which lowers every g_k), and try again."
                         end if
@@ -1863,23 +1787,23 @@ program turbogap
                         write (*, '(A,ES10.2,A)') " WARNING: ir_aux stability number ", &
                            ir_aux_state%stab, " is above 0.5; the bias is close to runaway."
                      end if
-                     call get_time(mad_ir_t_now)
-                     mad_ir_t_first = mad_ir_t_now - time3
-                     mad_ir_step_first = loop%md_istep
+                     call get_time(ir%mad_ir_t_now)
+                     ir%mad_ir_t_first = ir%mad_ir_t_now - time3
+                     ir%mad_ir_step_first = loop%md_istep
                   end if
                   if (ir_aux_calibrated(ir_aux_state)) then
                      call get_energy_scale(params%do_md, params%do_mc, loop%md_istep, params%md_nsteps, &
                                            loop%mc_istep, params%mc_nsteps, &
                                            params%exp_energy_scales_initial(params%ir_idx), &
-                                           params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
+                                           params%exp_energy_scales_final(params%ir_idx), ir%mad_ir_scale)
                      call time_start(time%ir_predict)
 !                    Advance before evaluate, for the same reason the extended
 !                    Lagrangian does: the energy and the force both belong to a
 !                    bank that already knows this frame's dipole.
                      call ir_aux_advance(ir_aux_state, res%dipole)
-                     call ir_aux_evaluate(ir_aux_state, mad_ir_scale, res%dipole, mad_ir_energy)
+                     call ir_aux_evaluate(ir_aux_state, ir%mad_ir_scale, res%dipole, ir%mad_ir_energy)
                      call time_end(time%ir_predict)
-                     res%energies_exp = res%energies_exp + mad_ir_energy/dfloat(state%n_sites)
+                     res%energies_exp = res%energies_exp + ir%mad_ir_energy/dfloat(state%n_sites)
 !                    THE FIGURE OF MERIT IS THE ACF SPECTRUM, NOT THE BANK'S.
 !
 !                    The controller drives R_k onto R_target by construction, so
@@ -1893,26 +1817,26 @@ program turbogap
 !                    and dissim_ref regardless of it, so this buys the honest number
 !                    and contributes no energy and no force.
                      call time_start(time%ir_predict)
-                     call mad_ir_evaluate(mad_ir_state, 0.d0, ir_aux_acf_energy, mad_ir_lambda)
+                     call mad_ir_evaluate(mad_ir_state, 0.d0, ir%ir_aux_acf_energy, ir%mad_ir_lambda)
                      call time_end(time%ir_predict)
                      exp_dissimilarity = exp_dissimilarity + mad_ir_state%dissim
                      exp_dissim_ref = exp_dissim_ref + mad_ir_state%dissim_ref
                      if (params%exp_energies) then
-                        res%energies = res%energies + mad_ir_energy/dfloat(state%n_sites)
+                        res%energies = res%energies + ir%mad_ir_energy/dfloat(state%n_sites)
                         res%energy = sum(res%energies)
                      end if
                      res%energy_exp = sum(res%energies_exp)
                      if (params%exp_forces) then
                         call time_start(time%ir_forces)
-                        call ir_aux_forces(ir_aux_state, mad_ir_scale, mad_ir_dmu_dr, res%forces, &
-                                           state%velocities(1:3, 1:state%n_sites), ir_aux_power)
+                        call ir_aux_forces(ir_aux_state, ir%mad_ir_scale, mad_ir_dmu_dr, res%forces, &
+                                           state%velocities(1:3, 1:state%n_sites), ir%ir_aux_power)
                         call time_end(time%ir_forces)
 !                       Integrated with the stored-frame interval, since that is
 !                       how often the force is refreshed.
-                        ir_aux_work = ir_aux_work &
-                                      + ir_aux_power*params%md_step*dfloat(params%ir_stride)
+                        ir%ir_aux_work = ir%ir_aux_work &
+                                         + ir%ir_aux_power*params%md_step*dfloat(params%ir_stride)
                      end if
-                     mad_ir_applied = .true.
+                     ir%mad_ir_applied = .true.
 !                    ---- the thermal-fidelity check -------------------------
 !                    Over a window of stored frames, how much energy did the
 !                    controller put in, and what standing temperature offset
@@ -1920,30 +1844,30 @@ program turbogap
 !                    50 fs of biased dynamics is enough to average the pump
 !                    rate over many resonator periods (the fastest fitted band
 !                    is ~8 fs) while still reporting inside a short run.
-                     if (md_time - ir_aux_pump_time > 50.d0) then
-                        if (ir_aux_pump_time > 0.d0 .and. params%tau_t > 0.d0) then
+                     if (md_time - ir%ir_aux_pump_time > 50.d0) then
+                        if (ir%ir_aux_pump_time > 0.d0 .and. params%tau_t > 0.d0) then
 !                          The work the BIAS FORCE did on the atoms, which is
 !                          the channel that actually heats: the controller's own
 !                          injection into the bank is a different and, for a bank
 !                          far off target, much smaller number.
-                           ir_aux_dT = 2.d0*(ir_aux_work - ir_aux_pump_prev) &
-                                       /(md_time - ir_aux_pump_time)*params%tau_t &
-                                       /(3.d0*dfloat(state%n_sites)*8.6173303d-5)
-                           if (rank == 0 .and. .not. ir_aux_warned_hot .and. &
-                               dabs(ir_aux_dT) > 0.1d0*max(1.d0, params%t_beg)) then
+                           ir%ir_aux_dT = 2.d0*(ir%ir_aux_work - ir%ir_aux_pump_prev) &
+                                          /(md_time - ir%ir_aux_pump_time)*params%tau_t &
+                                          /(3.d0*dfloat(state%n_sites)*8.6173303d-5)
+                           if (rank == 0 .and. .not. ir%ir_aux_warned_hot .and. &
+                               dabs(ir%ir_aux_dT) > 0.1d0*max(1.d0, params%t_beg)) then
                               write (*, '(A,F10.1,A)') " WARNING: ir_aux is pumping hard enough for a standing", &
-                                 ir_aux_dT, " K offset."
+                                 ir%ir_aux_dT, " K offset."
                               write (*, *) "          The bias is below its stability bound but above what the"
                               write (*, *) "          thermostat can absorb quietly. Lower exp_energy_scales."
-                              ir_aux_warned_hot = .true.
+                              ir%ir_aux_warned_hot = .true.
                            end if
                         end if
-                        ir_aux_pump_prev = ir_aux_work
-                        ir_aux_pump_time = md_time
+                        ir%ir_aux_pump_prev = ir%ir_aux_work
+                        ir%ir_aux_pump_time = md_time
                      end if
                   else
-                     mad_ir_energy = 0.d0
-                     mad_ir_applied = .false.
+                     ir%mad_ir_energy = 0.d0
+                     ir%mad_ir_applied = .false.
                   end if
                else if (params%valid_ir .and. trim(params%ir_bias_mode) == "fft" &
                         .and. mad_ir_ready(mad_ir_state)) then
@@ -1966,64 +1890,64 @@ program turbogap
                   call get_energy_scale(params%do_md, params%do_mc, loop%md_istep, params%md_nsteps, &
                                         loop%mc_istep, params%mc_nsteps, &
                                         params%exp_energy_scales_initial(params%ir_idx), &
-                                        params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
+                                        params%exp_energy_scales_final(params%ir_idx), ir%mad_ir_scale)
                   call time_start(time%ir_predict)
-                  if (allocated(ir_fft_mu_chron)) then
-                     if (size(ir_fft_mu_chron, 2) /= mad_ir_state%n_stored) &
-                        deallocate (ir_fft_mu_chron)
+                  if (allocated(ir%ir_fft_mu_chron)) then
+                     if (size(ir%ir_fft_mu_chron, 2) /= mad_ir_state%n_stored) &
+                        deallocate (ir%ir_fft_mu_chron)
                   end if
-                  if (.not. allocated(ir_fft_mu_chron)) &
-                     allocate (ir_fft_mu_chron(1:3, 1:mad_ir_state%n_stored))
-                  if (.not. allocated(ir_fft_I_fit)) &
-                     allocate (ir_fft_I_fit(1:mad_ir_state%n_freq))
+                  if (.not. allocated(ir%ir_fft_mu_chron)) &
+                     allocate (ir%ir_fft_mu_chron(1:3, 1:mad_ir_state%n_stored))
+                  if (.not. allocated(ir%ir_fft_I_fit)) &
+                     allocate (ir%ir_fft_I_fit(1:mad_ir_state%n_freq))
                   call ir_fft_md_unroll(mad_ir_state%mu_hist, mad_ir_state%n_window, &
                                         mad_ir_state%n_stored, mad_ir_state%head, &
-                                        ir_fft_mu_chron, ir_fft_n_chron)
-                  ir_fft_cfg%dt_fs = mad_ir_state%dt
-                  call ir_fft_loss(ir_fft_mu_chron, ir_fft_n_chron, ir_fft_cfg, &
+                                        ir%ir_fft_mu_chron, ir%ir_fft_n_chron)
+                  ir%ir_fft_cfg%dt_fs = mad_ir_state%dt
+                  call ir_fft_loss(ir%ir_fft_mu_chron, ir%ir_fft_n_chron, ir%ir_fft_cfg, &
                                    mad_ir_state%nu, mad_ir_state%I_exp, mad_ir_state%wgt, &
                                    mad_ir_state%n_freq, params%ir_match_scale, &
-                                   params%ir_match_offset, mad_ir_scale, &
-                                   mad_ir_energy, mad_ir_lambda, ir_fft_I_fit, &
-                                   ir_fft_scale_fit, ir_fft_offset_fit, &
-                                   ir_fft_dissim, ir_fft_dissim_ref, ir_fft_ok, ir_fft_msg)
+                                   params%ir_match_offset, ir%mad_ir_scale, &
+                                   ir%mad_ir_energy, ir%mad_ir_lambda, ir%ir_fft_I_fit, &
+                                   ir%ir_fft_scale_fit, ir%ir_fft_offset_fit, &
+                                   ir%ir_fft_dissim, ir%ir_fft_dissim_ref, ir%ir_fft_ok, ir%ir_fft_msg)
                   call time_end(time%ir_predict)
-                  if (.not. ir_fft_ok) then
-                     write (*, *) "ERROR: ", trim(ir_fft_msg)
+                  if (.not. ir%ir_fft_ok) then
+                     write (*, *) "ERROR: ", trim(ir%ir_fft_msg)
                      stop
                   end if
-                  res%energies_exp = res%energies_exp + mad_ir_energy/dfloat(state%n_sites)
-                  exp_dissimilarity = exp_dissimilarity + ir_fft_dissim
-                  exp_dissim_ref = exp_dissim_ref + ir_fft_dissim_ref
+                  res%energies_exp = res%energies_exp + ir%mad_ir_energy/dfloat(state%n_sites)
+                  exp_dissimilarity = exp_dissimilarity + ir%ir_fft_dissim
+                  exp_dissim_ref = exp_dissim_ref + ir%ir_fft_dissim_ref
                   if (params%exp_energies) then
-                     res%energies = res%energies + mad_ir_energy/dfloat(state%n_sites)
+                     res%energies = res%energies + ir%mad_ir_energy/dfloat(state%n_sites)
                      res%energy = sum(res%energies)
                   end if
                   res%energy_exp = sum(res%energies_exp)
                   if (params%exp_forces) then
                      call time_start(time%ir_forces)
-                     call mad_ir_forces(mad_ir_lambda, mad_ir_dmu_dr, res%forces)
+                     call mad_ir_forces(ir%mad_ir_lambda, mad_ir_dmu_dr, res%forces)
                      call time_end(time%ir_forces)
                   end if
-                  if (.not. mad_ir_applied) then
-                     call get_time(mad_ir_t_now)
-                     mad_ir_t_first = mad_ir_t_now - time3
-                     mad_ir_step_first = loop%md_istep
+                  if (.not. ir%mad_ir_applied) then
+                     call get_time(ir%mad_ir_t_now)
+                     ir%mad_ir_t_first = ir%mad_ir_t_now - time3
+                     ir%mad_ir_step_first = loop%md_istep
                   end if
-                  mad_ir_applied = .true.
+                  ir%mad_ir_applied = .true.
                else if (params%valid_ir .and. mad_ir_ready(mad_ir_state)) then
 !                 The weight is exp_energy_scales, ramped over the run exactly
 !                 as every other MAD observable's is.
                   call get_energy_scale(params%do_md, params%do_mc, loop%md_istep, params%md_nsteps, &
                                         loop%mc_istep, params%mc_nsteps, &
                                         params%exp_energy_scales_initial(params%ir_idx), &
-                                        params%exp_energy_scales_final(params%ir_idx), mad_ir_scale)
+                                        params%exp_energy_scales_final(params%ir_idx), ir%mad_ir_scale)
                   call time_start(time%ir_predict)
-                  call mad_ir_evaluate(mad_ir_state, mad_ir_scale, mad_ir_energy, mad_ir_lambda)
+                  call mad_ir_evaluate(mad_ir_state, ir%mad_ir_scale, ir%mad_ir_energy, ir%mad_ir_lambda)
                   call time_end(time%ir_predict)
 !                 The mismatch is an energy like the others, spread over the
 !                 sites; the force is its gradient, and only if exp_forces.
-                  res%energies_exp = res%energies_exp + mad_ir_energy/dfloat(state%n_sites)
+                  res%energies_exp = res%energies_exp + ir%mad_ir_energy/dfloat(state%n_sites)
 !                 IR does not go through get_exp_energies -- it has its own
 !                 fitted scale and offset -- so it contributes to the shared
 !                 dissimilarity accumulator here instead. Same definition:
@@ -2037,26 +1961,26 @@ program turbogap
 !                 reached the reported total energy at all: energies_exp is
 !                 zeroed at the top of the next step.
                   if (params%exp_energies) then
-                     res%energies = res%energies + mad_ir_energy/dfloat(state%n_sites)
+                     res%energies = res%energies + ir%mad_ir_energy/dfloat(state%n_sites)
                      res%energy = sum(res%energies)
                   end if
                   res%energy_exp = sum(res%energies_exp)
                   if (params%exp_forces) then
                      call time_start(time%ir_forces)
-                     call mad_ir_forces(mad_ir_lambda, mad_ir_dmu_dr, res%forces)
+                     call mad_ir_forces(ir%mad_ir_lambda, mad_ir_dmu_dr, res%forces)
                      call time_end(time%ir_forces)
                   end if
-                  if (.not. mad_ir_applied) then
+                  if (.not. ir%mad_ir_applied) then
 !                    The first spectrum of the run: how long the ensemble took
 !                    to fill, measured from the same origin as the total.
-                     call get_time(mad_ir_t_now)
-                     mad_ir_t_first = mad_ir_t_now - time3
-                     mad_ir_step_first = loop%md_istep
+                     call get_time(ir%mad_ir_t_now)
+                     ir%mad_ir_t_first = ir%mad_ir_t_now - time3
+                     ir%mad_ir_step_first = loop%md_istep
                   end if
-                  mad_ir_applied = .true.
+                  ir%mad_ir_applied = .true.
                else
-                  mad_ir_energy = 0.d0
-                  mad_ir_applied = .false.
+                  ir%mad_ir_energy = 0.d0
+                  ir%mad_ir_applied = .false.
                end if
 !              Persist the ensemble alongside the trajectory. Losing it costs
 !              n_window samples of unbiased dynamics on the next restart.
@@ -2064,8 +1988,8 @@ program turbogap
                if (rank == 0 .and. params%write_xyz > 0 .and. params%valid_ir) then
                   if (modulo(loop%md_istep, params%write_xyz) == 0 .or. loop%md_istep == params%md_nsteps) then
                      if (trim(params%ir_restart_file) /= "none") then
-                        call mad_ir_save(mad_ir_state, params%ir_restart_file, mad_ir_ok, mad_ir_msg)
-                        if (.not. mad_ir_ok) write (*, *) "WARNING: ", trim(mad_ir_msg)
+                        call mad_ir_save(mad_ir_state, params%ir_restart_file, ir%mad_ir_ok, ir%mad_ir_msg)
+                        if (.not. ir%mad_ir_ok) write (*, *) "WARNING: ", trim(ir%mad_ir_msg)
                      end if
 !                    The bank, in its own file. Losing it costs the warm-up
 !                    again, and it is the larger of the two by orders of
@@ -2073,8 +1997,8 @@ program turbogap
 !                    turned off on its own.
                      if (mad_ir_xl_active .and. trim(params%ir_xl_restart_file) /= "none") then
                         call mad_ir_xl_save(mad_ir_xl_state, params%ir_xl_restart_file, &
-                                            mad_ir_xl_ok, mad_ir_xl_msg)
-                        if (.not. mad_ir_xl_ok) write (*, *) "WARNING: ", trim(mad_ir_xl_msg)
+                                            ir%mad_ir_xl_ok, ir%mad_ir_xl_msg)
+                        if (.not. ir%mad_ir_xl_ok) write (*, *) "WARNING: ", trim(ir%mad_ir_xl_msg)
                      end if
 !                    And the envelope-targeted bank. X, P and eta are state
 !                    in the same sense the velocities are, and eta especially:
@@ -2083,8 +2007,8 @@ program turbogap
                      if (ir_aux_active .and. ir_aux_calibrated(ir_aux_state) .and. &
                          trim(params%ir_aux_restart_file) /= "none") then
                         call ir_aux_save(ir_aux_state, params%ir_aux_restart_file, &
-                                         ir_aux_ok, ir_aux_msg)
-                        if (.not. ir_aux_ok) write (*, *) "WARNING: ", trim(ir_aux_msg)
+                                         ir%ir_aux_ok, ir%ir_aux_msg)
+                        if (.not. ir%ir_aux_ok) write (*, *) "WARNING: ", trim(ir%ir_aux_msg)
                      end if
                   end if
                end if
@@ -2110,16 +2034,16 @@ program turbogap
                   write_condition = .false.
                end if
                if (params%do_ir) then
-                  mad_ir_have_spectrum = mad_ir_state%n_stored > 1
+                  ir%mad_ir_have_spectrum = mad_ir_state%n_stored > 1
 !                 The last COLLECTED step, not the last step: with an
 !                 ir_stride that does not divide md_nsteps the two differ, and
 !                 the final frame is the one the whole run was for.
                   write_condition = write_condition .or. &
                                     (loop%md_istep > params%md_nsteps - params%ir_stride)
                else
-                  mad_ir_have_spectrum = mad_ir_applied
+                  ir%mad_ir_have_spectrum = ir%mad_ir_applied
                end if
-               if (rank == 0 .and. params%write_ir .and. mad_ir_have_spectrum &
+               if (rank == 0 .and. params%write_ir .and. ir%mad_ir_have_spectrum &
                    .and. write_condition) then
 !                 A fit already transformed this step's ensemble on its way to
 !                 the loss; a prediction has not, and this is the only place
@@ -2144,40 +2068,40 @@ program turbogap
 !                 bias: ir_fft_loss frees its intermediates, and this happens
 !                 on write_xyz steps rather than every step, so recomputing is
 !                 cheaper than keeping a copy alive across the whole run.
-                  if (ir_fft_active .and. .not. ir_from_traj &
+                  if (ir%ir_fft_active .and. .not. ir%ir_from_traj &
                       .and. mad_ir_state%n_stored > 1) then
-                     if (allocated(ir_fft_mu_chron)) then
-                        if (size(ir_fft_mu_chron, 2) /= mad_ir_state%n_stored) &
-                           deallocate (ir_fft_mu_chron)
+                     if (allocated(ir%ir_fft_mu_chron)) then
+                        if (size(ir%ir_fft_mu_chron, 2) /= mad_ir_state%n_stored) &
+                           deallocate (ir%ir_fft_mu_chron)
                      end if
-                     if (.not. allocated(ir_fft_mu_chron)) &
-                        allocate (ir_fft_mu_chron(1:3, 1:mad_ir_state%n_stored))
+                     if (.not. allocated(ir%ir_fft_mu_chron)) &
+                        allocate (ir%ir_fft_mu_chron(1:3, 1:mad_ir_state%n_stored))
                      call ir_fft_md_unroll(mad_ir_state%mu_hist, mad_ir_state%n_window, &
                                            mad_ir_state%n_stored, mad_ir_state%head, &
-                                           ir_fft_mu_chron, ir_fft_n_chron)
-                     ir_fft_cfg%dt_fs = mad_ir_state%dt
-                     call ir_fft_spectrum(ir_fft_mu_chron, ir_fft_n_chron, ir_fft_cfg, &
-                                          ir_fft_res, ir_fft_ok, ir_fft_msg)
-                     if (ir_fft_ok) then
-                        call ir_fft_write_spectrum(ir_fft_res, ir_fft_cfg, &
+                                           ir%ir_fft_mu_chron, ir%ir_fft_n_chron)
+                     ir%ir_fft_cfg%dt_fs = mad_ir_state%dt
+                     call ir_fft_spectrum(ir%ir_fft_mu_chron, ir%ir_fft_n_chron, ir%ir_fft_cfg, &
+                                          ir%ir_fft_res, ir%ir_fft_ok, ir%ir_fft_msg)
+                     if (ir%ir_fft_ok) then
+                        call ir_fft_write_spectrum(ir%ir_fft_res, ir%ir_fft_cfg, &
                                                    "ir_fft_spectrum.dat", &
                                                    mad_ir_state%nu, mad_ir_state%I_exp, &
                                                    mad_ir_state%n_freq, params%valid_ir, &
-                                                   ir_fft_scale_fit, ir_fft_offset_fit, &
-                                                   ir_fft_dissim, ir_fft_dissim_ref, &
+                                                   ir%ir_fft_scale_fit, ir%ir_fft_offset_fit, &
+                                                   ir%ir_fft_dissim, ir%ir_fft_dissim_ref, &
                                                    "from the rolling MD ensemble")
-                        call ir_fft_free(ir_fft_res)
+                        call ir_fft_free(ir%ir_fft_res)
                      else
                         write (*, *) "WARNING: ir_fft_spectrum.dat not written: ", &
-                           trim(ir_fft_msg)
+                           trim(ir%ir_fft_msg)
                      end if
                   end if
                   call mad_ir_write_spectrum(mad_ir_state, "ir_spectrum.dat", &
                                              params%valid_ir, loop%md_istep, params%md_step)
                   call mad_ir_append_spectrum(mad_ir_state, "ir_prediction.dat", &
-                                              .not. mad_ir_wrote_prediction, loop%md_istep, &
+                                              .not. ir%mad_ir_wrote_prediction, loop%md_istep, &
                                               dfloat(loop%md_istep)*params%md_step)
-                  if (.not. mad_ir_wrote_prediction) then
+                  if (.not. ir%mad_ir_wrote_prediction) then
                      if (params%valid_ir) then
 !                       "<label>_exp.dat" is the convention, but for label
 !                       "ir" that is a name a user may well have given the
@@ -2193,7 +2117,7 @@ program turbogap
                            call mad_ir_write_exp_spectrum(mad_ir_state, "ir_exp.dat")
                         end if
                      end if
-                     mad_ir_wrote_prediction = .true.
+                     ir%mad_ir_wrote_prediction = .true.
                   end if
 !                 The bank's own spectrum, beside the ACF one. The two are
 !                 independent estimates of the same quantity from the same
@@ -3332,13 +3256,13 @@ program turbogap
 !     force block above, so the two accumulators separate exactly at the step
 !     the ensemble filled.
       if (params%valid_ir .and. params%do_md .and. loop%md_istep >= 0) then
-         call get_time(mad_ir_t_now)
-         if (mad_ir_applied) then
-            mad_ir_t_post = mad_ir_t_post + (mad_ir_t_now - mad_ir_step_beg)
-            mad_ir_n_post = mad_ir_n_post + 1
+         call get_time(ir%mad_ir_t_now)
+         if (ir%mad_ir_applied) then
+            ir%mad_ir_t_post = ir%mad_ir_t_post + (ir%mad_ir_t_now - ir%mad_ir_step_beg)
+            ir%mad_ir_n_post = ir%mad_ir_n_post + 1
          else
-            mad_ir_t_pre = mad_ir_t_pre + (mad_ir_t_now - mad_ir_step_beg)
-            mad_ir_n_pre = mad_ir_n_pre + 1
+            ir%mad_ir_t_pre = ir%mad_ir_t_pre + (ir%mad_ir_t_now - ir%mad_ir_step_beg)
+            ir%mad_ir_n_pre = ir%mad_ir_n_pre + 1
          end if
       end if
 
@@ -3366,7 +3290,7 @@ program turbogap
 !
 !  Rank 0 writes, but every rank ran the transform on an identical buffer, so
 !  there is nothing to reduce and no rank can be holding a different answer.
-   if (ir_from_traj) then
+   if (ir%ir_from_traj) then
       call time_start(time%ir_predict)
       if (params%valid_ir) then
 !        There is an experiment: restrict it to [ir_nu_min, ir_nu_max] and
@@ -3376,31 +3300,31 @@ program turbogap
                                   params%exp_data(params%ir_idx)%data(2, :), &
                                   params%ir_nu_min, params%ir_nu_max, &
                                   params%ir_weight_by_spacing, &
-                                  ir_nu_exp, ir_I_exp, ir_wgt_exp, mad_ir_ok, mad_ir_msg)
-         if (.not. mad_ir_ok) then
-            write (*, *) "ERROR: ", trim(mad_ir_msg)
+                                  ir%ir_nu_exp, ir%ir_I_exp, ir%ir_wgt_exp, ir%mad_ir_ok, ir%mad_ir_msg)
+         if (.not. ir%mad_ir_ok) then
+            write (*, *) "ERROR: ", trim(ir%mad_ir_msg)
             stop
          end if
       else
-         allocate (ir_nu_exp(1:1), ir_I_exp(1:1), ir_wgt_exp(1:1))
-         ir_nu_exp = 0.d0; ir_I_exp = 0.d0; ir_wgt_exp = 1.d0
+         allocate (ir%ir_nu_exp(1:1), ir%ir_I_exp(1:1), ir%ir_wgt_exp(1:1))
+         ir%ir_nu_exp = 0.d0; ir%ir_I_exp = 0.d0; ir%ir_wgt_exp = 1.d0
       end if
 
-      call ir_fft_frames_finish(ir_fft_frames, ir_fft_cfg, params%ir_frame_dt, &
-                                params%ir_frame_dt_tol, ir_nu_exp, ir_I_exp, &
-                                ir_wgt_exp, size(ir_nu_exp), params%valid_ir, &
+      call ir_fft_frames_finish(ir_fft_frames, ir%ir_fft_cfg, params%ir_frame_dt, &
+                                params%ir_frame_dt_tol, ir%ir_nu_exp, ir%ir_I_exp, &
+                                ir%ir_wgt_exp, size(ir%ir_nu_exp), params%valid_ir, &
                                 params%ir_match_scale, params%ir_match_offset, &
                                 "ir_fft_spectrum.dat", "ir_fft_dipoles.dat", &
                                 rank == 0, params%ir_fft_write_dipoles, &
-                                ir_fft_res, ir_fft_dt_used, ir_fft_scale_fit, &
-                                ir_fft_offset_fit, ir_fft_dissim, ir_fft_dissim_ref, &
-                                ir_fft_ok, ir_fft_msg)
+                                ir%ir_fft_res, ir%ir_fft_dt_used, ir%ir_fft_scale_fit, &
+                                ir%ir_fft_offset_fit, ir%ir_fft_dissim, ir%ir_fft_dissim_ref, &
+                                ir%ir_fft_ok, ir%ir_fft_msg)
       call time_end(time%ir_predict)
 
-      if (.not. ir_fft_ok) then
+      if (.not. ir%ir_fft_ok) then
          if (rank == 0) then
             write (*, *) ""
-            write (*, *) "ERROR: ", trim(ir_fft_msg)
+            write (*, *) "ERROR: ", trim(ir%ir_fft_msg)
          end if
 !        A NONZERO exit, unlike the bare `stop` used elsewhere in this file.
 !        This path is driven by scripts -- post-processing a directory of
@@ -3414,25 +3338,25 @@ program turbogap
          write (*, *) '                                       |'
          write (*, *) 'IR spectrum from the trajectory:       |'
          write (*, '(A,I12,A)') '  *) frames read:       ', ir_fft_frames%n, '         |'
-         write (*, '(A,F12.4,A)') '  *) frame interval:    ', ir_fft_dt_used, ' fs      |'
-         write (*, '(A,I12,A)') '  *) lags kept:         ', ir_fft_res%n_lag, '         |'
-         write (*, '(A,F12.4,A)') '  *) resolution:        ', ir_fft_res%resolution, ' cm^-1   |'
-         write (*, '(A,F12.4,A)') '  *) bin spacing:       ', ir_fft_res%d_nu, ' cm^-1   |'
-         write (*, '(A,F12.1,A)') '  *) Nyquist:           ', ir_fft_res%nyquist, ' cm^-1   |'
-         write (*, '(A,I12,A)') '  *) bins written:      ', ir_fft_res%n_freq, '         |'
-         if (params%valid_ir .and. ir_fft_dissim_ref > 0.d0) then
+         write (*, '(A,F12.4,A)') '  *) frame interval:    ', ir%ir_fft_dt_used, ' fs      |'
+         write (*, '(A,I12,A)') '  *) lags kept:         ', ir%ir_fft_res%n_lag, '         |'
+         write (*, '(A,F12.4,A)') '  *) resolution:        ', ir%ir_fft_res%resolution, ' cm^-1   |'
+         write (*, '(A,F12.4,A)') '  *) bin spacing:       ', ir%ir_fft_res%d_nu, ' cm^-1   |'
+         write (*, '(A,F12.1,A)') '  *) Nyquist:           ', ir%ir_fft_res%nyquist, ' cm^-1   |'
+         write (*, '(A,I12,A)') '  *) bins written:      ', ir%ir_fft_res%n_freq, '         |'
+         if (params%valid_ir .and. ir%ir_fft_dissim_ref > 0.d0) then
             write (*, '(A,F12.6,A)') '  *) rel. mismatch:     ', &
-               dsqrt(ir_fft_dissim/ir_fft_dissim_ref), '         |'
+               dsqrt(ir%ir_fft_dissim/ir%ir_fft_dissim_ref), '         |'
          end if
-         if (len_trim(ir_fft_msg) > 0) then
-            write (*, *) '  *) ', trim(ir_fft_msg)
+         if (len_trim(ir%ir_fft_msg) > 0) then
+            write (*, *) '  *) ', trim(ir%ir_fft_msg)
          end if
          write (*, *) '                                       |'
       end if
 
-      call ir_fft_free(ir_fft_res)
+      call ir_fft_free(ir%ir_fft_res)
       call ir_fft_frames_reset(ir_fft_frames)
-      deallocate (ir_nu_exp, ir_I_exp, ir_wgt_exp)
+      deallocate (ir%ir_nu_exp, ir%ir_I_exp, ir%ir_wgt_exp)
    end if
 
    if (params%do_md .or. params%do_prediction .or. params%do_mc) then
@@ -3513,21 +3437,21 @@ program turbogap
 !          cost changes: a prediction accumulates from step zero and
 !          transforms at the end, so there is no before and after to compare.
             if (params%valid_ir) then
-               if (mad_ir_step_first >= 0) then
-                  write (*, '(A,I13,A)') '   1st spectrum @:', mad_ir_step_first, ' step    |'
-                  write (*, '(A,F13.3,A)') '   1st spectrum @:', mad_ir_t_first, ' seconds |'
+               if (ir%mad_ir_step_first >= 0) then
+                  write (*, '(A,I13,A)') '   1st spectrum @:', ir%mad_ir_step_first, ' step    |'
+                  write (*, '(A,F13.3,A)') '   1st spectrum @:', ir%mad_ir_t_first, ' seconds |'
                else
                   write (*, *) '   no spectrum: ensemble never filled  |'
                end if
             end if
-            if (mad_ir_n_pre > 0 .and. mad_ir_n_post > 0) then
-               mad_ir_rate_pre = mad_ir_t_pre/dfloat(mad_ir_n_pre)
-               mad_ir_rate_post = mad_ir_t_post/dfloat(mad_ir_n_post)
-               write (*, '(A,F13.5,A)') '  s/step unbiased:', mad_ir_rate_pre, ' seconds |'
-               write (*, '(A,F13.5,A)') '  s/step   biased:', mad_ir_rate_post, ' seconds |'
-               if (mad_ir_rate_pre > 0.d0) then
+            if (ir%mad_ir_n_pre > 0 .and. ir%mad_ir_n_post > 0) then
+               ir%mad_ir_rate_pre = ir%mad_ir_t_pre/dfloat(ir%mad_ir_n_pre)
+               ir%mad_ir_rate_post = ir%mad_ir_t_post/dfloat(ir%mad_ir_n_post)
+               write (*, '(A,F13.5,A)') '  s/step unbiased:', ir%mad_ir_rate_pre, ' seconds |'
+               write (*, '(A,F13.5,A)') '  s/step   biased:', ir%mad_ir_rate_post, ' seconds |'
+               if (ir%mad_ir_rate_pre > 0.d0) then
                   write (*, '(A,F13.3,A)') '  bias slowdown  :', &
-                     mad_ir_rate_post/mad_ir_rate_pre, ' x       |'
+                     ir%mad_ir_rate_post/ir%mad_ir_rate_pre, ' x       |'
                end if
             end if
 !          HOW HARD THE BIAS IS PULLING. The weight is dU/dm of the bias
