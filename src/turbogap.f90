@@ -61,7 +61,8 @@ program turbogap
                           ir_after_forces, ir_step_end, ir_finish, ir_report
    use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, loop_sync, &
                             loop_end_step, creturn
-   use turbogap_output, only: print_banner, print_options, print_single_point_energies, &
+   use turbogap_output, only: handle_help_request, read_run_mode, print_end, print_banner, print_options, &
+                              print_single_point_energies, &
                               write_debug_forces, write_single_point, print_nothing_to_do, &
                               print_timing_report
    use turbogap_exp
@@ -133,7 +134,6 @@ program turbogap
 
    ! This is the mode in which we run TurboGAP
    character*16 :: mode = "none"
-   character*16 :: help_topic = ""
 
    ! Here we store the input parameters
    type(input_parameters) :: params
@@ -146,28 +146,7 @@ program turbogap
 #ifdef _GPU
 #endif
 
-!  --help answers from the generated keyword reference and exits. It is the
-!  first thing the program does because it must work with no input file, no
-!  GPU and no MPI: everything below this point assumes at least one of those.
-   call get_command_argument(1, mode)
-   if (mode == "--help" .or. mode == "-h" .or. mode == "help") then
-      call get_command_argument(2, help_topic)
-!     Validated against the SAME list the error message prints, which
-!     keyword_help.f90 generates from tools/keyword_docs.py. It used to be a
-!     hardcoded chain of comparisons beside a generated message, and the two
-!     drifted the moment a mode was added: --help ipi was rejected by a message
-!     that listed ipi as valid. Slashes on both sides so that a topic cannot
-!     match a substring of another.
-      if (len_trim(help_topic) > 0 .and. &
-          index("/"//trim(keyword_help_topics())//"/", "/"//trim(help_topic)//"/") == 0) then
-         write (*, '(A)') 'ERROR: unknown help topic "'//trim(help_topic)// &
-            '". turbogap --help ['//trim(keyword_help_topics())//']'
-         stop 1
-      end if
-      call print_keyword_help(help_topic)
-      stop
-   end if
-   mode = "none"
+   call handle_help_request()
 
    implemented_exp_observables(1) = "xps"
    implemented_exp_observables(2) = "xrd"
@@ -200,16 +179,7 @@ program turbogap
    ntasks = comm%size
    allocate (dom%n_atom_pairs_by_rank(1:ntasks))
 
-   ! Read the mode. It should be "soap", "predict" or "md"
-   call get_command_argument(1, mode)
-   if (mode == "" .or. mode == "none") then
-      write (*, *) "ERROR: you need to run 'turbogap md', 'turbogap mc', 'turbogap predict'"
-      write (*, *) "       or 'turbogap ipi' (forces for an i-PI server; see ipi_address)"
-      write (*, *) "       'turbogap --help [predict|md|mc|soap|gap]' lists the keywords"
-      stop
-      ! THIS SHOULD BE FIXED, IN CASE THE USER JUST WANT TO OUTPUT THE SOAP DESCRIPTORS
-      mode = "soap"
-   end if
+   call read_run_mode(mode)
 
    call print_banner(comm)
 
@@ -394,13 +364,8 @@ program turbogap
 
    call vdw_write_ts_scaling(res, state, params, comm)
 
-   if (rank == 0) then
-      write (*, *) '                                       |'
-      write (*, *) 'End of execution                       |'
-      write (*, *) '_______________________________________/'
-   end if
+   call print_end(comm)
 
-#ifdef _GPU
 !  The high-water mark, which is the number that sizes the next run.
 !
 !  Before gpu_context_finalize, which calls hipDeviceReset and takes the whole
@@ -408,7 +373,6 @@ program turbogap
 !  and to stderr: it costs one line, and "what did that actually use" is the
 !  first question asked after any run that was close to the limit.
    if (rank == 0) call gpu_memory_report("end of run")
-#endif
    call comm_finalize(comm)
 
    call gpu_context_finalize(params, n_omp)

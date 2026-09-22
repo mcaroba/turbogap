@@ -54,6 +54,12 @@ contains
 
    end subroutine gpu_context_finalize
 
+!  The device build prints its memory ledger here; the host has none.
+   subroutine gpu_memory_report(label)
+      character(len=*), intent(in) :: label
+
+   end subroutine gpu_memory_report
+
    !  Establish this rank's host memory budget for the SOAP descriptor loop,
    !  and report it.
    !

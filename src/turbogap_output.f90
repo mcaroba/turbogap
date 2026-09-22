@@ -30,6 +30,7 @@
 module turbogap_output
 
    use kinds, only: dp
+   use keyword_help, only: keyword_help_topics, print_keyword_help
    use turbogap_comm, only: comm_t, comm_with_mpi
    use types, only: input_parameters, perform_t
    use timing, only: times_t, get_time, sum_times
@@ -46,6 +47,9 @@ module turbogap_output
    implicit none
 
    private
+   public :: handle_help_request
+   public :: read_run_mode
+   public :: print_end
    public :: print_banner
    public :: print_options
    public :: print_single_point_energies
@@ -114,6 +118,56 @@ contains
          end if
       end if
    end subroutine print_banner
+
+!  --help answers from the generated keyword reference and exits.
+   subroutine handle_help_request()
+      character*16 :: mode
+      character*16 :: help_topic
+
+      call get_command_argument(1, mode)
+      if (mode == "--help" .or. mode == "-h" .or. mode == "help") then
+         call get_command_argument(2, help_topic)
+!     Validated against the SAME list the error message prints, which
+!     keyword_help.f90 generates from tools/keyword_docs.py. It used to be a
+!     hardcoded chain of comparisons beside a generated message, and the two
+!     drifted the moment a mode was added: --help ipi was rejected by a message
+!     that listed ipi as valid. Slashes on both sides so that a topic cannot
+!     match a substring of another.
+         if (len_trim(help_topic) > 0 .and. &
+             index("/"//trim(keyword_help_topics())//"/", "/"//trim(help_topic)//"/") == 0) then
+            write (*, '(A)') 'ERROR: unknown help topic "'//trim(help_topic)// &
+               '". turbogap --help ['//trim(keyword_help_topics())//']'
+            stop 1
+         end if
+         call print_keyword_help(help_topic)
+         stop
+      end if
+   end subroutine handle_help_request
+
+!  The run mode from the command line; without one there is nothing to do.
+   subroutine read_run_mode(mode)
+      character*16, intent(out) :: mode
+
+      call get_command_argument(1, mode)
+      if (mode == "" .or. mode == "none") then
+         write (*, *) "ERROR: you need to run 'turbogap md', 'turbogap mc', 'turbogap predict'"
+         write (*, *) "       or 'turbogap ipi' (forces for an i-PI server; see ipi_address)"
+         write (*, *) "       'turbogap --help [predict|md|mc|soap|gap]' lists the keywords"
+         stop
+         ! THIS SHOULD BE FIXED, IN CASE THE USER JUST WANT TO OUTPUT THE SOAP DESCRIPTORS
+         mode = "soap"
+      end if
+   end subroutine read_run_mode
+
+   subroutine print_end(comm)
+      type(comm_t), intent(in) :: comm
+
+      if (comm%rank == 0) then
+         write (*, *) '                                       |'
+         write (*, *) 'End of execution                       |'
+         write (*, *) '_______________________________________/'
+      end if
+   end subroutine print_end
 
    subroutine print_options(comm, params, model)
       type(comm_t), intent(in) :: comm
