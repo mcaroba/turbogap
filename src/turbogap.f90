@@ -48,7 +48,7 @@ program turbogap
    use vdw
    use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane
    use turbogap_setup
-   use turbogap_structure, only: state_t
+   use turbogap_structure, only: state_t, structure_acquire
    use turbogap_domain, only: domain_t, neighbors_t, domain_sync_state, domain_build, &
                               domain_complete_sites, domain_complete_e0, &
                               domain_complete_contributions, domain_sync_after_md, &
@@ -544,99 +544,7 @@ program turbogap
 
       call loop_begin_step(loop, params, comm)
 
-      !   This chunk of code does all the reading/neighbor builds etc for each snapshot
-      !   or MD step
-      !   Read in XYZ file and build neighbors lists
-
-      if ((params%do_md .and. loop%md_istep == 0)) then
-         call time_start(time%read_xyz)
-         if (rank == 0) then
-            if (loop%mc_istep > 0) then
-               call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
-                             model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
-                             state%positions, params%do_md, state%velocities, params%masses_types, state%masses, &
-                             state%xyz_species, &
-                             state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
-                             state%b_box, state%c_box, &
-                             state%n_sites,.not. params%mc_write_xyz, state%fix_atom, params%t_beg, &
-                             params%write_array_property(6),.not. params%mc_write_xyz, params%randomize_velocities)
-               nl%rebuild_neighbors_list = .true.
-
-            else if (.not. params%do_nested_sampling .or. loop%mc_istep == 0) then
-               call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
-                             model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
-                             state%positions, params%do_md, state%velocities, params%masses_types, state%masses, &
-                             state%xyz_species, &
-                             state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
-                             state%b_box, state%c_box, &
-                             state%n_sites, .false., state%fix_atom, params%t_beg, &
-                             params%write_array_property(6), .false., params%randomize_velocities)
-
-            end if
-
-            ! call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
-            !               n_species, params%species_types, repeat_xyz, rcut_max, params%which_atom, &
-            !               positions, params%do_md, velocities, params%masses_types, masses, xyz_species, &
-            !               xyz_species_supercell, species, species_supercell, indices, a_box, b_box, c_box, &
-            !               n_sites, .false., fix_atom, params%t_beg, params%write_array_property(6), .true. )
-            !     Only rank 0 handles these variables
-            !      allocate( positions_prev(1:3, 1:size(positions,2)) )
-            !      allocate( positions_diff(1:3, 1:size(positions,2)) )
-            if (.not. allocated(state%forces_prev)) allocate (state%forces_prev(1:3, 1:state%n_sites))
-            if (.not. allocated(state%positions_prev)) allocate (state%positions_prev(1:3, 1:state%n_sites))
-            if (.not. allocated(state%positions_diff)) allocate (state%positions_diff(1:3, 1:state%n_sites))
-            state%positions_diff = 0.d0
-            nl%rebuild_neighbors_list = .true.
-         end if
-         call time_end(time%read_xyz)
-         !     If we're doing MD, we don't read beyond the first snapshot in the XYZ file
-         loop%repeat_xyz = .false.
-         !     At the moment, we can't do prediction if the unit cell doesn't fit a whole cutoff sphere
-         if (rank == 0) then
-            !     CLEAN THIS UP <------------------------------------------------------------------- LOOK HERE
-            !      if( size(positions,2) /= n_sites )then
-            if (.false.) then
-               write (*, *) "Sorry, at the moment TurboGAP can't do MD for unit cells smaller than ", &
-                  "a cutoff sphere <-- ERROR"
-               call comm_finalize(comm)
-               stop
-            end if
-         end if
-      else if (.not. params%do_md) then
-         call time_start(time%read_xyz)
-         if (rank == 0) then
-            if (loop%mc_istep > 0) then
-               call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
-                             model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
-                             state%positions, params%do_md, state%velocities, params%masses_types, state%masses, &
-                             state%xyz_species, &
-                             state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
-                             state%b_box, state%c_box, &
-                             state%n_sites,.not. params%mc_write_xyz, state%fix_atom, params%t_beg, &
-                             params%write_array_property(6),.not. params%mc_write_xyz, params%randomize_velocities)
-               nl%rebuild_neighbors_list = .true.
-            else
-               call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
-                             model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
-                             state%positions, params%do_md, state%velocities, params%masses_types, state%masses, &
-                             state%xyz_species, &
-                             state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
-                             state%b_box, state%c_box, &
-                             state%n_sites, .false., state%fix_atom, params%t_beg, params%write_array_property(6), &
-                             .false., params%randomize_velocities, state%frame_time, state%has_frame_time)
-            end if
-         end if
-         call time_end(time%read_xyz)
-         call time_start(time%mpi)
-         call comm_bcast(comm, loop%repeat_xyz)
-!        The frame's time label. Every rank pushes the same dipole into the
-!        same buffer -- the trajectory is the ensemble and it is replicated,
-!        not distributed -- so every rank needs the same time with it.
-         call comm_bcast(comm, state%frame_time)
-         call comm_bcast(comm, state%has_frame_time)
-         call time_end(time%mpi)
-         nl%rebuild_neighbors_list = .true.
-      end if
+      call structure_acquire(state, nl%rebuild_neighbors_list, loop, params, model, comm, mc_file, time)
       !   Broadcast the info in the XYZ file: positions, velocities, masses, xyz_species, xyz_species_supercell,
       !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
 
