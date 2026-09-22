@@ -95,43 +95,22 @@ program turbogap
    real(dp) :: v_uc_prev
    real(dp) :: v_a_uc
    real(dp) :: v_a_uc_prev
-   real(dp) :: eVperA3tobar = 1602176.6208d0
    real(dp) :: ranf
    real(dp) :: disp(1:3)
    real(dp) :: d_disp
    real(dp) :: p_accept
    real(dp) :: virial_prev(1:3, 1:3)
-   real(dp), allocatable :: masses_types(:)
 
-   real(dp) :: instant_temp
-   real(dp) :: kB = 8.6173303d-5
-   real(dp) :: E_kinetic = 0.d0
-   real(dp) :: E_kinetic_prev
    real(dp) :: time1
    real(dp) :: time2
    real(dp) :: time3
 !   Every wall-clock bucket lives in one times_t (src/timing.f90), so the
 !   extracted modules take a single argument instead of thirteen and the two
-!   branches' signatures agree. time_step and time_step_prev below are the MD
-!   integration step in fs, not timers, and deliberately stay separate.
+!   branches' signatures agree.
    type(times_t) :: time
-   real(dp) :: instant_pressure
-   real(dp) :: time_step
-   real(dp) :: md_time
-   real(dp) :: instant_pressure_prev
    integer, allocatable :: mc_id(:)
-   integer :: gd_istep = 0
    logical :: write_condition = .false.
    logical :: overwrite_condition = .false.
-
-  !! these decalarations are for time step and electronic stopping by different methods
-   real(dp) :: time_step_prev
-   integer :: nrows
-   real(dp) :: cum_EEL = 0.0d0
-   real(dp), allocatable :: allelstopdata(:)
-   type(EPH_Beta_class) :: ephbeta
-   type(EPH_FDM_class) :: ephfdm
-   type(EPH_LangevinSpatialCorrelation_class) :: ephlsc
 
    ! Clean up these variables after code refactoring !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
    integer, allocatable :: alpha_max(:)
@@ -155,6 +134,7 @@ program turbogap
    type(results_t), target :: res
    logical :: resized
    type(loop_t) :: loop
+   type(dynamics_t) :: dyn
    type(ir_run_t) :: ir
    integer :: n_pos
    integer :: this_i_beg
@@ -208,10 +188,8 @@ program turbogap
 
    ! Nested sampling
    real(dp) :: e_max
-   real(dp) :: e_kin
    real(dp) :: rand
    real(dp) :: rand_scale(1:6)
-   real(dp) :: target_temp
    integer :: i_nested
    integer :: i_max
    integer :: i_image
@@ -305,8 +283,8 @@ program turbogap
                                  model%valid_estat_charges, model%charge_lp_index, &
                                  model%local_property_labels, model%local_property_indexes, model%n_local_properties_mpi, &
                                  model%has_local_properties_mpi, model%local_properties_n_sparse_mpi_soap_turbo, &
-                                 model%local_properties_dim_mpi_soap_turbo, nrows, allelstopdata, &
-                                 ephbeta, ephfdm, ephlsc, time)
+                                 model%local_properties_dim_mpi_soap_turbo, dyn%nrows, dyn%allelstopdata, &
+                                 dyn%ephbeta, dyn%ephfdm, dyn%ephlsc, time)
 
 !  The host memory budget, which has to sit exactly here.
 !
@@ -379,30 +357,32 @@ program turbogap
 
       if (rank == 0) then
          if (params%randomize_velocities .and. loop%md_istep == 0) then
-            call randomize_velocities(state%velocities, state%n_sites, E_kinetic, state%masses, instant_temp, params%t_beg, &
+            call randomize_velocities(state%velocities, state%n_sites, dyn%E_kinetic, state%masses, dyn%instant_temp, &
+                                      params%t_beg, &
                                       params%velocity_distribution)
          end if
          if (params%do_mc .and. (mc_move /= "md" .or. loop%md_istep == 0) .and. params%mc_hamiltonian) then
-            if (loop%mc_istep > 0) E_kinetic_prev = E_kinetic
+            if (loop%mc_istep > 0) dyn%E_kinetic_prev = dyn%E_kinetic
             call random_number(state%velocities)
             call remove_cm_vel(state%velocities(1:3, 1:state%n_sites), state%masses(1:state%n_sites))
-            E_kinetic = 0.d0
+            dyn%E_kinetic = 0.d0
             do i = 1, state%n_sites
-               E_kinetic = E_kinetic + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
+               dyn%E_kinetic = dyn%E_kinetic + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
             end do
-            instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/kB*E_kinetic
-            state%velocities = state%velocities*dsqrt(params%t_beg/instant_temp)
+            dyn%instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/dyn%kB*dyn%E_kinetic
+            state%velocities = state%velocities*dsqrt(params%t_beg/dyn%instant_temp)
             if (loop%mc_istep > 0) then
-               E_kinetic = E_kinetic_prev
-               instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/kB*E_kinetic
+               dyn%E_kinetic = dyn%E_kinetic_prev
+               dyn%instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/dyn%kB*dyn%E_kinetic
                ! Reversing as we want it to be at the instant temp and not at t_beg
-               state%velocities = state%velocities*dsqrt(instant_temp/params%t_beg)
+               state%velocities = state%velocities*dsqrt(dyn%instant_temp/params%t_beg)
 
                do i = 1, state%n_sites
-                  E_kinetic = E_kinetic + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
+                  dyn%E_kinetic = dyn%E_kinetic + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), &
+                                                                                    state%velocities(1:3, i))
                end do
             else
-               E_kinetic = E_kinetic*params%t_beg/instant_temp
+               dyn%E_kinetic = dyn%E_kinetic*params%t_beg/dyn%instant_temp
             end if
          end if
 
@@ -672,7 +652,7 @@ program turbogap
             if (params%exp_energies) res%energies = res%energies + res%energies_exp
 
             res%energy_prev = res%energy
-            instant_pressure_prev = instant_pressure
+            dyn%instant_pressure_prev = dyn%instant_pressure
             res%energy = sum(res%energies)
             res%energy_exp = sum(res%energies_exp)
 
@@ -735,7 +715,7 @@ program turbogap
 !
 !           No virial: the bias is a function of the dipole, not of the cell,
 !           and a stress from it would be wrong rather than merely missing.
-            call ir_after_forces(ir, params, state, res, loop, comm, md_time, time3, write_condition, time)
+            call ir_after_forces(ir, params, state, res, loop, comm, dyn%md_time, time3, write_condition, time)
 
             if (model%valid_estat_charges) res%forces = res%forces + res%forces_estat
             if (model%valid_estat_charges) res%virial = res%virial + res%virial_estat
@@ -887,8 +867,8 @@ program turbogap
                     & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
                     & params%do_dipole, res%dipole, res%energies_dipole)
 
-               call write_extxyz(state%n_sites, -loop%n_xyz, md_time, time_step,&
-                    & instant_temp, instant_pressure, state%a_box&
+               call write_extxyz(state%n_sites, -loop%n_xyz, dyn%md_time, dyn%time_step,&
+                    & dyn%instant_temp, dyn%instant_pressure, state%a_box&
                     &/dfloat(state%indices(1)), state%b_box/dfloat(state%indices(2)),&
                     & state%c_box/dfloat(state%indices(3)), res%virial, state%xyz_species,&
                     & state%positions(1:3, 1:state%n_sites), state%velocities, res%forces,&
@@ -922,20 +902,20 @@ program turbogap
                                   res%forces, res%energy, res%virial, loop%exit_loop, nl%rebuild_neighbors_list)
          call domain_sync_after_ipi(dom, comm, state, nl, loop)
       else
-         call compute_md(params, rank, ierr, state%n_sites, model%n_species, loop%md_istep, md_time, time_step, &
+         call compute_md(params, rank, ierr, state%n_sites, model%n_species, loop%md_istep, dyn%md_time, dyn%time_step, &
                          state%positions, state%positions_prev, state%positions_diff, state%velocities, res%forces, &
                          state%forces_prev, state%masses, &
-                         masses_types, nl%xyz, state%xyz_species, state%a_box, state%b_box, state%c_box, state%indices, &
+                         dyn%masses_types, nl%xyz, state%xyz_species, state%a_box, state%b_box, state%c_box, state%indices, &
                          state%v_uc, res%virial, res%energy, &
                          res%energy_prev, res%energies, res%energies_soap, res%energies_2b, res%energies_3b, &
                          res%energies_core_pot, &
                          res%energies_vdw, res%energies_lp, res%energies_exp, res%energies_pdf, res%energies_sf, res%energies_xrd, &
-                         res%energies_nd, res%local_properties, model%local_property_labels, instant_temp, &
-                         instant_pressure, instant_pressure_prev, e_kin, e_kinetic, kb, evpera3tobar, &
-                         state%fix_atom, loop%exit_loop, nl%rebuild_neighbors_list, i_image, i_nested, n_pos, nrows, &
-                         filename, string, allelstopdata, ephbeta, ephfdm, ephlsc, time, &
-                         cum_eel, gd_istep, &
-                         target_temp, time_step_prev, res%dipole, res%local_dipoles, res%energies_dipole)
+                         res%energies_nd, res%local_properties, model%local_property_labels, dyn%instant_temp, &
+                         dyn%instant_pressure, dyn%instant_pressure_prev, dyn%e_kin, dyn%e_kinetic, dyn%kb, dyn%evpera3tobar, &
+                         state%fix_atom, loop%exit_loop, nl%rebuild_neighbors_list, i_image, i_nested, n_pos, dyn%nrows, &
+                         filename, string, dyn%allelstopdata, dyn%ephbeta, dyn%ephfdm, dyn%ephlsc, time, &
+                         dyn%cum_eel, dyn%gd_istep, &
+                         dyn%target_temp, dyn%time_step_prev, res%dipole, res%local_dipoles, res%energies_dipole)
          call domain_sync_after_md(dom, comm, state, nl, params, time)
       end if
 
@@ -959,7 +939,7 @@ program turbogap
          state%velocities = 0.d0
          call from_properties_to_image(images(i_image), state%positions, state%velocities, state%masses, &
                                        res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
-                                       res%energy_exp, E_kinetic, &
+                                       res%energy_exp, dyn%E_kinetic, &
                                        state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
                                        state%xyz_species, state%xyz_species_supercell, res%local_properties, &
                                        res%local_dipoles, res%energies_dipole, res%dipole)
@@ -992,10 +972,10 @@ program turbogap
             state%v_uc = dot_product(cross_product(state%a_box, state%b_box), &
                                      state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
             !       We check enthalpy, not internal energy (they are the same for P = 0)
-            if (res%energy + E_kinetic + params%p_nested/eVperA3tobar*state%v_uc < e_max) then
+            if (res%energy + dyn%E_kinetic + params%p_nested/dyn%eVperA3tobar*state%v_uc < e_max) then
                call from_properties_to_image(images(i_image), state%positions, state%velocities, state%masses, &
                                              res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
-                                             res%energy_exp, E_kinetic, &
+                                             res%energy_exp, dyn%E_kinetic, &
                                              state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
                                              state%xyz_species, state%xyz_species_supercell, res%local_properties, &
                                              res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
@@ -1011,8 +991,8 @@ program turbogap
                state%v_uc = dot_product(cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box)/ &
                             (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
                !         We check enthalpy, not potential energy (they are the same for P = 0)
-               if (images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*state%v_uc > e_max) then
-                  e_max = images(i)%energy + images(i)%e_kin + params%p_nested/eVperA3tobar*state%v_uc
+               if (images(i)%energy + images(i)%e_kin + params%p_nested/dyn%eVperA3tobar*state%v_uc > e_max) then
+                  e_max = images(i)%energy + images(i)%e_kin + params%p_nested/dyn%eVperA3tobar*state%v_uc
                   i_max = i
                end if
             end do
@@ -1038,7 +1018,7 @@ program turbogap
             end if
             call from_image_to_properties(images(i), state%positions, state%velocities, state%masses, &
                                           res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
-                                          res%energy_exp, E_kinetic, &
+                                          res%energy_exp, dyn%E_kinetic, &
                                           state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
                                           state%xyz_species, state%xyz_species_supercell, res%local_properties, &
                                           res%local_dipoles, res%energies_dipole, res%dipole)
@@ -1070,13 +1050,13 @@ program turbogap
             !       we would have to do it since each MPI rank may see a different random number
             call random_number(state%velocities)
             call remove_cm_vel(state%velocities(1:3, 1:state%n_sites), state%masses(1:state%n_sites))
-            e_kin = 0.d0
+            dyn%e_kin = 0.d0
             do i = 1, state%n_sites
-               e_kin = e_kin + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
+               dyn%e_kin = dyn%e_kin + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
             end do
             call random_number(rand)
-            state%velocities = state%velocities/sqrt(e_kin)*sqrt(rand*(e_max - res%energy - &
-                                                                       params%p_nested/eVperA3tobar*state%v_uc))
+            state%velocities = state%velocities/sqrt(dyn%e_kin)*sqrt(rand*(e_max - res%energy - &
+                                                                           params%p_nested/dyn%eVperA3tobar*state%v_uc))
          else if (i_nested == params%n_nested) then
             loop%exit_loop = .true.
          end if
@@ -1122,7 +1102,7 @@ program turbogap
                      ! Assume that the number of steps has already been set.
                   end if
 
-                  if (.not. params%mc_hamiltonian) E_kinetic = 0.d0
+                  if (.not. params%mc_hamiltonian) dyn%E_kinetic = 0.d0
 
 !                 The trial configuration has to be the one `energy` belongs to.
 !                 An "md" move, or a relaxation after any other move, leaves
@@ -1146,7 +1126,7 @@ program turbogap
 
                   call from_properties_to_image(images(i_trial_image), state%positions, state%velocities, state%masses, &
                                                 res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
-                                                res%energy_exp, E_kinetic, &
+                                                res%energy_exp, dyn%E_kinetic, &
                                                 state%species, state%species_supercell, state%n_sites, state%indices, &
                                                 state%fix_atom, &
                                                 state%xyz_species, state%xyz_species_supercell, res%local_properties, &
@@ -1181,7 +1161,7 @@ program turbogap
                   end if
 
                   call get_mc_acceptance(mc_move, p_accept, &
-                       res%energy + E_kinetic, &
+                       res%energy + dyn%E_kinetic, &
                        images(i_current_image)%energy + images(i_current_image)%e_kin, &
                        params%t_beg, mc_mu_id, &
                        params%mc_mu, n_mc_species, state%v_uc, v_uc_prev,&
@@ -1240,7 +1220,7 @@ program turbogap
                   if (res%energy_exp > 0.d0) then
 
                      write (200, "(I8, 1X, A10, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, A)") &
-                          loop%mc_istep, trim(adjustl(mc_move)), p_accept > ranf, res%energy + E_kinetic, &
+                          loop%mc_istep, trim(adjustl(mc_move)), p_accept > ranf, res%energy + dyn%E_kinetic, &
                           images(i_current_image)%energy +&
                           & images(i_current_image)%e_kin, res%energy_exp,&
                           & images(i_current_image)%energy_exp,&
@@ -1248,7 +1228,7 @@ program turbogap
                           & trim(temp_string2)
                   else
                      write (200, "(I8, 1X, A10, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, A)") &
-                        loop%mc_istep, trim(adjustl(mc_move)), p_accept > ranf, res%energy + E_kinetic, &
+                        loop%mc_istep, trim(adjustl(mc_move)), p_accept > ranf, res%energy + dyn%E_kinetic, &
                         images(i_current_image)%energy + images(i_current_image)%e_kin, &
                         images(i_trial_image)%n_sites, trim(temp_string2)
 
@@ -1272,13 +1252,13 @@ program turbogap
 
                   end if
                   if (state%n_sites > 1) then
-                     instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/kB*E_kinetic
-                     instant_pressure = (kB*dfloat(state%n_sites - 1)*instant_temp&
+                     dyn%instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/dyn%kB*dyn%E_kinetic
+                     dyn%instant_pressure = (dyn%kB*dfloat(state%n_sites - 1)*dyn%instant_temp&
                           &+ (res%virial(1, 1) + res%virial(2, 2) + res%virial(3, 3))/3.d0)&
-                          &/state%v_uc*eVperA3tobar
+                          &/state%v_uc*dyn%eVperA3tobar
                   else
-                     instant_temp = 0.0d0
-                     instant_pressure = 0.0d0
+                     dyn%instant_temp = 0.0d0
+                     dyn%instant_pressure = 0.0d0
                   end if
 
                   if ((params%mc_write_xyz .or. loop%mc_istep == 0 .or. loop%mc_istep == params%mc_nsteps .or. &
@@ -1306,7 +1286,7 @@ program turbogap
                           & images(i_current_image)%dipole,&
                           & images(i_current_image)%energies_dipole)
 
-                     call write_extxyz(images(i_current_image)%n_sites, 0, 1.0d0, 0.d0, instant_temp, instant_pressure, &
+                     call write_extxyz(images(i_current_image)%n_sites, 0, 1.0d0, 0.d0, dyn%instant_temp, dyn%instant_pressure, &
                           images(i_current_image)%a_box/dfloat(state%indices(1)), &
                           images(i_current_image)%b_box/dfloat(state%indices(2)), &
                           images(i_current_image)%c_box/dfloat(state%indices(3)), &
@@ -1326,7 +1306,7 @@ program turbogap
                           & params%do_dipole,&
                           & images(i_current_image)%local_dipoles)
 
-                     call write_extxyz(images(i_current_image)%n_sites, 1, 1.0d0, 0.d0, instant_temp, instant_pressure, &
+                     call write_extxyz(images(i_current_image)%n_sites, 1, 1.0d0, 0.d0, dyn%instant_temp, dyn%instant_pressure, &
                           images(i_current_image)%a_box/dfloat(state%indices(1)), &
                           images(i_current_image)%b_box/dfloat(state%indices(2)), &
                           images(i_current_image)%c_box/dfloat(state%indices(3)), &
@@ -1457,16 +1437,16 @@ program turbogap
                   !       Now use the image construct to store this as the image to compare to
                   call from_properties_to_image(images(i_current_image), state%positions, state%velocities, state%masses, &
                                                 res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
-                                                res%energy_exp, E_kinetic, &
+                                                res%energy_exp, dyn%E_kinetic, &
                                                 state%species, state%species_supercell, state%n_sites, state%indices, &
                                                 state%fix_atom, &
                                                 state%xyz_species, state%xyz_species_supercell, res%local_properties, &
                                                 res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
 
-                  instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/kB*E_kinetic
-                  instant_pressure = (kB*dfloat(state%n_sites - 1)*instant_temp&
+                  dyn%instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/dyn%kB*dyn%E_kinetic
+                  dyn%instant_pressure = (dyn%kB*dfloat(state%n_sites - 1)*dyn%instant_temp&
                        &+ (res%virial(1, 1) + res%virial(2, 2) + res%virial(3, 3))/3.d0)&
-                       &/state%v_uc*eVperA3tobar
+                       &/state%v_uc*dyn%eVperA3tobar
 
                   if ((loop%mc_istep == 0 .or. loop%mc_istep == params%mc_nsteps .or. &
                        modulo(loop%mc_istep, params%write_xyz) == 0)) then
@@ -1483,7 +1463,7 @@ program turbogap
                           & params%do_dipole, images(i_current_image)%dipole,&
                           & images(i_current_image)%energies_dipole)
 
-                     call write_extxyz(images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
+                     call write_extxyz(images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, dyn%instant_temp, dyn%instant_pressure, &
                           images(i_current_image)%a_box/dfloat(state%indices(1)), &
                           images(i_current_image)%b_box/dfloat(state%indices(2)), &
                           images(i_current_image)%c_box/dfloat(state%indices(3)), &
@@ -1502,7 +1482,7 @@ program turbogap
                           & params%do_dipole,&
                           & images(i_current_image)%local_dipoles)
 
-                     call write_extxyz(images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
+                     call write_extxyz(images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, dyn%instant_temp, dyn%instant_pressure, &
                           images(i_current_image)%a_box/dfloat(state%indices(1)), &
                           images(i_current_image)%b_box/dfloat(state%indices(2)), &
                           images(i_current_image)%c_box/dfloat(state%indices(3)), &
@@ -1535,7 +1515,7 @@ program turbogap
                !  Now start the mc logic: first, use the stored images properties
                call from_image_to_properties(images(i_current_image), state%positions, state%velocities, state%masses, &
                                              res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
-                                             res%energy_exp, E_kinetic, &
+                                             res%energy_exp, dyn%E_kinetic, &
                                              state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
                                              state%xyz_species, state%xyz_species_supercell, res%local_properties, &
                                              res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
@@ -1555,7 +1535,7 @@ program turbogap
                     & images(i_current_image)%fix_atom,&
                     & images(i_current_image)%masses, state%a_box(1:3), state%b_box(1:3),&
                     & state%c_box(1:3), state%indices, params%do_md, params%mc_relax,&
-                    & loop%md_istep, mc_id, E_kinetic, instant_temp, params%t_beg,&
+                    & loop%md_istep, mc_id, dyn%E_kinetic, dyn%instant_temp, params%t_beg,&
                     & params%n_mc_swaps, params%mc_swaps, params%mc_swaps_id, &
                     & params%species_types, params%mc_hamiltonian,&
                     & params%n_mc_relax_after, params&
@@ -1585,10 +1565,11 @@ program turbogap
                      params%do_md = .false.
                   end if
 
-                  call randomize_velocities(state%velocities, state%n_sites, E_kinetic, state%masses, instant_temp, params%t_beg, &
+                  call randomize_velocities(state%velocities, state%n_sites, dyn%E_kinetic, state%masses, dyn%instant_temp, &
+                                            params%t_beg, &
                                             params%velocity_distribution)
 
-                  if (params%mc_hamiltonian) E_kinetic_prev = E_kinetic
+                  if (params%mc_hamiltonian) dyn%E_kinetic_prev = dyn%E_kinetic
                   ! Note, that this may override md steps if the same is chosen! More testing needed
                end if
                ! If doing md, don't relax
@@ -1603,9 +1584,10 @@ program turbogap
                      params%do_md = .false.
                   end if
 
-                  call randomize_velocities(state%velocities, state%n_sites, E_kinetic, state%masses, instant_temp, params%t_beg, &
+                  call randomize_velocities(state%velocities, state%n_sites, dyn%E_kinetic, state%masses, dyn%instant_temp, &
+                                            params%t_beg, &
                                             params%velocity_distribution)
-                  if (params%mc_hamiltonian) E_kinetic_prev = E_kinetic
+                  if (params%mc_hamiltonian) dyn%E_kinetic_prev = dyn%E_kinetic
                   ! Note, that this may override md steps if the same is chosen! More testing needed
                end if
 
@@ -1621,7 +1603,7 @@ program turbogap
                        & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                        & params%do_structure_factor, params%do_xrd, params%do_nd, string)
 
-                  call write_extxyz(state%n_sites, 0, 1.0d0, 0.0d0, instant_temp, instant_pressure, &
+                  call write_extxyz(state%n_sites, 0, 1.0d0, 0.0d0, dyn%instant_temp, dyn%instant_pressure, &
                        state%a_box/dfloat(state%indices(1)), state%b_box/dfloat(state%indices(2)), &
                           state%c_box/dfloat(state%indices(3)), &
                        res%virial, state%xyz_species, &
@@ -1681,7 +1663,7 @@ program turbogap
                   if (params%mc_hamiltonian) then
                      if (params%verb > 50) write (*, '(1X,A,1X,F20.8,1X&
                           &,A,1X,I8,1X,A,1X,I8)') "Hybrid md step: H =&
-                          & T + V = ", res%energy + E_kinetic, ",&
+                          & T + V = ", res%energy + dyn%E_kinetic, ",&
                           & iteration ", loop%md_istep, "/", params&
                           &%md_nsteps
                   else

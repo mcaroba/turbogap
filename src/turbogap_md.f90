@@ -59,6 +59,31 @@ module turbogap_md
    private
    public :: compute_md
 
+!  What the integrator carries from step to step: time, the thermodynamic
+!  observables, and the electronic-stopping data read at setup.
+   type, public :: dynamics_t
+      real(dp) :: md_time
+      real(dp) :: time_step
+      real(dp) :: time_step_prev
+      real(dp) :: instant_temp
+      real(dp) :: instant_pressure
+      real(dp) :: instant_pressure_prev
+      real(dp) :: E_kinetic = 0.d0
+      real(dp) :: E_kinetic_prev
+      real(dp) :: e_kin
+      real(dp) :: target_temp
+      integer :: gd_istep = 0
+      real(dp) :: cum_EEL = 0.0d0
+      integer :: nrows
+      real(dp), allocatable :: allelstopdata(:)
+      type(EPH_Beta_class) :: ephbeta
+      type(EPH_FDM_class) :: ephfdm
+      type(EPH_LangevinSpatialCorrelation_class) :: ephlsc
+      real(dp), allocatable :: masses_types(:)
+      real(dp) :: kB = 8.6173303d-5
+      real(dp) :: eVperA3tobar = 1602176.6208d0
+   end type dynamics_t
+
 contains
 
    subroutine compute_md(params, rank, ierr, n_sites, n_species, md_istep, md_time, &
