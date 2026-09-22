@@ -59,7 +59,9 @@ program turbogap
    use turbogap_ir, only: ir_run_t, ir_init, ir_step_begin, ir_before_evaluate, ir_push_frame, &
                           ir_after_forces, ir_step_end, ir_finish, ir_report
    use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, creturn
-   use turbogap_output, only: print_banner, print_options
+   use turbogap_output, only: print_banner, print_options, print_single_point_energies, &
+                              write_debug_forces, write_single_point, print_nothing_to_do, &
+                              print_timing_report
    use turbogap_exp
    use turbogap_md
    use ipi_driver, only: ipi_driver_open, ipi_driver_exchange, ipi_driver_close
@@ -580,36 +582,7 @@ program turbogap
          end if
 
          if (.not. params%do_md .and. .not. params%do_mc) then
-            if (rank == 0) then
-               write (*, *) '                                       |'
-               write (*, '(A,1X,F22.8,1X,A)') ' SOAP energy:', sum(res%energies_soap), 'eV |'
-               write (*, '(A,1X,F24.8,1X,A)') ' 2b energy:', sum(res%energies_2b), 'eV |'
-               write (*, '(A,1X,F24.8,1X,A)') ' 3b energy:', sum(res%energies_3b), 'eV |'
-               write (*, '(A,1X,F18.8,1X,A)') ' core_pot energy:', sum(res%energies_core_pot), 'eV |'
-               write (*, '(A,1X,F23.8,1X,A)') ' vdw energy:', sum(res%energies_vdw), 'eV |'
-               write (*, '(A,1X,F21.8,1X,A)') ' estat energy:', sum(res%energies_estat), 'eV |'
-               write (*, '(A,1X,F22.8,1X,A)') ' Exp. energy:', sum(res%energies_exp), 'eV |'
-               if (model%valid_xps) write (*, '(A,1X,F23.8,1X,A)') ' xps energy:', sum(res%energies_lp), 'eV |'
-               if (perform%pdf)&
-                    & write (*, '(A,1X,F23.8,1X,A)') ' pdf energy:',&
-                    & sum(res%energies_pdf), 'eV |'
-               if (perform%sf)&
-                    & write (*, '(A,1X,F24.8,1X,A)') ' sf energy:',&
-                    & sum(res%energies_sf), 'eV |'
-               if (perform%xrd)&
-                    & write (*, '(A,1X,F23.8,1X,A)') ' xrd energy:',&
-                    & sum(res%energies_xrd), 'eV |'
-               if (perform%nd)&
-                    & write (*, '(A,1X,F23.8,1X,A)') ' nd energy:',&
-                    & sum(res%energies_nd), 'eV |'
-
-               write (*, '(A,1X,F21.8,1X,A)') ' Total energy:', sum(res%energies), 'eV |'
-
-               write (*, *) '                                       |'
-               write (*, *) 'Energy & forces in "trajectory_out.xyz"|'
-               write (*, *) '                                       |'
-               write (*, *) '.......................................|'
-            end if
+            call print_single_point_energies(comm, res, params, model, perform)
          end if
 
          if (params%do_forces) then
@@ -644,132 +617,15 @@ program turbogap
             if (perform%nd_forces) res%forces = res%forces + res%forces_nd
             if (perform%nd_forces) res%virial = res%virial + res%virial_nd
 
-            if (rank == 0 .and. params%print_vdw_forces) then
-               print *, "> Virial ESTAT "
-               do i = 1, 3
-                  do j = 1, 3
-                     print *, " i, ", i, " j ", j, " ", res%virial_estat(i, j)
-                  end do
-               end do
-
-               print *, "> Virial soap "
-               do i = 1, 3
-                  do j = 1, 3
-                     print *, " i, ", i, " j ", j, " ", res%virial_soap(i, j)
-                  end do
-               end do
-
-               print *, "> Virial 2b "
-               do i = 1, 3
-                  do j = 1, 3
-                     print *, " i, ", i, " j ", j, " ", res%virial_2b(i, j)
-                  end do
-               end do
-
-               print *, "> Virial 3b "
-               do i = 1, 3
-                  do j = 1, 3
-                     print *, " i, ", i, " j ", j, " ", res%virial_3b(i, j)
-                  end do
-               end do
-
-               print *, "> Virial core_pot "
-               do i = 1, 3
-                  do j = 1, 3
-                     print *, " i, ", i, " j ", j, " ", res%virial_core_pot(i, j)
-                  end do
-               end do
-
-               if (perform%xrd_forces) then
-                  print *, "> Virial xrd "
-                  do i = 1, 3
-                     do j = 1, 3
-                        print *, " i, ", i, " j ", j, " ", res%virial_xrd(i, j)
-                     end do
-                  end do
-                  temp_string = ""
-                  temp_string2 = ""
-                  write (temp_string, "(I8)") loop%md_istep
-                  write (temp_string2, "(A)") "forces_xrd_"//trim(adjustl(temp_string))
-                  open (unit=90, file=temp_string2, status="unknown")
-                  do i = 1, state%n_sites
-                     write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
-                        res%forces_xrd(1, i), res%forces_xrd(2, i), res%forces_xrd(3, i)
-                  end do
-                  close (90)
-
-               end if
-
-            end if
-
-            if (params%print_vdw_forces) then
-               open (unit=90, file="forces_vdw", status="unknown")
-               do i = 1, state%n_sites
-                  write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
-                     res%forces_vdw(1, i), res%forces_vdw(2, i), res%forces_vdw(3, i)
-               end do
-               close (90)
-
-            end if
-
-            if (rank == 0 .and. params%print_estat_forces) then
-               open (unit=90, file="forces_estat", status="unknown")
-               do i = 1, state%n_sites
-                  write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
-                     res%forces_estat(1, i), res%forces_estat(2, i), res%forces_estat(3, i)
-               end do
-               close (90)
-
-               open (unit=90, file="charge_gradients_estat", status="unknown")
-               do i = 1, dom%n_atom_pairs_by_rank(rank + 1)
-                  write (90, "(F20.8, 1X, F20.8, 1X, F20.8)") &
-                     res%local_properties_cart_der(1, i, model%charge_lp_index), &
-                     res%local_properties_cart_der(2, i, model%charge_lp_index), &
-                     res%local_properties_cart_der(3, i, model%charge_lp_index)
-               end do
-               close (90)
-
-            end if
+            call write_debug_forces(comm, res, state, dom, params, model, perform, loop)
 
          end if
 
          if (params%do_prediction .and. .not. params%do_md .and. .not. params%do_mc) then
-            if (rank == 0) then
-               !       Write energy and forces if we're just doing static predictions
-               !       The masses should be divided by 103.6426965268d0 to have amu units, but
-               !       since masses is not allocated for single point calculations, it would
-               !       likely lead to a segfault
-               call wrap_pbc(state%positions(1:3, 1:state%n_sites), state%a_box&
-                    &/dfloat(state%indices(1)), state%b_box/dfloat(state%indices(2)),&
-                    & state%c_box/dfloat(state%indices(3)))
-               call get_xyz_energy_string(res%energies_soap, res%energies_2b,&
-                    & res%energies_3b, res%energies_core_pot, res%energies_vdw, res%energies_exp&
-                    &, res%energies_lp, res%energies_pdf, res%energies_sf, res%energies_xrd, res%energies_nd,&
-                    & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
-                    & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
-                    & params%do_dipole, res%dipole, res%energies_dipole)
-
-               call write_extxyz(state%n_sites, -loop%n_xyz, dyn%md_time, dyn%time_step,&
-                    & dyn%instant_temp, dyn%instant_pressure, state%a_box&
-                    &/dfloat(state%indices(1)), state%b_box/dfloat(state%indices(2)),&
-                    & state%c_box/dfloat(state%indices(3)), res%virial, state%xyz_species,&
-                    & state%positions(1:3, 1:state%n_sites), state%velocities, res%forces,&
-                    & res%energies(1:state%n_sites), state%masses, params&
-                    &%write_property, params%write_array_property,&
-                    & params%write_local_properties, model%local_property_labels, res%local_properties, &
-                    & state%fix_atom, "trajectory_out.xyz", string, .false.,&
-                    & params%do_dipole, res%local_dipoles(1:3, 1:state%n_sites))
-
-            end if
+            call write_single_point(comm, res, state, dyn, params, model, loop)
          end if
       else
-         if (rank == 0) then
-            !     Do nothing
-            write (*, *) '                                       |'
-            write (*, *) 'You didn''t ask me to do anything!      |'
-            write (*, *) '                                       |'
-            write (*, *) '.......................................|'
-         end if
+         call print_nothing_to_do(comm)
       end if
 
       !   Do MD stuff here. Moved to src/turbogap_md.f90; the rank guard and the
@@ -894,87 +750,7 @@ program turbogap
 
    call ir_finish(ir, params, comm, time)
 
-   if (params%do_md .or. params%do_prediction .or. params%do_mc) then
-      call get_time(time2)
-      if (rank == 0) then
-         if (params%do_md .and. .not. params%do_nested_sampling) then
-            write (*, *) '                                       |'
-            write (*, '(I8,A,F13.3,A)') loop%md_istep, ' MD steps:', time2 - time3, ' seconds |'
-         end if
-         if (params%do_mc) then
-            write (*, *)
-            write (*, *) '                                       |'
-            write (*, '(I8,A,F13.3,A)') loop%mc_istep, ' MC steps:', time2 - time3, ' seconds |'
-         end if
-
-         write (*, *) '                                       |'
-         write (*, '(A,F13.3,A)') ' *          Setup:', time%setup(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     - input+pot.:', time%read_input(3), ' seconds |'
-         if (comm_with_mpi) then
-            write (*, '(A,F13.3,A)') '     -  MPI setup:', time%mpi_setup(3), ' seconds |'
-         end if
-         write (*, '(A,F13.3,A)') ' * Read XYZ files:', time%read_xyz(3), ' seconds |'
-         write (*, '(A,F13.3,A)') ' * Neighbor lists:', time%neigh(3), ' seconds |'
-         write (*, '(A,F13.3,A)') ' *  GAP desc/pred:', time%gap(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     - soap_turbo:', time%soap(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     -         2b:', time%gap_2b(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     -         3b:', time%gap_3b(3), ' seconds |'
-         write (*, '(A,F13.3,A)') '     -   core_pot:', time%gap_core_pot(3), ' seconds |'
-!       vdw is a parent, not one of the GAP children above: compute_vdw runs
-!       outside the time%gap region and sum_times adds it in its own right.
-!       Printing it indented under GAP said otherwise.
-         if (params%vdw_type /= "none") then
-            write (*, '(A,F13.3,A)') ' *            vdw:', time%vdw(3), ' seconds |'
-         end if
-         if (model%valid_xps .or. params%do_pair_distribution .or. params&
-              &%do_structure_factor .or. params%do_xrd .or. params%do_nd) write (*, '(A&
-              &,F13.3,A)') ' *  Exp. pred.   :', time%pdf(3) + time%sf(3) + time%xrd(3) + time%nd(3), ' seconds&
-              & |'
-         if (model%valid_xps) write (*, '(A,F13.3,A)') '     -        xps:',&
-              & time%xps(3), ' seconds |'
-         if (params%do_pair_distribution) write (*, '(A,F13.3,A)') '     -        pdf:', time%pdf(3), ' seconds |'
-         if (params%do_structure_factor) write (*, '(A,F13.3,A)') '     -         sf:', time%sf(3), ' seconds |'
-         if (params%do_xrd) write (*, '(A,F13.3,A)') '     -        xrd:', time%xrd(3), ' seconds |'
-         if (params%do_nd) write (*, '(A,F13.3,A)') '     -         nd:', time%nd(3), ' seconds |'
-
-         call ir_report(ir, params, time)
-
-         if (do_electrostatics) then
-            write (*, '(A,F13.3,A)') ' * Electrostatics:', time%estat(3), ' seconds |'
-         end if
-         if (params%do_md) then
-            write (*, '(A,F13.3,A)') ' *  MD algorithms:', time%md(3), ' seconds |'
-         end if
-         if (params%do_mc) then
-            write (*, '(A,F13.3,A)') ' *  MC algorithms:', time%mc(3), ' seconds |'
-         end if
-
-         if (comm_with_mpi) then
-            write (*, '(A,F13.3,A)') ' *  MPI comms.   :', time%mpi(3) + time%mpi_positions(3) + time%mpi_ef(3), ' seconds |'
-            write (*, '(A,F13.3,A)') '     -  pos & vel:', time%mpi_positions(3), ' seconds |'
-            write (*, '(A,F13.3,A)') '     - E & F brc.:', time%mpi_ef(3), ' seconds |'
-            write (*, '(A,F13.3,A)') '     -  MPI misc.:', time%mpi(3), ' seconds |'
-         end if
-!       Miscellaneous is what the parent buckets do not account for.  It used
-!       to be written out here as one long subtraction, which is how it came to
-!       subtract time%gap and the mpi_ef reduce nested inside it and print a
-!       negative number.  sum_times owns the list now (src/timing.f90), so the
-!       set summed here and the set declared as parents there cannot disagree.
-!
-!       Accounted-for is printed beside it so the arithmetic is visible: the
-!       three numbers below have to add up, and a reader can see at a glance how
-!       much of the run the buckets actually name.  A large Miscellaneous is a
-!       statement that something real is not being measured -- which is how the
-!       setup bucket above came to exist.
-         time%total(3) = time2 - time3
-         write (*, *) '                                       |'
-         write (*, '(A,F13.3,A)') ' *  Accounted for:', sum_times(time), ' seconds |'
-         write (*, '(A,F13.3,A)') ' *  Miscellaneous:', time%total(3) - sum_times(time), ' seconds |'
-         write (*, '(A,F13.3,A)') ' *     Total time:', time%total(3), ' seconds |'
-         write (*, *) '                                       |'
-         write (*, *) '.......................................|'
-      end if
-   end if
+   call print_timing_report(comm, params, model, loop, ir, do_electrostatics, time3, time)
 
 #ifdef _GPU
    do i = 1, model%n_soap_turbo
