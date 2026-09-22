@@ -159,19 +159,11 @@ contains
 !        segfaults. Same shape as the has_vdw/has_local_properties defect.
 !        Writes this rank's partial sums into the this_ arrays, which the
 !        reduction below completes.
-#ifdef _GPU
       call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
                          state%n_sites, nl%n_neigh, nl%neighbors_list, state%species, nl%neighbor_species, nl%rjs, nl%xyz, &
                          res%local_properties, res%local_properties_cart_der, &
                          dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, comm%rank, n_omp, &
                          res%this_energies_estat, res%this_forces_estat, res%this_virial_estat, time)
-#else
-      call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
-                         state%n_sites, nl%n_neigh, nl%neighbors_list, nl%rjs, nl%xyz, &
-                         res%local_properties, res%local_properties_cart_der, &
-                         dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, comm%rank, &
-                         res%this_energies_estat, res%this_forces_estat, res%this_virial_estat, time)
-#endif
 
       call compute_vdw(params, any_has_vdw(model%soap_turbo_hypers), state%n_sites, &
                        nl%n_neigh, nl%neighbors_list, nl%neighbor_species, nl%rjs, nl%xyz, &
@@ -328,19 +320,11 @@ contains
                                         res%this_virial, &
                                         res%energies_core_pot, res%forces_core_pot, res%virial_core_pot, time)
 
-#ifdef _GPU
          call add_3b_contribution(model%n_angle_3b, model%angle_3b_hypers, nl%neighbors_list, &
                                   params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
                                   dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, res%this_energies, res%this_forces, &
                                   res%this_virial, &
                                   res%forces, res%energies_3b, res%forces_3b, res%virial_3b, time)
-#else
-         call add_3b_contribution(model%n_angle_3b, model%angle_3b_hypers, nl%neighbors_list, &
-                                  params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
-                                  dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, res%this_energies, res%this_forces, &
-                                  res%this_virial, &
-                                  res%energies_3b, res%forces_3b, res%virial_3b, time)
-#endif
 
          call gap_backend_end()
 

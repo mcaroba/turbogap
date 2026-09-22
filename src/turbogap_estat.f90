@@ -45,15 +45,9 @@ module turbogap_estat
 contains
 
    subroutine compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
-#ifdef _GPU
                             n_sites, n_neigh, neighbors_list, species, neighbor_species, rjs, xyz, &
                             local_properties, local_properties_cart_der, &
                             i_beg, i_end, j_beg, j_end, rank, n_omp, &
-#else
-                            n_sites, n_neigh, neighbors_list, rjs, xyz, &
-                            local_properties, local_properties_cart_der, &
-                            i_beg, i_end, j_beg, j_end, rank, &
-#endif
                             energies_estat, forces_estat, virial_estat, time)
       implicit none
 
@@ -64,17 +58,14 @@ contains
       integer, intent(in) :: n_sites
       integer, intent(in) :: n_neigh(:)
       integer, intent(in) :: neighbors_list(:)
-#ifdef _GPU
+!     species, neighbor_species and n_omp are read by the device path only.
       integer, intent(in) :: species(:)
       integer, intent(in) :: neighbor_species(:)
-#endif
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
       integer, intent(in) :: i_beg, i_end, j_beg, j_end
       integer, intent(in) :: rank
-#ifdef _GPU
       integer, intent(in) :: n_omp
-#endif
 
 !     In/out variables
       real(dp), intent(inout) :: local_properties(:, :)

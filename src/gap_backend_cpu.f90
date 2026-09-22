@@ -200,7 +200,7 @@ contains
    subroutine add_3b_contribution(n_angle_3b, angle_3b_hypers, neighbors_list, &
                                   params, rjs, xyz, n_neigh, species, neighbor_species, &
                                   i_beg, i_end, j_beg, j_end, this_energies, this_forces, this_virial, &
-                                  energies_3b, forces_3b, virial_3b, time)
+                                  forces, energies_3b, forces_3b, virial_3b, time)
 
       implicit none
 
@@ -220,6 +220,8 @@ contains
       integer, intent(in) :: j_end
 
 !   ---- Output: accumulated into by this routine ----
+!   Unused here; the device build sizes a buffer from it.
+      real(dp), intent(in), allocatable :: forces(:, :)
       real(dp), intent(inout), allocatable :: energies_3b(:)
       real(dp), intent(inout), allocatable :: forces_3b(:, :)
       real(dp), intent(inout) :: virial_3b(1:3, 1:3)
