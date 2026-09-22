@@ -103,6 +103,7 @@ contains
       integer :: i
       integer :: j
 
+      loop%exit_loop = .false.
       if (params%do_mc) then
          loop%mc_istep = loop%mc_istep + 1
          ! Undo if the step is md related

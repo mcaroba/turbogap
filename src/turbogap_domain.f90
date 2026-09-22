@@ -45,6 +45,7 @@ module turbogap_domain
    implicit none
 
    private
+   public :: domain_init
    public :: domain_free
    public :: domain_sync_state
    public :: domain_sync_after_md
@@ -103,8 +104,17 @@ module turbogap_domain
 
 contains
 
+!  Replicated data: every rank holds every atom.
+   subroutine domain_init(dom, comm)
+      type(domain_t), intent(inout) :: dom
+      type(comm_t), intent(in) :: comm
+
+      allocate (dom%n_atom_pairs_by_rank(1:comm%size))
+   end subroutine domain_init
+
 !  Give every rank the structure rank 0 holds. Replicated data: the whole of it,
-!  sized from rank 0's arrays.
+!  sized from rank 0's arrays. Sending only what an MC move changed was tried,
+!  keyed by a broadcast flag array, and segfaulted; hence everything, every time.
    subroutine domain_sync_state(dom, comm, state, params, time)
       type(domain_t), intent(inout) :: dom
       type(comm_t), intent(in) :: comm

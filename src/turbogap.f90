@@ -29,89 +29,40 @@
 
 program turbogap
 
-   use kinds
-
-   use timing
-   use neighbors
-   use soap_turbo_desc
-   use gap
-   use read_files
-   use md
-   use adaptive_time                        ! for adaptive time simulation (TurboGAP will use these five modules for radiation cascades)
-   use electronic_stopping                ! for electronic stopping correction in radiation cascades
-   use eph_fdm                                ! for T - dependent parameters - elec. stop. - eph model
-   use eph_beta                                ! for the atomic electronic densities  - elec. stop. - eph model
-   use eph_electronic_stopping                ! for electronic stopping based in radiation cascades on the eph model
-   use mc
-   use gap_interface
-   use types
-   use vdw
-   use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane
-   use turbogap_setup
+   use kinds, only: dp
+   use timing, only: times_t, get_time, time_start, time_end
+   use types, only: input_parameters, perform_t
+   use turbogap_comm, only: comm_t, comm_init, comm_finalize
+   use gpu_context, only: gpu_context_init, gpu_context_finalize, gpu_memory_budget_init, gpu_memory_report
+   use gap_backend, only: gap_backend_init
+   use turbogap_setup, only: model_t, read_input_and_gap_files, model_free
+   use turbogap_output, only: handle_help_request, read_run_mode, print_banner, print_options, &
+                              print_nothing_to_do, print_timing_report, print_end
+   use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, loop_sync, loop_end_step
    use turbogap_structure, only: state_t, structure_acquire, structure_update_volume, structure_free
-   use turbogap_domain, only: domain_t, neighbors_t, domain_sync_state, domain_build, &
-                              domain_complete_sites, domain_complete_e0, &
-                              domain_complete_contributions, domain_sync_after_md, &
-                              domain_sync_after_ipi, domain_free, domain_end_step
-   use turbogap_results, only: results_t, results_prepare, results_free
-   use turbogap_soap, only: soap_free_device
+   use turbogap_domain, only: domain_t, neighbors_t, domain_init, domain_sync_state, domain_build, &
+                              domain_sync_after_md, domain_sync_after_ipi, domain_end_step, domain_free
+   use turbogap_results, only: results_t, results_free
    use turbogap_evaluate, only: evaluate
-   use turbogap_sampling, only: sampling_t, sampling_init, mc_prepare_step, nested_step, mc_step
-   use turbogap_ir, only: ir_run_t, ir_init, ir_step_begin, ir_before_evaluate, ir_push_frame, &
-                          ir_after_forces, ir_step_end, ir_finish, ir_report
-   use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, loop_sync, &
-                            loop_end_step, creturn
-   use turbogap_output, only: handle_help_request, read_run_mode, print_end, print_banner, print_options, &
-                              print_single_point_energies, &
-                              write_debug_forces, write_single_point, print_nothing_to_do, &
-                              print_timing_report
-   use turbogap_exp
-   use turbogap_md
+   use turbogap_md, only: dynamics_t, md_prepare_velocities, md_step
    use ipi_driver, only: ipi_driver_open, ipi_driver_exchange, ipi_driver_close
-   use gap_backend
-   use gpu_context
-   use turbogap_vdw
-   use turbogap_estat
-   use exp_utils
-   use exp_interface
-   use soap_turbo_functions
-   use mad_ir
-   use mad_ir_xl
-   use ir_auxiliary_dynamics, only: ir_aux_state, ir_aux_active, ir_aux_setup, &
-                                    ir_aux_advance, ir_aux_evaluate, ir_aux_forces, &
-                                    ir_aux_calibrate, ir_aux_calibrated, ir_aux_save, &
-                                    ir_aux_write_spectrum, ir_aux_bank_energy, &
-                                    ir_aux_energy_pumped, ir_aux_stability, &
-                                    ir_aux_escale_max
-   use ir_fft
-   use ir_fft_io
-   use turbogap_comm, only: comm_t, comm_init, comm_finalize, comm_bcast, comm_sum_to_root, &
-                            comm_sum_all, comm_allgather, comm_with_mpi
-   use bussi
-   use xyz_module
-   use keyword_help
-#ifdef _GPU
-   use F_B_C
-   use iso_c_binding
-#endif
+   use turbogap_sampling, only: sampling_t, sampling_init, mc_prepare_step, nested_step, mc_step
+   use turbogap_exp, only: exp_decide, exp_end_run
+   use turbogap_ir, only: ir_run_t, ir_init, ir_step_begin, ir_step_end, ir_finish
+   use turbogap_vdw, only: vdw_state, vdw_write_ts_scaling
+   use turbogap_soap, only: soap_free_device
 
    implicit none
 
    ! Variable definitions
 
    real(dp) :: time1
-   real(dp) :: time2
    real(dp) :: time3
 !   Every wall-clock bucket lives in one times_t (src/timing.f90), so the
 !   extracted modules take a single argument instead of thirteen and the two
 !   branches' signatures agree.
    type(times_t) :: time
 
-   integer :: i
-   integer :: j
-   integer :: ierr
-   integer :: rank
-   integer :: ntasks
    type(comm_t) :: comm
    type(state_t) :: state
    type(domain_t) :: dom
@@ -122,15 +73,9 @@ program turbogap
    type(dynamics_t) :: dyn
    type(ir_run_t) :: ir
    type(sampling_t) :: smp
-   integer :: n_pos
 
    type(perform_t) :: perform
    integer :: n_omp = 1
-
-   character*1024 :: filename
-   character*1024 :: string
-   character*1024 :: temp_string
-   character*1024 :: temp_string2
 
    ! This is the mode in which we run TurboGAP
    character*16 :: mode = "none"
@@ -142,22 +87,13 @@ program turbogap
 ! Persistent ts+mbd correction state, owned by turbogap_vdw
    type(vdw_state) :: vdw_ws
 
-   character*32 :: implemented_exp_observables(1:5)
-#ifdef _GPU
-#endif
-
    call handle_help_request()
-
-   implemented_exp_observables(1) = "xps"
-   implemented_exp_observables(2) = "xrd"
-   implemented_exp_observables(3) = "saxs"
-   implemented_exp_observables(4) = "pair_distribution"
-   implemented_exp_observables(5) = "structure_factor"
 
 !  Bring the device context up. Empty on this branch (src/gpu_context.f90);
 !  on the GPU branch the same two names create the streams and cuBLAS handles.
    call time_start(time%create_streams)
-   call gpu_context_init(params, rank, n_omp)
+!  Before comm_init, so every rank passes 0: slurm gives each rank one device.
+   call gpu_context_init(params, comm%rank, n_omp)
    call gap_backend_init()
    call time_end(time%create_streams)
 
@@ -175,16 +111,14 @@ program turbogap
    call srand(int(time1*1000))
 
    call comm_init(comm)
-   rank = comm%rank
-   ntasks = comm%size
-   allocate (dom%n_atom_pairs_by_rank(1:ntasks))
+   call domain_init(dom, comm)
 
    call read_run_mode(mode)
 
    call print_banner(comm)
 
    ! Read input file and other files
-   call read_input_and_gap_files(mode, rank, ntasks, params, &
+   call read_input_and_gap_files(mode, comm%rank, comm%size, params, &
                                  model%soap_turbo_hypers, model%distance_2b_hypers, model%angle_3b_hypers, model%core_pot_hypers, &
                                  model%n_soap_turbo, model%n_distance_2b, model%n_angle_3b, model%n_core_pot, model%n_species, &
                                  model%rcut_max, &
@@ -207,7 +141,7 @@ program turbogap
 !
 !  The GPU branch calls the same name in the same place, where it budgets from
 !  the device instead of from the node.
-   call gpu_memory_budget_init(params, rank, ntasks)
+   call gpu_memory_budget_init(params, comm%rank, comm%size)
 
    call print_options(comm, params, model)
 
@@ -229,11 +163,9 @@ program turbogap
 
 !  Connect before the first force call, so that a missing or unstarted i-PI
 !  server is reported now rather than after the first GAP evaluation.
-   if (mode == "ipi") call ipi_driver_open(params%ipi_address, rank)
+   if (mode == "ipi") call ipi_driver_open(params%ipi_address, comm%rank)
 
    do while (loop_continues(loop, params))
-      loop%exit_loop = .false.
-
       call ir_step_begin(ir, params)
 
       call loop_begin_step(loop, params, comm)
@@ -263,7 +195,7 @@ program turbogap
 !     compute_md does AROUND the integration -- the skin accounting, the
 !     supercell refresh, the broadcast -- happens inside the exchange.
       if (mode == "ipi") then
-         call ipi_driver_exchange(rank, state%n_sites, state%positions, state%positions_prev, state%positions_diff, &
+         call ipi_driver_exchange(comm%rank, state%n_sites, state%positions, state%positions_prev, state%positions_diff, &
                                   state%velocities, state%a_box, state%b_box, state%c_box, state%indices, params%neighbors_buffer, &
                                   res%forces, res%energy, res%virial, loop%exit_loop, nl%rebuild_neighbors_list)
          call domain_sync_after_ipi(dom, comm, state, nl, loop)
@@ -275,26 +207,6 @@ program turbogap
       call nested_step(smp, state, res, dyn, nl, params, loop, comm)
 
       call mc_step(smp, state, res, dyn, nl, model, params, perform, loop, comm, time)
-
-      ! NOTE!! One tried for far far too long to be smart and implement some
-      ! sort of conditional broadcasting: having a logical array named
-      ! broadcast, which perform_mc_step would then to set values to
-      ! true. Specific indexes referenced specific quantities to be
-      ! broadcasted, which allowed for the broadcasting amount to be
-      ! dependent on the step, e.g. if it were an insertion step then
-      ! positions, masses, n_sites, etc would have to be broadcast, whereas
-      ! for a simple move only positions had to be broadcasted. This array
-      ! would then subsequently be broadcast to all other ranks, thereby
-      ! allowing for the minimum number of allocations and
-      ! communication. BUT, for some reason, this led to segfaults
-      ! (corrupted unsorted chunks or something of that sort).
-
-      ! This doesn't make sense to be as all ranks have the same broadcast
-      ! array (as it is broadcasted before) so it seems like it should work
-      ! but it does not! Hence, in the following broadcasting, everything is
-      ! transmitted.
-
-      ! This can be optimised, so please do if you are smarter than me
 
       call loop_sync(loop, params, comm, time)
       call domain_sync_state(dom, comm, state, params, time)
@@ -312,11 +224,13 @@ program turbogap
 !  i-PI has said EXIT, or something else ended the loop. Close the socket
 !  before the reports below, so that i-PI sees the driver leave cleanly
 !  rather than timing out on a half-open connection.
-   if (mode == "ipi") call ipi_driver_close(rank)
+   if (mode == "ipi") call ipi_driver_close(comm%rank)
 
    call ir_finish(ir, params, comm, time)
 
    call print_timing_report(comm, params, model, loop, ir, do_electrostatics, time3, time)
+
+   call vdw_write_ts_scaling(res, state, params, comm)
 
    call soap_free_device(model)
    call structure_free(state)
@@ -324,8 +238,6 @@ program turbogap
    call model_free(model)
    call domain_free(dom)
    if (allocated(params%write_local_properties)) deallocate (params%write_local_properties)
-
-   call vdw_write_ts_scaling(res, state, params, comm)
 
    call print_end(comm)
 
@@ -335,7 +247,7 @@ program turbogap
 !  context down -- after it there is nothing left to ask. Printed unconditionally
 !  and to stderr: it costs one line, and "what did that actually use" is the
 !  first question asked after any run that was close to the limit.
-   if (rank == 0) call gpu_memory_report("end of run")
+   if (comm%rank == 0) call gpu_memory_report("end of run")
    call comm_finalize(comm)
 
    call gpu_context_finalize(params, n_omp)
