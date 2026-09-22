@@ -114,6 +114,8 @@ Two ways it fails, both with the fix in the message:
 | `mc_hybrid_md_maxwell`   | 1     | the same walk with Maxwell-Boltzmann momenta rather than the old draw    |
 | `mc_reverse_xps`         | 1     | reverse MC: the experimental mismatch inside the Metropolis test         |
 | `mc_molecule`            | 1     | grand-canonical exchange of a whole rigid molecule, and `mc_mu_reference` |
+| `nested_sampling`        | 1     | nested sampling: the highest-enthalpy walker replaced by an MD clone     |
+| `vdw_mbd_split`          | 1     | MBD split into a long two-body call and a short many-body call           |
 
 Every case fixes `random_seed`, and `co_md` starts from explicit velocities,
 so all of them are reproducible run to run. This was verified before the suite

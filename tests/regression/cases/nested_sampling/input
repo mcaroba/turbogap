@@ -1,0 +1,12 @@
+atoms_file = "atoms.xyz"
+pot_file = "gap_files/phosphorus.gap"
+n_species = 1
+species = P
+masses = 30.97
+e0 = 0.
+random_seed = 12345
+n_nested = 4
+p_nested = 0.
+md_nsteps = 5
+md_step = 1.0
+thermostat = none

@@ -129,15 +129,21 @@ contains
 !        splits the descriptor loop until an estimated batch fits inside it. It
 !        defaults to 1.0 GB, a number chosen with no reference to any device, so
 !        on this card it asks for 6x more batches than necessary and on a 80 GB
-!        card 80x. Overwriting it here is the whole point of the keyword.
-         params%max_Gbytes_per_process = budget_gb
+!        card 80x. Overwriting it here is the whole point of the keyword -- unless
+!        the input named it, which wins here as it does on the host.
+         if (.not. params%max_Gbytes_set) params%max_Gbytes_per_process = budget_gb
 
          if (rank == 0) then
             write (*, '(A,F8.3,A,F8.3,A)') ' <<<< GPU MEM >>>> device has ', free_gb, &
                ' GB free of ', real(dev_total, dp)/1024.d0**3, ' GB'
             write (*, '(A,F6.3,A,I0,A,F8.3,A)') ' <<<< GPU MEM >>>> budget = ', params%gpu_mem_fraction, &
                ' x free / ', max(1, n_ranks_on_device), ' rank(s) = ', budget_gb, ' GB per rank'
-            write (*, '(A,F8.3)') ' <<<< GPU MEM >>>> max_Gbytes_per_process set from the device to ', budget_gb
+            if (params%max_Gbytes_set) then
+               write (*, '(A,F8.3)') ' <<<< GPU MEM >>>> max_Gbytes_per_process as given: ', &
+                  params%max_Gbytes_per_process
+            else
+               write (*, '(A,F8.3)') ' <<<< GPU MEM >>>> max_Gbytes_per_process set from the device to ', budget_gb
+            end if
          end if
       end if
 
@@ -160,9 +166,8 @@ contains
 !
 !  Two properties matter more than the arithmetic:
 !
-!  * It returns n_batches_in unchanged when budgeting is off. gpu_mem_fraction
-!    defaults to zero, so nothing about an existing input changes until it is
-!    set.
+!  * It returns n_batches_in unchanged when budgeting is off
+!    (gpu_mem_fraction = 0).
 !
 !  * It never returns FEWER batches than asked for. Raising the count is a
 !    safety measure that cannot make a run fail; lowering it would override a

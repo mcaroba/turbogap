@@ -631,12 +631,12 @@ contains
 !        up so much faster than a large cell.
 !
 !        gpu_batches_for_gb only ever raises the count, and does nothing at all
-!        when gpu_mem_fraction is unset, so an input that worked yesterday
-!        batches identically today.
+!        when gpu_mem_fraction = 0. The breakdown is printed on the first step
+!        only; every snapshot repeats it.
          call estimate_max_exp_forces_device_memory_usage(i_end - i_beg + 1, j_end - j_beg + 1, n_dim_partial, &
                                                           params%pair_distribution_n_samples, &
                                                           params%structure_factor_n_samples, gpu_memory_usage, &
-                                                          be_verbose=(rank == 0 .and. params%gpu_mem_fraction > 0.d0))
+                                                    be_verbose=(rank == 0 .and. params%gpu_mem_fraction > 0.d0 .and. md_istep <= 0))
 
 !        Not zeroed here: the estimate above was just written into
 !        gpu_memory_usage and is what the batch count is computed from. The

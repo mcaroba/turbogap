@@ -82,6 +82,7 @@ module turbogap_comm
 
 !  mpi_allreduce in place.
    interface comm_sum_all
+      module procedure sum_all_r0
       module procedure sum_all_r2
       module procedure sum_all_r3
    end interface comm_sum_all
@@ -245,6 +246,15 @@ contains
       call copy_r(send, recv, n)
 #endif
    end subroutine sum_to_root_r3
+
+   subroutine sum_all_r0(comm, x)
+      type(comm_t), intent(in) :: comm
+      real(dp), intent(inout) :: x
+      integer :: ierr
+#ifdef _MPIF90
+      call mpi_allreduce(MPI_IN_PLACE, x, 1, MPI_DOUBLE_PRECISION, MPI_SUM, comm%handle, ierr)
+#endif
+   end subroutine sum_all_r0
 
    subroutine sum_all_r2(comm, x, n)
       type(comm_t), intent(in) :: comm

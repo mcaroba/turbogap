@@ -35,6 +35,8 @@ repo=$(cd "$here/../.." && pwd)
 BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
 # shellcheck source=../data_root.sh
 . "$here/../data_root.sh"
+# shellcheck source=../mpi_oversubscribe.sh
+. "$here/../mpi_oversubscribe.sh"
 DATA=$DATA_ROOT/water_dipole
 TOL=${TURBOGAP_DIPOLE_TOL:-1.5e-6}
 RANKS=${TURBOGAP_RANKS:-1}
@@ -106,7 +108,7 @@ python3 "$here/make_reference.py" "$DATA/out_quip_predict" "$WORK/reference.dat"
   die "could not extract the QUIP reference"
 
 if [ "$RANKS" -gt 1 ]; then
-  (cd "$WORK" && mpirun -np "$RANKS" "$BIN" predict) >"$WORK/run.log" 2>&1
+  (cd "$WORK" && mpirun $MPI_OVERSUBSCRIBE -np "$RANKS" "$BIN" predict) >"$WORK/run.log" 2>&1
 else
   (cd "$WORK" && "$BIN" predict) >"$WORK/run.log" 2>&1
 fi

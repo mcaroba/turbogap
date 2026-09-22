@@ -128,6 +128,8 @@ fi
 # than making every new checkout a two-step setup.
 # shellcheck source=../data_root.sh
 . "$here/../data_root.sh"
+# shellcheck source=../mpi_oversubscribe.sh
+. "$here/../mpi_oversubscribe.sh"
 [ -d "$DATA_ROOT" ] || die "data root not found: $DATA_ROOT (set TURBOGAP_DATA_ROOT)"
 
 if [ "$BIN" -ef "$REF_BIN" ]; then
@@ -191,7 +193,7 @@ run() {
   local dir=$1 bin=$2 label=$3 rc t0 t1
   t0=$(date +%s.%N)
   if [ "$RANKS" -gt 1 ]; then
-    (cd "$dir" && timeout "$CASE_TIMEOUT" mpirun -np "$RANKS" "$bin" "$MODE") >"$dir/run.log" 2>&1
+    (cd "$dir" && timeout "$CASE_TIMEOUT" mpirun $MPI_OVERSUBSCRIBE -np "$RANKS" "$bin" "$MODE") >"$dir/run.log" 2>&1
   else
     (cd "$dir" && timeout "$CASE_TIMEOUT" "$bin" "$MODE") >"$dir/run.log" 2>&1
   fi

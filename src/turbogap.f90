@@ -86,7 +86,6 @@ program turbogap
    call get_time(time1)
    time3 = time1
    call time_start(time%setup)
-   call srand(int(time1*1000))
 
    call comm_init(comm)
    call domain_init(dom, comm)

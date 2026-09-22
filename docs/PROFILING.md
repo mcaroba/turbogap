@@ -314,12 +314,14 @@ gpu_mem_fraction = 0.8
 ```
 
 At start-up TurboGAP reads the device's free memory and sets
-`max_Gbytes_per_process` to `fraction × free / ranks_per_device`. That keyword is
+`max_Gbytes_per_process` to `fraction × free / ranks_per_device`, unless the
+input gives it, and sizes the pdf/xrd batch count from the same budget. That keyword is
 what splits the SOAP descriptor loop, and its default of **1.0 GB was chosen
 with no card in mind** — on a 5.7 GB A2000 it asks for roughly four times more
 batches than needed, and on an 80 GB card eighty times.
 
-Default is 0 (off), so nothing about an existing input changes until you set it.
+On by default at 0.8, as `mem_fraction` is on the host; `gpu_mem_fraction = 0`
+turns it off.
 
 Divide-by-ranks matters: `cuda_set_device` hands out cards round-robin, so when
 there are more ranks than devices they share one card's memory, and each one

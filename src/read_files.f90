@@ -2324,9 +2324,9 @@ contains
          params%max_Gbytes_set = .true.
          if (rank == 0) call print_parameter("max_Gbytes_per_process", params%max_Gbytes_per_process)
          !> @kw gpu_mem_fraction
-         !> Fraction of the device's memory one rank may use for the SOAP descriptor batches.
-         !> The device analogue of mem_fraction, consulted only by a GPU build and only when
-         !> max_gbytes_per_process was not given.
+         !> Fraction of the device's free memory one rank may use. A GPU build sizes the pdf/xrd
+         !> batch count from it, and max_gbytes_per_process for the SOAP batches unless the input
+         !> gives that. The device analogue of mem_fraction; 0 turns the sizing off.
          !> @see mem_fraction, max_gbytes_per_process
       else if (keyword == 'gpu_mem_fraction') then
          backspace (unit)

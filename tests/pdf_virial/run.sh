@@ -52,6 +52,8 @@ repo=$(cd "$here/../.." && pwd)
 BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
 # shellcheck source=../data_root.sh
 . "$here/../data_root.sh"
+# shellcheck source=../mpi_oversubscribe.sh
+. "$here/../mpi_oversubscribe.sh"
 DATA=$DATA_ROOT/xrd_mad
 RANKS=${TURBOGAP_RANKS:-2}
 PYTHON=${TURBOGAP_PYTHON:-python3}
@@ -259,7 +261,7 @@ EOF
     } >"$WORK/input"
     (cd "$WORK" && "$BIN" predict) >"$WORK/mpi1.log" 2>&1
     one=$(sed -n 2p "$WORK/trajectory_out.xyz" | grep -o 'virial="[^"]*"')
-    (cd "$WORK" && mpirun -np "$RANKS" "$BIN" predict) >"$WORK/mpin.log" 2>&1
+    (cd "$WORK" && mpirun $MPI_OVERSUBSCRIBE -np "$RANKS" "$BIN" predict) >"$WORK/mpin.log" 2>&1
     many=$(sed -n 2p "$WORK/trajectory_out.xyz" | grep -o 'virial="[^"]*"')
     if [ -n "$one" ] && [ "$one" = "$many" ]; then
       printf '    PASS (%s)\n' "$one"

@@ -53,8 +53,8 @@ void gpu_set_electrostatics_k_index(int i_beg, int i_end, int n_pairs, int n_sit
                                     double* charge_gradients_index_d, int* k_index_d, int* j2_index_d, double* rjs_index_d,
                                     double* xyz_k_d, int* nk_sum_flags_d, hipStream_t* stream);
 void gpu_get_electrostatics_energies(const int i_beg, const int nk_max, double* energies_d, double* forces_d, double* virial_d,
-                                     int* j2_index_d, const int n_sites, const int this_n_sites, const int this_n_pairs,
-                                     int* n_neigh_index_d, double* charges_d, double* charge_gradients_d,
+                                     double* phi_sum_d, int* j2_index_d, const int n_sites, const int this_n_sites,
+                                     const int this_n_pairs, int* n_neigh_index_d, double* charges_d, double* charge_gradients_d,
                                      double* neighbor_charges_index_d, double* rjs_index_d, double* xyz_index_d, const double alpha,
                                      const double rcut, const double rcut_in, const double rcut_width, const double B0_rcut,
                                      const double B0_rcut_der, const bool do_damping, const bool do_forces, hipStream_t* stream);

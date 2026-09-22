@@ -40,6 +40,8 @@ repo=$(cd "$here/../.." && pwd)
 BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
 # shellcheck source=../data_root.sh
 . "$here/../data_root.sh"
+# shellcheck source=../mpi_oversubscribe.sh
+. "$here/../mpi_oversubscribe.sh"
 DATA=$DATA_ROOT/xrd_mad
 RANKS=${TURBOGAP_RANKS:-2}
 PYTHON=${TURBOGAP_PYTHON:-python3}
@@ -132,7 +134,7 @@ run_pattern() {
   { preamble; printf '%s\n' "$body"; } >"$WORK/input"
   rm -f "$WORK/$pred"
   if [ "$ranks" -gt 1 ]; then
-    (cd "$WORK" && mpirun -np "$ranks" "$BIN" predict) >"$WORK/run.log" 2>&1
+    (cd "$WORK" && mpirun $MPI_OVERSUBSCRIBE -np "$ranks" "$BIN" predict) >"$WORK/run.log" 2>&1
   else
     (cd "$WORK" && "$BIN" predict) >"$WORK/run.log" 2>&1
   fi

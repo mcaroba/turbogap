@@ -160,7 +160,7 @@ contains
       call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
                          state%n_sites, nl%n_neigh, nl%neighbors_list, state%species, nl%neighbor_species, nl%rjs, nl%xyz, &
                          res%local_properties, res%local_properties_cart_der, &
-                         dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, comm%rank, n_omp, &
+                         dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, comm, n_omp, &
                          res%this_energies_estat, res%this_forces_estat, res%this_virial_estat, time)
 
       call compute_vdw(params, any_has_vdw(model%soap_turbo_hypers), state%n_sites, &

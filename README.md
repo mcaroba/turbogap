@@ -276,32 +276,88 @@ Simple tutorials can be found in the [TurboGAP Tutorials](https://github.com/Tig
 
 ## Testing TurboGAP
 
-The data for tests can be by cloning the [TurboGAP Tests](https://github.com/TiganyZ/turbogap_tests). This can be done using the script in `tests/regression/fetch_test_data.sh`.
+The test systems -- trajectories and fitted potentials -- are not in this
+repository. They live in [TurboGAP
+Tests](https://github.com/TiganyZ/turbogap_tests), and
+`tests/fetch_test_data.sh` clones them beside the source tree. Every suite
+calls it when the clone is missing, so a first run on a fresh checkout works;
+`TURBOGAP_DATA_ROOT` points at a checkout kept somewhere else.
 
-Instead of doing a shallow clone (with depth=1) you can do the full clone so you have access to the baseline commit for regression tests.
+One source builds four ways, and what you can test is decided by what the
+machine has. Each build has its own object tree and its own `bin`, so they
+coexist and can be run against one another:
+
+| build | build it with | needs | binary |
+| --- | --- | --- | --- |
+| host | `./compile_cpu.sh` | gfortran, MPI, LAPACK/BLAS | `bin/turbogap` |
+| serial | `make TURBOGAP_ARCH=Ubuntu_gfortran BUILD_TAG_EXTRA=-serial` | the same, without MPI | `bin-serial/turbogap` |
+| device | `./compile_gpu.sh` | a CUDA or HIP toolchain, and a GPU to run on | `bin-gpu/turbogap` |
+| Kokkos | `KOKKOS=1 ./compile_gpu.sh` | the above, and Kokkos at `KOKKOS_ROOT` built by the same nvcc release | `bin-kokkos-gpu/turbogap` |
+
+With no GPU on the machine the last two are out of reach, and the host build
+is what you test -- which is also all that CI can do; see below.
+
+### Testing a CPU build
+
+Once per clone: the test data, and the frozen baseline binary that the
+regression suite compares against.
 
 ```sh
-git clone --recursive http://github.com/mcaroba/turbogap.git
-cd turbogap
 export TURBOGAP_ARCH=Ubuntu_gfortran_mpi
 make -j4
-turbogap_dir=$(realpath bin)
-export PATH="$turbogap_dir:$PATH"
-cd tests/regression
-./make_baseline.sh
-./fetch_test_data.sh
-TURBOGAP_KEEP=1 ./run.sh
+tests/fetch_test_data.sh
+tests/regression/make_baseline.sh
 ```
 
-and the tests will be found in `$TMPDIR/turbogap_regression.xxxxx`.
+Then the two kinds of test. The regression suite asks whether any output
+moved, byte for byte, against that baseline:
+
+```sh
+tests/regression/run.sh --list                       # the cases
+tests/regression/run.sh                              # all of them
+TURBOGAP_KEEP=1 tests/regression/run.sh estat_gsf    # one, keeping its run directory
+```
+
+The physics suites ask whether the answer is right, each against something
+that is not TurboGAP -- an independent implementation, an analytic result, or
+a finite difference of the code's own energy:
+
+```sh
+for suite in tests/*/run.sh; do
+   case $suite in tests/gpu_zero_trunc/*|tests/regression/*) continue ;; esac
+   echo "== $suite"
+   "$suite" || echo "FAILED: $suite"
+done
+```
+
+`tests/gpu_zero_trunc` is the device's own and is left out there; the rest run
+on the host build. All of them honour:
+
+| variable | |
+| --- | --- |
+| `TURBOGAP_BIN` | the binary under test (default `bin/turbogap`), so the same suite can be pointed at any of the four |
+| `TURBOGAP_PYTHON` | the interpreter for the references; it needs `numpy`, and `tests/ir_fft` also wants `scipy` and says so loudly when it is absent |
+| `TURBOGAP_DATA_ROOT` | where the test systems are |
+| `TURBOGAP_KEEP` | keep the staging directory to look at afterwards |
+
+```sh
+TURBOGAP_BIN=$(realpath bin-gpu/turbogap) tests/ipi_pimd/run.sh
+```
+
+Read the exit status rather than the last lines: piping a suite through `tail`
+replaces its status with `tail`'s, and every run then looks like a success.
 
 ### Testing a GPU build
 
-The same case list runs against the device binary. Build both, then:
+Needs a CUDA (or HIP) toolchain and a device to run on. `HOP_ROOT` needs no
+setting -- `src/hop` is a submodule. The same case list runs against the device
+binary; build both, then:
 
 ```sh
 tests/regression/run.sh --gpu      # every case, on bin-gpu/turbogap
 tests/regression/run.sh --both     # the host pass, then the device pass
+tests/gpu_zero_trunc/run.sh        # the device's own suites
+tests/gpu/run_regression.sh        # whole trajectories, rather than the decks
 ```
 
 `--gpu` compares the device binary against the **host build of the same
@@ -320,6 +376,11 @@ exactly, so a structural change is still caught. The default tolerance is
 
 ### Testing a Kokkos build
 
+Kokkos comes from `tools/install_kokkos.sh` (or `tools/setup_dev_env.sh
+--with-kokkos`) and is found through `KOKKOS_ROOT`. It must be built by the
+same CUDA release that compiles TurboGAP -- another release links and then
+fails on a runtime symbol -- and the Makefile refuses a mismatch it can see.
+
 Not with a plain diff against the CUDA binary. The device binary is not
 reproducible run to run -- run `estat_gsf` twice with one unchanged binary and
 `energy_soap` moves in the tenth digit -- so a straight comparison would charge
@@ -335,12 +396,24 @@ the CUDA one. What it reports is the difference of the two failure sets, so a
 case listed at the end differs *because of* the Kokkos backend and not because
 of the device.
 
-Other tests can be done by running the scripts in the `tests/<test_name>/run.sh` directories respectively.
-Each honours `TURBOGAP_BIN`, so the same suite can be pointed at either build:
+### What CI covers, and what it leaves to you
 
-```sh
-TURBOGAP_BIN=$(realpath bin-gpu/turbogap) tests/ipi_pimd/run.sh
-```
+GitHub's hosted runners have no GPU and no CUDA, so they test the host portion
+and check the rest only as far as a dry run reaches. The device and Kokkos
+binaries are yours to build and test on a machine that has them, before the
+pull request.
+
+- `build`: the host and serial builds, the generated dependency and keyword
+  files being current, and the device and Kokkos builds *resolving* --
+  `make -n` against a stub prefix, which catches the wiring rotting while
+  nobody has a GPU to notice, without compiling anything.
+- `tests`: the physics suites, on the host build.
+- `regression`, on a pull request: the case list against the merge base, built
+  in the same job. Red there means this branch changes some output, which a
+  deliberate fix to the physics does too -- say so in the pull request rather
+  than making it green.
+- `gpu-regression`: the device suites, on a self-hosted runner labelled `gpu`.
+  Without such a runner the job stays skipped.
 
 ## Developing TurboGAP
 

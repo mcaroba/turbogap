@@ -40,6 +40,8 @@ repo=$(cd "$here/../.." && pwd)
 BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
 # shellcheck source=../data_root.sh
 . "$here/../data_root.sh"
+# shellcheck source=../mpi_oversubscribe.sh
+. "$here/../mpi_oversubscribe.sh"
 DATA=$DATA_ROOT/xrd_mad
 RANKS=${TURBOGAP_RANKS:-2}
 PYTHON=${TURBOGAP_PYTHON:-python3}
@@ -193,7 +195,7 @@ xrd_rcut = 6.0
 EOF
     } >"$WORK/input"
     rm -f "$WORK/xrd_prediction.dat"
-    if (cd "$WORK" && mpirun -np "$RANKS" "$BIN" predict) >"$WORK/run.log" 2>&1 &&
+    if (cd "$WORK" && mpirun $MPI_OVERSUBSCRIBE -np "$RANKS" "$BIN" predict) >"$WORK/run.log" 2>&1 &&
        "$PYTHON" "$here/debye_reference.py" "$WORK/atoms.xyz" "$WORK/xrd_prediction.dat" \
          --n "$NSAMPLES" --qmin "$QMIN" --qmax "$QMAX" \
          --output 'q*F(q)' --window --rcut 6.0; then

@@ -32,10 +32,13 @@ module turbogap_estat
    use neighbors, only: get_gpu_batches
    use exp_interface, only: gpu_malloc_neighbors, gpu_free_neighbors, free_exp_batches
    use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, &
-                             compute_coulomb_lamichhane, calculate_batched_electrostatics
+                             compute_coulomb_lamichhane, calculate_batched_electrostatics, &
+                             add_neutral_charge_gradients
 #else
-   use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane
+   use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane, &
+                             add_neutral_charge_gradients
 #endif
+   use turbogap_comm, only: comm_t, comm_sum_all
 
    implicit none
 
@@ -47,7 +50,7 @@ contains
    subroutine compute_estat(params, do_electrostatics, valid_estat_charges, charge_lp_index, &
                             n_sites, n_neigh, neighbors_list, species, neighbor_species, rjs, xyz, &
                             local_properties, local_properties_cart_der, &
-                            i_beg, i_end, j_beg, j_end, rank, n_omp, &
+                            i_beg, i_end, j_beg, j_end, comm, n_omp, &
                             energies_estat, forces_estat, virial_estat, time)
       implicit none
 
@@ -64,7 +67,7 @@ contains
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
       integer, intent(in) :: i_beg, i_end, j_beg, j_end
-      integer, intent(in) :: rank
+      type(comm_t), intent(in) :: comm
       integer, intent(in) :: n_omp
 
 !     In/out variables
@@ -77,6 +80,8 @@ contains
 
       real(dp), allocatable :: chg_neigh_estat(:)
       real(dp) :: charge_sum
+      real(dp) :: phi_sum
+      integer :: rank
       integer :: i, j, k, j2
 
 #ifdef _GPU
@@ -95,6 +100,7 @@ contains
 !     deck that asks for electrostatics against a GAP with no atomic_charge local
 !     property indexes local_properties with an uninitialised charge_lp_index and
 !     segfaults. Same shape as the has_vdw/has_local_properties defect.
+      rank = comm%rank
       if (do_electrostatics .and. (trim(params%estat_method) /= "none") &
           .and. params%do_prediction) then
          if (.not. valid_estat_charges) then
@@ -139,6 +145,7 @@ contains
                   chg_neigh_estat(k) = local_properties(j2, charge_lp_index)
                end do
             end do
+            phi_sum = 0.0_dp
             if (trim(params%estat_method) == "direct") then
                call compute_coulomb_direct( &
                   local_properties(i_beg:i_end, charge_lp_index), &
@@ -147,7 +154,7 @@ contains
                   params%estat_rcut, params%estat_rcut_inner, params%estat_inner_width, &
                   rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
                   params%do_forces, &
-                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
+                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options, phi_sum)
             else if (trim(params%estat_method) == "dsf") then
                call compute_coulomb_dsf( &
                   local_properties(i_beg:i_end, charge_lp_index), &
@@ -157,7 +164,7 @@ contains
                   params%estat_rcut_inner, params%estat_inner_width, &
                   rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
                   params%do_forces, &
-                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
+                  energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options, phi_sum)
             else if (trim(params%estat_method) == "gsf") then
 #ifdef _GPU
                if (params%gpu_batched) then
@@ -237,6 +244,7 @@ contains
                                                            local_properties_cart_der(1:3, this_j_beg:this_j_end, charge_lp_index), &
                                                            params%do_forces, &
                                                            energies_estat(this_i_beg:this_i_end), forces_estat, virial_estat, &
+                                                           phi_sum, &
                                                           params%estat_options, params%estat_rcut_inner, params%estat_inner_width, &
                                                            gpu_streams(omp_task) &
                                                            )
@@ -265,12 +273,19 @@ contains
                      params%estat_dsf_alpha, params%estat_rcut, &
                      rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
                      params%do_forces, &
-                     energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
+                     energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options, phi_sum)
                end if
 
             else ! This really shouldn't happen... but we both know it could
                print("WARNING: Unknown electrostatic method "//params%estat_method)
                write (*, *) "Ignoring..."
+            end if
+            if (params%do_forces) then
+               call comm_sum_all(comm, phi_sum)
+               call add_neutral_charge_gradients(phi_sum/real(n_sites, dp), &
+                                                 local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                                                 neighbors_list(j_beg:j_end), xyz(1:3, j_beg:j_end), &
+                                                 forces_estat, virial_estat)
             end if
             deallocate (chg_neigh_estat)
             call time_end(time%estat, "estat")
@@ -282,10 +297,17 @@ contains
                params%estat_dsf_alpha, params%estat_rcut, &
                rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), chg_neigh_estat, &
                params%do_forces, &
-               energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options)
+               energies_estat(i_beg:i_end), forces_estat, virial_estat, params%estat_options, phi_sum)
          else
             write (*, *) "WARNING: Unknown electrostatic method "//trim(params%estat_method)
             write (*, *) "Ignoring..."
+         end if
+         if (params%do_forces) then
+            call comm_sum_all(comm, phi_sum)
+            call add_neutral_charge_gradients(phi_sum/real(n_sites, dp), &
+                                              local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
+                                              neighbors_list(j_beg:j_end), xyz(1:3, j_beg:j_end), &
+                                              forces_estat, virial_estat)
          end if
          deallocate (chg_neigh_estat)
          call time_end(time%estat)

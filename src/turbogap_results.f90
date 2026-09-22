@@ -295,6 +295,8 @@ contains
       ! that this allocation still works iwth if(allocated(hirsh_v))
       ! statements
 
+!     Written out, and read by MC, even for a frame that computes no forces.
+      res%virial = 0.d0
       if (params%do_forces) then
          if (state%n_sites /= loop%n_sites_prev .or. params%do_mc) then
             if (allocated(res%forces)) deallocate (res%forces, res%forces_soap, res%forces_2b, res%forces_3b, &
@@ -342,7 +344,6 @@ contains
          res%forces_vdw = 0.d0
          res%forces_estat = 0.d0
          res%forces_lp = 0.d0
-         res%virial = 0.d0
          res%virial_soap = 0.d0
          res%virial_2b = 0.d0
          res%virial_3b = 0.d0

@@ -141,30 +141,6 @@ ifeq ($(KOKKOS),1)
     $(error KOKKOS=1 needs a device architecture, which sets GPU = 1. Pick one \
       with TURBOGAP_ARCH; see makefiles/)
   endif
-  # Checked before KOKKOS_ROOT, because a compiler that cannot build Kokkos is
-  # the more fundamental problem: there is no point sending someone to install
-  # Kokkos with an nvcc that will not compile it.
-  #
-  # Nothing else here needs a version check. The device sources compile from
-  # 12.0 through 13.4 unchanged and carry no CUDA-version conditional. Kokkos 5
-  # is the constraint: it wants C++20 from a compiler that supports it, which
-  # is nvcc 12.2 and later. Below that the failure is a wall of template errors
-  # inside Kokkos headers naming nothing recognisable, so refuse early.
-  NVCC_VER := $(shell nvcc --version 2>/dev/null | sed -n 's/.*release \([0-9.]*\).*/\1/p')
-  ifeq ($(NVCC_VER),)
-    $(error KOKKOS=1 needs nvcc on PATH, and none was found)
-  endif
-  # One awk rather than nested shell tests, which quote badly inside $(shell).
-  KOKKOS_NVCC_OK := $(shell nvcc --version 2>/dev/null | awk '/release/ { \
-      split($$0, a, "release "); split(a[2], b, ","); split(b[1], v, "."); \
-      if (v[1] > 12 || (v[1] == 12 && v[2] >= 2)) print "yes" }')
-  ifneq ($(KOKKOS_NVCC_OK),yes)
-    $(warning nvcc $(NVCC_VER) is below the 12.2 that Kokkos 5 needs for C++20.)
-    $(warning A machine often carries a newer toolkit that is not on PATH:)
-    $(warning try  ls -d /usr/local/cuda-*  and put the bin/ of a newer one first.)
-    $(error nvcc $(NVCC_VER) is too old for KOKKOS=1)
-  endif
-
   ifndef KOKKOS_ROOT
     $(error KOKKOS=1 needs KOKKOS_ROOT. Run tools/install_kokkos.sh and export \
       the line it prints)
@@ -174,6 +150,29 @@ ifeq ($(KOKKOS),1)
   ifeq ($(KOKKOS_LIBDIR),)
     $(error found no lib or lib64 under KOKKOS_ROOT=$(KOKKOS_ROOT) -- is that an \
       install prefix, or a build directory?)
+  endif
+
+  # Kokkos has to be compiled by the same CUDA release as the code that links
+  # it. Another release compiles, then fails at the link on a runtime symbol:
+  # nvcc 13.4 against a 12.0 build leaves cudaGetDeviceProperties_v2 undefined.
+  # The device sources themselves compile from 12.0 through 13.4 unchanged and
+  # carry no CUDA-version conditional; the constraint is Kokkos's.
+  #
+  # Compared only when both releases are known. A machine with no nvcc must
+  # still parse this makefile -- a dry run is how the wiring is checked, and
+  # the runner that does it has no CUDA -- and a real build there stops at the
+  # first device compile, naming the compiler it could not find.
+  NVCC_VER := $(shell nvcc --version 2>/dev/null | sed -n 's/.*release \([0-9.]*\).*/\1/p')
+  KOKKOS_NVCC_VER := $(shell sed -n 's/.*Kokkos_CXX_COMPILER_VERSION "\([0-9]*\.[0-9]*\).*/\1/p' \
+      $(KOKKOS_LIBDIR)/cmake/Kokkos/KokkosConfigCommon.cmake 2>/dev/null)
+  ifneq ($(NVCC_VER),)
+    ifneq ($(KOKKOS_NVCC_VER),)
+      ifneq ($(KOKKOS_NVCC_VER),$(NVCC_VER))
+        $(warning Kokkos in $(KOKKOS_ROOT) was built by nvcc $(KOKKOS_NVCC_VER); nvcc on PATH is $(NVCC_VER).)
+        $(warning Put that release's bin/ first on PATH, or rebuild Kokkos with tools/install_kokkos.sh.)
+        $(error nvcc $(NVCC_VER) does not match the Kokkos build)
+      endif
+    endif
   endif
   CU += -D_KOKKOS -I$(KOKKOS_ROOT)/include
   CC += -D_KOKKOS -I$(KOKKOS_ROOT)/include

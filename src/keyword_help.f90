@@ -97,11 +97,11 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  gpu_mem_fraction                     [real, default 0.0]'
-         write (*, '(A)') '      Fraction of the device''s memory one rank may use for the SOAP'
-         write (*, '(A)') '      descriptor batches. The device analogue of mem_fraction, consulted'
-         write (*, '(A)') '      only by a GPU build and only when max_gbytes_per_process was not'
-         write (*, '(A)') '      given.'
+         write (*, '(A)') '  gpu_mem_fraction                     [real, default 0.8]'
+         write (*, '(A)') '      Fraction of the device''s free memory one rank may use. A GPU build'
+         write (*, '(A)') '      sizes the pdf/xrd batch count from it, and max_gbytes_per_process'
+         write (*, '(A)') '      for the SOAP batches unless the input gives that. The device'
+         write (*, '(A)') '      analogue of mem_fraction; 0 turns the sizing off.'
          write (*, '(A)') '      -> see mem_fraction, max_gbytes_per_process'
          write (*, '(A)') ''
       end if

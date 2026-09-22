@@ -52,6 +52,8 @@ BIN=${TURBOGAP_BIN:-$repo/bin/turbogap}
 PYTHON=${TURBOGAP_PYTHON:-python3}
 # shellcheck source=../data_root.sh
 . "$here/../data_root.sh"
+# shellcheck source=../mpi_oversubscribe.sh
+. "$here/../mpi_oversubscribe.sh"
 DATA=$DATA_ROOT/xps_opt
 WORK=${TMPDIR:-/tmp}/turbogap_mc_mpi_neighbors.$$
 
@@ -190,7 +192,7 @@ leg() {
   "$2" >"$dir/input"
 
   if [ "$ranks" -gt 1 ]; then
-    (cd "$dir" && mpirun -np "$ranks" "$BIN" mc) >"$dir/mc.out" 2>&1
+    (cd "$dir" && mpirun $MPI_OVERSUBSCRIBE -np "$ranks" "$BIN" mc) >"$dir/mc.out" 2>&1
   else
     (cd "$dir" && "$BIN" mc) >"$dir/mc.out" 2>&1
   fi

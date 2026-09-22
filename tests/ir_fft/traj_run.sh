@@ -42,6 +42,8 @@ TG="${4:-$HERE/../../bin/turbogap}"
 EXPFILE="${5:-}"
 PY=${PY:-${TURBOGAP_PYTHON:-python3}}
 NP=${NP:-1}
+# shellcheck source=../mpi_oversubscribe.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/mpi_oversubscribe.sh"
 
 mkdir -p "$WORK"
 WORK="$(cd "$WORK" && pwd)"
@@ -90,7 +92,7 @@ EOF
 
 echo "==> turbogap predict  (this evaluates the dipole model on every frame)"
 if [ "$NP" -gt 1 ]; then
-    mpirun -np "$NP" "$TG" predict > predict.log 2>&1
+    mpirun $MPI_OVERSUBSCRIBE -np "$NP" "$TG" predict > predict.log 2>&1
 else
     "$TG" predict > predict.log 2>&1
 fi

@@ -24,6 +24,9 @@ import sys
 import numpy as np
 
 
+SWITCHES = {"estat": ("estat_method", '"none"'), "vdw": ("vdw_type", "none")}
+
+
 def _need(match, what):
     if match is None:
         raise SystemExit(what)
@@ -41,12 +44,32 @@ def write_frame(path, n, comment, body):
         fh.write(f"{n:>8d}\n{comment}\n" + "\n".join(body) + "\n")
 
 
+# OpenMPI counts a slot per physical core, so a two-core machine refuses
+# "-np 3" outright. These runs are about which rank owns which atom, not about
+# speed. MPICH has no such flag and needs none. The probe runs the flag:
+# mpirun --help does not list it.
+def oversubscribe():
+    if oversubscribe.flag is None:
+        try:
+            probe = subprocess.run(["mpirun", "--oversubscribe", "-np", "1", "true"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            supported = probe.returncode == 0
+        except OSError:
+            supported = False
+        oversubscribe.flag = ["--oversubscribe"] if supported else []
+    return oversubscribe.flag
+
+
+oversubscribe.flag = None
+
+
 class Runner:
     """Runs turbogap in a staging directory and reads back what it produced."""
 
     def __init__(self, binary, workdir, atoms, scale, mode="predict", family="xrd",
-                 absolute=False):
+                 absolute=False, ranks=1):
         self.binary, self.workdir, self.atoms, self.mode = binary, workdir, atoms, mode
+        self.ranks = ranks
         self.scale = scale
         # Which per-family energy in the output frame this deck is exercising.
         # The forces and the virial are read from the same frame whatever it
@@ -64,8 +87,30 @@ class Runner:
         self.calls = 0
 
     def deck_at_scale(self, scale):
+        # Electrostatics and vdW have no energy scale; "0.0" switches them off.
+        if self.family in SWITCHES:
+            if scale != "0.0":
+                return self.deck
+            key, off = SWITCHES[self.family]
+            return re.sub(rf"(?m)^\s*{key}\s*=.*$", f"{key} = {off}", self.deck)
         return re.sub(r"(?m)^\s*exp_energy_scales\s*=.*$",
                       f"exp_energy_scales = {scale}", self.deck)
+
+    def energy(self, comment, body):
+        # No energy_estat is written, so it is the total, to 8 decimals per
+        # atom rather than the 6 of energy=.
+        if self.family == "estat":
+            props = _need(re.search(r"Properties=(\S+)", comment), "no Properties").group(1).split(":")
+            col = 0
+            for k in range(0, len(props), 3):
+                if props[k] == "local_energy":
+                    return sum(float(ln.split()[col]) for ln in body)
+                col += int(props[k + 2])
+            raise SystemExit("no local_energy in the output frame")
+        m = _need(re.search(rf"energy_{self.family}=(\S+)", comment),
+                  f"no energy_{self.family} in the output frame; "
+                  "does the deck set exp_energies?")
+        return float(m.group(1))
 
     def geometry(self, strain=None, atom=None, dim=0, h=0.0):
         """Write the working atoms file: reference geometry, optionally with a
@@ -92,7 +137,10 @@ class Runner:
 
     def run(self, scale, label):
         open(f"{self.workdir}/input", "w").write(self.deck_at_scale(scale))
-        r = subprocess.run([self.binary, self.mode], cwd=self.workdir,
+        command = [self.binary, self.mode]
+        if self.ranks > 1:
+            command = ["mpirun"] + oversubscribe() + ["-np", str(self.ranks)] + command
+        r = subprocess.run(command, cwd=self.workdir,
                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         self.calls += 1
         if r.returncode != 0:
@@ -100,10 +148,7 @@ class Runner:
             raise SystemExit(f"turbogap failed at {label}")
         lines = open(f"{self.workdir}/trajectory_out.xyz").read().splitlines()
         c = lines[1]
-        m = _need(re.search(rf"energy_{self.family}=(\S+)", c),
-                  f"no energy_{self.family} in the output frame; "
-                  "does the deck set exp_energies?")
-        energy = float(m.group(1))
+        energy = self.energy(c, lines[2:2 + self.n])
         virial = np.array([float(v) for v in _need(
             re.search(r'virial="([^"]+)"', c), "no virial in the output frame").group(1).split()]).reshape(3, 3)
         forces = np.array([[float(v) for v in ln.split()[4:7]] for ln in lines[2:2 + self.n]])
@@ -144,8 +189,9 @@ def main():
                         "energy, forces and virial from one run instead of "
                         "differencing two energy scales")
     p.add_argument("--family", default="xrd",
-                   choices=("xrd", "nd", "pdf", "sf", "soap", "2b", "3b", "core_pot"),
+                   choices=("xrd", "nd", "pdf", "sf", "soap", "2b", "3b", "core_pot", "estat", "vdw"),
                    help="which energy_* in the output frame the deck drives")
+    p.add_argument("--ranks", type=int, default=1, help="MPI ranks per run")
     p.add_argument("--h", type=float, default=1e-3, help="displacement, Angstrom")
     p.add_argument("--strain", type=float, default=1e-4)
     p.add_argument("--atoms-to-check", type=int, default=3)
@@ -173,7 +219,8 @@ def main():
     a = p.parse_args()
 
     shutil.copy(f"{a.workdir}/{a.atoms}", f"{a.workdir}/atoms_reference.xyz")
-    r = Runner(a.bin, a.workdir, a.atoms, a.scale, family=a.family, absolute=a.absolute)
+    r = Runner(a.bin, a.workdir, a.atoms, a.scale, family=a.family, absolute=a.absolute,
+               ranks=a.ranks)
     deck = r.deck
     status = 0
     try:

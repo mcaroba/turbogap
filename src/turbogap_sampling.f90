@@ -159,6 +159,7 @@ contains
       type(input_parameters), intent(inout) :: params
       type(loop_t), intent(inout) :: loop
       type(comm_t), intent(in) :: comm
+      real(dp) :: u
       integer :: i
 
       !   This runs at the beginning to read in the initial images
@@ -243,8 +244,10 @@ contains
                i = smp%i_image
             else
                i = smp%i_image
+!              random_number, which random_seed reaches; irand was seeded from the clock.
                do while (i == smp%i_image)
-                  i = mod(irand(), loop%n_xyz) + 1
+                  call random_number(u)
+                  i = int(u*loop%n_xyz) + 1
                end do
             end if
             if (comm%rank == 0) then

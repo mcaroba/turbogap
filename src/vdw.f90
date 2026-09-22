@@ -425,24 +425,25 @@ contains
             do j = 1, n_neigh(i)
                k = k + 1
                j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
-! NOT SURE IF ALL THESE IFS ARE VERY EFFICIENT
-               if (rjs(k) > rcut_inner .and. rjs(k) < rcut) then
-!             SOAP neighbors
+!             SOAP neighbors, the centre included: its own volume moves with it,
+!             which the pair cutoffs below would drop.
 ! MAY NEED TO CHANGE THIS TO ACCOUNT FOR MACHINE PRECISION
-                  if (.not. all(hirshfeld_v_cart_der(1:3, k) == 0.d0)) then
-                     this_force(1:3) = hirshfeld_v_cart_der(1:3, k)*(pref_force1(i) + pref_force2(i))
-                     forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
+               if (.not. all(hirshfeld_v_cart_der(1:3, k) == 0.d0)) then
+                  this_force(1:3) = hirshfeld_v_cart_der(1:3, k)*(pref_force1(i) + pref_force2(i))
+                  forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 !             Sign is plus because this force is acting on j2. Factor of one is because this is
 !             derived from a local energy
 !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
-                     do k1 = 1, 3
-                        local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) + this_force(k1)*xyz(k1, k)* &
-                                                     poly_cut(rjs(k), x_min, x_max)
-                        do k2 = 1, 3
-                           virial(k1, k2) = virial(k1, k2) + 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
-                        end do
+                  do k1 = 1, 3
+                     local_virial_diag0(k1, j2) = local_virial_diag0(k1, j2) + this_force(k1)*xyz(k1, k)* &
+                                                  poly_cut(rjs(k), x_min, x_max)
+                     do k2 = 1, 3
+                        virial(k1, k2) = virial(k1, k2) + 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
                      end do
-                  end if
+                  end do
+               end if
+! NOT SURE IF ALL THESE IFS ARE VERY EFFICIENT
+               if (rjs(k) > rcut_inner .and. rjs(k) < rcut) then
                   if (r0_ij(k) == 0.d0) then
                      this_force(1:3) = 0.d0
                   else
@@ -1065,8 +1066,10 @@ contains
       logical, intent(in) :: do_nnls
       logical, intent(in) :: include_2b
       logical, intent(in) :: cent_appr
-      real(dp), intent(out) :: virial(1:3, 1:3)
-!   In-Out variables
+!   In-Out variables. All four are accumulated into, not set: with
+!   vdw_2b_rcut > vdw_mbd_rcut the caller makes a two-body call and a many-body
+!   call into the same arrays, and the result is their sum.
+      real(dp), intent(inout) :: virial(1:3, 1:3)
       real(dp), intent(inout) :: energies(:)
       real(dp), intent(inout) :: forces0(:, :)
       real(dp), intent(inout) :: central_pol(:)
@@ -1489,15 +1492,11 @@ contains
       n_pairs = size(neighbors_list)
       n_species = size(c6_ref)
       n_sites0 = size(forces0, 2)
-      forces0 = 0.d0
 
       ! HACK FOR HIRSHFELD DERIVATIVES
       allocate (hirshfeld_v_cart_der_H(1:3, n_pairs))
 
       hirshfeld_v_cart_der_H = 0.d0
-
-      virial = 0.d0
-      local_virial_diag0 = 0.d0
 
       !write(*,*) "hirshfeld_v_cart_der_ji"
       !open(unit=79, file="hv_der.dat", status="new")

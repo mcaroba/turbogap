@@ -117,3 +117,130 @@ jobs:
         if: always()
         working-directory: turbogap
         run: TURBOGAP_PYTHON=python tests/dipole/run.sh
+
+      # Cheap checks, each against something that is not this code: an
+      # analytic result, a second implementation, or a property the answer
+      # must have whatever the numbers are.
+      - name: Minimum image convention
+        if: always()
+        working-directory: turbogap
+        run: tests/min_image/run.sh
+
+      - name: Neighbour cells
+        if: always()
+        working-directory: turbogap
+        run: tests/neighbors_cell/run.sh
+
+      - name: A neighbour list with a skin
+        if: always()
+        working-directory: turbogap
+        run: tests/neighbors_skin/run.sh
+
+      - name: SOAP derivatives
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/soap_derivatives/run.sh
+
+      - name: The poly3 core potential operator
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/poly3operator/run.sh
+
+      - name: Velocities drawn from Maxwell-Boltzmann
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/velocity_draw/run.sh
+
+      - name: Monte Carlo neighbour lists across ranks
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/mc_mpi_neighbors/run.sh
+
+      - name: The generalized Langevin thermostat
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/gle/run.sh
+
+      - name: MAD IR gradients
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/mad_ir/run.sh
+
+      - name: MAD IR auxiliary variables
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/ir_aux/run.sh
+
+      # Its reference leg needs scipy and says so loudly when it is absent;
+      # the rest of the pipeline is checked either way.
+      - name: IR spectra from the FFT pipeline
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/ir_fft/run.sh
+
+      - name: The i-PI socket
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/ipi_socket/run.sh
+
+  # Do the forces and the virial equal a finite difference of the code's own
+  # energy? These are the checks that caught the electrostatic and dispersion
+  # defects, and they are the slowest thing here -- estat_fd alone is seven
+  # legs of some sixty single-point runs -- so they get a job of their own and
+  # run beside the suites above rather than after them.
+  gradients:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: turbogap
+          submodules: recursive
+
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran libopenmpi-dev openmpi-bin liblapack-dev libblas-dev
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy
+
+      - name: Resolve the test-data revision
+        id: data
+        run: |
+          sha=$(git ls-remote https://github.com/TiganyZ/turbogap_tests.git HEAD | cut -f1)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: turbogap_tests
+          key: turbogap-tests-${{ steps.data.outputs.sha }}
+
+      - name: Fetch the test data
+        working-directory: turbogap
+        run: tests/fetch_test_data.sh
+
+      - name: Build
+        working-directory: turbogap
+        run: make -j"$(nproc)"
+
+      # Three ranks on nine atoms: every rank but the first holds a slice that
+      # starts past atom 1, which is where a local index read as a global one
+      # goes wrong and one rank never shows it.
+      - name: Electrostatic forces against a finite difference
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/estat_fd/run.sh
+
+      - name: Dispersion forces against a finite difference
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/vdw_fd/run.sh
+
+      - name: GAP forces against a finite difference
+        if: always()
+        working-directory: turbogap
+        run: TURBOGAP_PYTHON=python tests/fd_gap/run.sh

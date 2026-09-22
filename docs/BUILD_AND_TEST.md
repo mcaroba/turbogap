@@ -215,12 +215,12 @@ the stream, because `hipFreeAsync` is stream-ordered) and then reports the size,
 the budget and the keyword that fixes it, instead of a bare "out of memory".
 
 ```
-gpu_mem_fraction = 0.8      # size max_Gbytes_per_process from the card
+gpu_mem_fraction = 0.8      # the default: size the batches from the card
 ```
 
-Default 0 = off, so existing inputs are unchanged. The 1.0 GB default for
-`max_Gbytes_per_process` was chosen with no device in mind. An explicit
-`gpu_n_batches` is a **floor**: the automatic sizing raises it, never lowers it.
+`0` turns it off. An explicit `max_Gbytes_per_process` is kept, as on the host,
+and an explicit `gpu_n_batches` is a **floor**: the automatic sizing raises it,
+never lowers it.
 
 The diamond ladder (13,824 → 1,000,000 atoms) lives outside both repos in
 `../large_systems/diamond_1M/`; see its `README.md` and `docs/PROFILING.md` §6.

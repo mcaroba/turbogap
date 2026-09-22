@@ -3,10 +3,9 @@
 # Kept separate from tests.yml so a compile error is reported in seconds
 # rather than from behind a test-data clone.
 #
-# MPI only. The serial arch does not build: turbogap_vdw.f90 reaches for
-# mpi_comm_world and mpi_double_precision outside any _MPIF90 guard, so
-# Ubuntu_gfortran stops there. Adding it to the matrix would mean a workflow
-# that is red about something nobody is working on.
+# Both builds a hosted runner can do: MPI and serial. The device and Kokkos
+# builds need a CUDA toolchain that is not here, so they are checked as far as
+# a dry run reaches -- see the two wiring steps at the end.
 name: build
 
 on:
@@ -74,6 +73,14 @@ jobs:
 
       - name: Build
         run: make -j"$(nproc)"
+
+      # The same source without MPI. It is the only build that catches an
+      # mpi_* call written outside a _MPIF90 guard, which the MPI build
+      # compiles happily -- that is how the serial arch came to stop building
+      # at all. Its own object tree, so it neither reuses nor overwrites the
+      # MPI objects.
+      - name: Serial build
+        run: make -j"$(nproc)" TURBOGAP_ARCH=Ubuntu_gfortran BUILD_TAG_EXTRA=-serial
 
       # A hosted runner has no CUDA and no device, so the device build cannot
       # be compiled here -- but its wiring can be checked, and that is where
@@ -146,8 +153,10 @@ jobs:
             exit 1
           }
 
-      - name: The binary runs
-        run: ./bin/turbogap 2>&1 | head -20 || true
+      - name: The binaries run
+        run: |
+          ./bin/turbogap 2>&1 | head -20 || true
+          ./bin-serial/turbogap 2>&1 | head -20 || true
 
       - uses: actions/upload-artifact@v4
         with:

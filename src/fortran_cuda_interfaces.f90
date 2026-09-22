@@ -884,6 +884,7 @@ MODULE F_B_C
          energies_d, &
          forces_d, &
          virial_d, &
+         phi_sum_d, &
          j2_index_d, &
          n_sites, &
          this_n_sites, &
@@ -920,6 +921,7 @@ MODULE F_B_C
          type(c_ptr), value :: forces_d
          type(c_ptr), value :: j2_index_d
          type(c_ptr), value :: virial_d !
+         type(c_ptr), value :: phi_sum_d
          logical(c_bool), value :: do_forces
          logical(c_bool), value :: do_cosine_damping
          type(c_ptr) :: stream

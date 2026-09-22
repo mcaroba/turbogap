@@ -580,7 +580,7 @@ gets a force that does not integrate the energy it is supposed to.
 
 ---
 
-## 13. Electrostatics: six defects found by the first run — FIXED, with the device suite still short
+## 13. Electrostatics: six defects found by the first run — FIXED
 
 **Found** 2026-09-11, on the first run of `estat_gsf` against a device build.
 
@@ -651,49 +651,44 @@ electrostatic energy, no site differing by more than 1e-9, and the virial to
 1.8e-9 relative. The `estat_gpu_batched` keyword that had disabled the kernel is
 gone with it.
 
-### d. What the device suite still fails — OPEN
+### d. The device suite's numeric failures — TRACED
 
-`tests/regression/run.sh --gpu` gives 22 passed, 17 failed, reproducibly and
-identically from a fresh clone. Two kinds:
+Eleven cases failed `--gpu` on numbers alone: the four relaxations,
+`neighbors_skin` and the six `xrd_*mad*`. Frame 0 agrees with the host to the
+digits the output carries (forces 4e-8, energy 5e-10 relative), and every later
+frame drifts further. A host-only control tells round-off from a defect: shift
+every input position by 1e-9 A and compare the host with itself.
 
-**Two crashes**, `xrd_debye_mad` and its mpi2 variant. These are the last of the
-ten the suite started with; the other eight were the compression broadcast
-above.
+| case | device needs | 1e-9 A shift needs | tolerance set |
+|---|---|---|---|
+| `relax_gd` | 1e-5 | 5e-5 | 2e-5 |
+| `relax_gd_box` | 1e-5 | 2e-5 | 2e-5 |
+| `relax_gd_box_ortho` | 5e-5 | 1e-4 | 1e-4 |
+| `relax_gd_box_sheared` | 5e-5 | 5e-5 | 1e-4 |
+| `neighbors_skin`, `xrd_mad`, `xrd_mad_mpi2` | 5e-6 | 5e-4 | 2e-5 |
+| `xrd_mad_weights` | 5e-6 | 2e-3 | 2e-5 |
+| `xrd_mad_data_weights`, `xrd_debye_mad` | 1e-5 | 1e-3 to 2e-3 | 5e-5 |
+| `xrd_debye_mad_mpi2` | 2e-6 | 1e-3 | 2e-5 |
 
-**Fifteen numeric**, and the spread is the shape of round-off amplified by the
-case rather than of a wrong answer:
+"Needs" is the smallest rtol = atol at which every output passes
+`compare_tol.py`; for the device, the worst of three runs (two for mpi2). The
+MAD cases reach 3e5 K in a step, where a 1e-9 A shift moves frame-0 forces by
+1e-5; the relaxations' Barzilai-Borwein step divides differences of gradients.
+Each `case.conf` carries its `GPU_RTOL`/`GPU_ATOL` with these numbers.
 
-| case | worst absolute |
-|---|---|
-| `gcmc_xps`, `gcmc_xps_mpi2`, `vdw_tsmbd_mc` | 7.0e-6 |
-| `neighbors_skin`, `xrd_mad`, `xrd_mad_mpi2` | 1.4e-5 |
-| `xrd_mad_weights` | 2.9e-5 |
-| `xrd_mad_data_weights` | 3.5e-4 |
-| `relax_gd_box*` | 5e-4 to 2.9e-3 |
-| `relax_gd` | 1.9e-2 to 2.7e-2 |
+The relaxations are the weak ones: their tolerance is no tighter than a 1e-9 A
+shift, so on the device they catch only what moves a result by more than about
+1e-4. Frame 0 of `relax_gd*` on `atoms.xyz` is still checked at the default by
+`xps_predict`.
 
-The three at 7.0e-6 are just over the 1e-6 tolerance, which was calibrated on
-`co_md`; the relaxations amplify their starting difference by about 10^6, as
-measured on the host in issue 14. That does not make any of them right --
-nothing here has been traced to its source -- but it does mean the tolerance is
-not the thing to reach for first. Loosening it would hide the very thing these
-cases exist to show.
+`mad_sf_matrix` and its mpi2 variant were device out-of-memory aborts, not code
+faults: unbatched, the matrix route allocates three n_samples x n_pairs buffers,
+~8.4 GB, on a 5.6 GB card, and budgeting was opt-in. It is on by default now
+(issue 21); in three batches the device agrees with the host at the default
+tolerance.
 
-With the charges right, the device still gave `estat energy: -0.085 eV` where
-the host gave `-11.628 eV`. Setting `gpu_batched = .false.` makes the device
-reproduce the host exactly, to all printed digits, and the whole run agrees to
-4e-10 relative.
-
-So `calculate_batched_electrostatics` is wrong, and it is the kernel rather than
-the batch bookkeeping: the run uses a **single** batch covering all 897 atoms
-(`i = 1 / 1, i_beg = 1, i_end = 897`) and still gets the wrong answer. The
-unbatched path on the same build is correct.
-
-Until it is fixed, the batched kernel is off by default and reached only through
-the new `estat_gpu_batched` keyword -- not through `gpu_batched`, which also
-drives the batched pdf and structure-factor paths and which those need. A device
-run therefore gets correct electrostatics without asking for it, and the kernel
-stays reachable for whoever fixes it.
+`gcmc_xps`, `gcmc_xps_mpi2` and `vdw_tsmbd_mc` failed on master's device build on
+two virial components the host writes as zero: issue 18.
 
 ---
 
@@ -816,3 +811,112 @@ iteration takes.
 converged. The four relaxation regression cases are unchanged: they run fifteen
 steps, and the restart needs ten consecutive rejections, so it never fires
 there.
+
+---
+
+## 16. Electrostatic forces and virial were not the gradient of the energy — FIXED
+
+**Found** 2026-09-22 by `tests/estat_fd`: a central difference of the
+electrostatic energy (method on minus `estat_method = "none"`) on a nine-atom C/Li
+cluster, at one rank and at three. Every method failed at one rank; `gsf` forces
+were off by O(1) eV/A and its virial by up to 70%. Seven defects:
+
+* **The neutralisation was not differentiated** (all methods, both builds).
+  `compute_estat` subtracts the mean charge, so each charge depends on every
+  atom, but the forces used the raw charge gradients. The missing term is
+  (1/N) sum_i dE/dq_i times each charge gradient. `add_neutral_charge_gradients`
+  adds it, once `comm_sum_all` has made the sum global.
+* **The pair virial was counted twice** (all methods, both builds). Each pair is
+  visited from both ends and each visit added the whole pair's virial. The 2b
+  term halves at the end; these now halve per visit.
+* **`gsf` read a slice with a global index**: `charges(neigh_id)`, `charges`
+  being this rank's slice. Rank 0 read the right charges by accident; every other
+  rank read them shifted by `i_beg - 1`, or past the end: 57 eV/A on the test
+  cluster at three ranks. It reads `neighbor_charges` now.
+* **The `gsf` self-energy force** used the centre's last neighbour pair instead
+  of the SOAP pair, and the wrong sign. The self term is now part of dE/dq_i.
+* **`direct` and `dsf` dropped q_i q_j k from the pair force**; their energy and
+  inner-damping term carry it.
+* **`direct` and `dsf` added the pair force at the slice index** `center_i` in a
+  full-width array: wrong on every rank with `i_beg > 1`.
+* **`der_damping_function_cosine` was missing a factor pi**, so every pair in
+  the inner-cutoff transition had the wrong force (`direct`, `dsf`).
+
+The device kernel had the first two. It halves the pair virial and returns its
+sum of dE/dq_i, and the host adds the same correction.
+
+`estat_gsf` is re-blessed: its energy is unchanged, its forces move by up to 0.10 eV/A and its virial by up to 11.7 eV (xx 2141.22 to 2135.94).
+
+---
+
+## 17. Nested sampling picked walkers from a clock-seeded generator — FIXED
+
+The walker to clone came from `irand()`, seeded by `srand(int(time1*1000))` with
+`time1` the seconds since boot. `random_seed` does not reach it, and past 24.86
+days of uptime the `int` overflowed to a constant, which is why runs looked
+reproducible until alt rebooted. It is `random_number` now, which `random_seed`
+seeds. The seed differs by rank; only root's pick matters, because the cloned
+state is broadcast from root at the end of the step. `nested_sampling` pins the
+path, which had no case.
+
+---
+
+## 18. A frame that computed no forces wrote an unset virial — FIXED
+
+`results_prepare` zeroed the total virial only under `do_forces`, so an MC
+evaluation without forces wrote, and MC's instantaneous pressure read, whatever
+the array held. The host held zero. Master's device build wrote -1.42e-6 and
+6.97e-6 into components 3 and 7, the same numbers on two unrelated systems
+(`gcmc_xps`, `vdw_tsmbd_mc`). It is zeroed for every frame now.
+
+---
+
+## 19. Dispersion forces: two defects — FIXED
+
+**Found** 2026-09-22 by `tests/vdw_fd`, a central difference of the dispersion
+energy (method on minus `vdw_type = none`) on the P4 dimer.
+
+* **TS dropped each atom's own volume gradient.** The Hirshfeld term was applied
+  only to pairs inside the TS window, `vdw_rcut_inner < r < vdw_rcut`, which
+  leaves out the centre at r = 0. Forces were off by 1-2%; they now agree to the
+  difference's resolution.
+* **The MBD two-call path kept only the second call's forces.** With
+  `vdw_2b_rcut > vdw_mbd_rcut` and `vdw_mbd_norder > 2` the driver calls MBD for
+  the two-body part at the long cutoff and again for the many-body part at the
+  short one, into the same arrays. The routine accumulated energies but zeroed
+  forces, virial and local virial on entry, so the energy was the sum and the
+  forces were the many-body part alone, 17 times too small on the dimer. It
+  accumulates all four now. Every caller zeroes them first, so a single call is
+  unchanged bit for bit, and the split's forces now exceed the old ones by the
+  forces of a lone `vdw_mbd_norder = 2` call to 1e-8. `vdw_mbd_split` pins the
+  path.
+
+---
+
+## 20. MBD forces are not the gradient of the MBD energy — OPEN
+
+On the P4 dimer, single-call MBD forces disagree with a central difference of
+the MBD energy by 3%, and the virial by 1.8%. No switch removes it:
+
+| variant | worst force error |
+|---|---|
+| defaults | 3.0% |
+| `vdw_mbd_cent_appr = .false.` | 3.2% |
+| `vdw_hirsh_grad = .false.` | 1.0% |
+| every volume held at `vdw_v0` (zero volume model) | 4.2% |
+| volumes held, SCS and local cutoffs at 4 A, clear of every pair | 6.2% |
+
+TS forces, from the same volumes in the same harness, agree to 1e-4, and holding
+the volumes fixed does not remove the MBD error, so neither the volume
+derivatives nor the harness is the cause: it is in the force assembly of
+`get_mbd_energies_and_forces`. Reproduce with `tests/vdw_fd/run.sh mbd`.
+
+---
+
+## 21. Device memory sizing was opt-in — CHANGED
+
+`gpu_mem_fraction` defaulted to 0, so a device run sized nothing from the card
+unless asked, and `mad_sf_matrix` aborted out of memory with defaults. It
+defaults to 0.8 now, as `mem_fraction` does on the host. The device path also
+overwrote an explicit `max_Gbytes_per_process`, which the keyword's own
+documentation says it does not do; an explicit value is kept now, as on the host.

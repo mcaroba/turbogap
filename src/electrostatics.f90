@@ -311,6 +311,7 @@ contains
                                                energies, &
                                                forces, &
                                                virial, &
+                                               phi_sum, &
                                                options, r_cut_in, r_cut_width, gpu_stream)
       implicit none
       ! -- Electrostatics variables
@@ -326,6 +327,8 @@ contains
       real(dp), intent(inout) :: energies(:)
       real(dp), intent(inout) :: forces(:, :)
       real(dp), intent(inout) :: virial(1:3, 1:3)
+!     Accumulates dE/dq_i over this batch's centres.
+      real(dp), intent(inout) :: phi_sum
 
       real(dp), allocatable, target :: energies_temp(:)
       real(dp), allocatable, target :: forces_temp(:, :)
@@ -373,6 +376,9 @@ contains
 
       type(c_ptr) :: virial_d
       integer(c_size_t) :: st_virial_d
+
+      type(c_ptr) :: phi_sum_d
+      real(dp), target :: phi_sum_temp
 
       type(c_ptr), intent(in) :: charges_d
 
@@ -532,6 +538,9 @@ contains
       call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
       call gpu_memset_async(virial_d, 0, st_virial_d, gpu_stream)
 
+      call gpu_malloc_async(phi_sum_d, int(c_double, c_size_t), gpu_stream)
+      call gpu_memset_async(phi_sum_d, 0, int(c_double, c_size_t), gpu_stream)
+
       ! We do an inclusive scan on n_neigh for the sites that are actually in the list
 
       call gpu_inclusive_scan_int(this_n_sites, n_neigh_index_d, gpu_stream)
@@ -545,6 +554,7 @@ contains
          energies_d, &
          forces_d, &
          virial_d, &
+         phi_sum_d, &
          gpu_exp%j2_index_d(n_dim_idx), &
          n_sites, &
          this_n_sites, &
@@ -573,6 +583,7 @@ contains
 
       st_virial_d = int(c_double, c_size_t)*9
       call cpy_dtoh(virial_d, c_loc(virial_temp), st_virial_d, gpu_stream)
+      call cpy_dtoh(phi_sum_d, c_loc(phi_sum_temp), int(c_double, c_size_t), gpu_stream)
 
       call gpu_free_async(gpu_exp%rjs_index_d(n_dim_idx), gpu_stream)
       call gpu_free_async(gpu_exp%xyz_k_d(n_dim_idx), gpu_stream)
@@ -586,12 +597,14 @@ contains
       call gpu_free_async(energies_d, gpu_stream)
       call gpu_free_async(forces_d, gpu_stream)
       call gpu_free_async(virial_d, gpu_stream)
+      call gpu_free_async(phi_sum_d, gpu_stream)
 
       call gpu_stream_sync(gpu_stream)
 
       energies = energies + energies_temp
       forces = forces + forces_temp
       virial = virial + virial_temp
+      phi_sum = phi_sum + phi_sum_temp
 
       deallocate (energies_temp, forces_temp)
 
@@ -624,7 +637,8 @@ contains
       local_energies, &
       forces, &
       virial, &
-      options)
+      options, &
+      phi_sum)
       implicit none
       real(dp), dimension(:), intent(in) :: charges
       real(dp), dimension(:), intent(in) :: neighbor_charges
@@ -637,6 +651,8 @@ contains
       real(dp), intent(in) :: dsf_alpha
       logical, intent(in) :: do_gradients
       type(options_estat) :: options
+!     dE/dq_i summed over these centres, for add_neutral_charge_gradients.
+      real(dp), intent(out) :: phi_sum
 
       ! inout because they are initialized outside this procedure and filled with zeros
       real(dp), intent(inout), dimension(:) :: local_energies
@@ -660,11 +676,11 @@ contains
       real(dp) :: pair_energy_rcut
       real(dp) :: der_pair_energy_rcut
       real(dp) :: self_energy
+      real(dp) :: self_energy_dq
       real(dp) :: v
       real(dp), dimension(3) :: rij_vec
       real(dp), dimension(3) :: fij_vec
       real(dp), dimension(3) :: fki_vec
-      real(dp), dimension(3) :: self_energy_der
       real(dp), dimension(3) :: center_grad
       real(dp), dimension(3) :: vc_grad
       real(dp), dimension(:), allocatable :: vc_grad_prefactor
@@ -701,11 +717,14 @@ contains
 
             if (options%damped) then
                self_energy = -(pair_energy_rcut + TWO_OVER_SQRT_PI/2.d0)*self_energy
+               self_energy_dq = -(pair_energy_rcut + TWO_OVER_SQRT_PI/2.d0)*2.d0*charges(center_i)*COUL_CONSTANT
             else
                self_energy = -(pair_energy_rcut)*self_energy
+               self_energy_dq = -(pair_energy_rcut)*2.d0*charges(center_i)*COUL_CONSTANT
             end if
 
             local_energies(center_i) = local_energies(center_i) + self_energy
+            if (do_gradients) vc_grad_prefactor(center_i) = self_energy_dq
          end if
 
          if (do_gradients) then
@@ -761,7 +780,8 @@ contains
 
                forces(:, neigh_id) = forces(:, neigh_id) + fij_vec
                ! This sign convention aligns with more positive virials indicating greater internal pressure
-               virial = virial + outer_prod(fij_vec, rij_vec)
+               ! Each pair is visited from both ends, so half its virial each time.
+               virial = virial + 0.5_dp*outer_prod(fij_vec, rij_vec)
 
                ! Add in the contribution from the vc gradient
                ! vc_grad =  COUL_CONSTANT * v &
@@ -770,7 +790,7 @@ contains
                !      pair_energy
 
                vc_grad_prefactor(center_i) = vc_grad_prefactor(center_i) + &
-                                             COUL_CONSTANT*v*charges(neigh_id)
+                                             COUL_CONSTANT*v*neigh_charge
 
             end if
          end do
@@ -785,22 +805,6 @@ contains
                   continue
                end if
 
-               ! Add in the contribution from the self-energy term
-               ! This derivative has two terms, the
-               self_energy_der = 0.d0
-               if (options%self_energy_correction) then
-                  self_energy_der = &
-                     2.d0*charge_gradients(:, pair_counter)*charges(center_i)*COUL_CONSTANT
-
-                  if (options%damped) then
-                     self_energy_der = &
-                        -(pair_energy_rcut + TWO_OVER_SQRT_PI/2.d0)*self_energy_der
-                  else
-                     self_energy_der = &
-                        -(pair_energy_rcut)*self_energy_der
-                  end if
-               end if
-
                ! if( center_i == soap_neigh_id )then
                !    continue
                ! else
@@ -809,7 +813,7 @@ contains
                !      * charge_gradients(:, soap_pair_counter) + self_energy_der
 
                fki_vec = -1.0_dp*vc_grad_prefactor(center_i) &
-                         *charge_gradients(:, soap_pair_counter) + self_energy_der
+                         *charge_gradients(:, soap_pair_counter)
 
                forces(:, soap_neigh_id) = forces(:, soap_neigh_id) + fki_vec
                ! Different sign than above because the position vector is reversed
@@ -820,10 +824,40 @@ contains
          end if
 
       end do
+      phi_sum = 0.0_dp
+      if (do_gradients) phi_sum = sum(vc_grad_prefactor)
       ! Symmetrize the viral (is this necessary?)
       virial = 0.5_dp*(virial + transpose(virial))
 
    end subroutine compute_coulomb_lamichhane
+
+!  The charges are made neutral by subtracting their mean, so every charge
+!  depends on every atom: dq_i/dr_k gains -(1/N) sum_m dq_m/dr_k. Summed against
+!  dE/dq_i that is phi_mean = (1/N) sum_i dE/dq_i, over all atoms, times each
+!  charge gradient. The pairs here are this rank's; phi_mean is global.
+   subroutine add_neutral_charge_gradients(phi_mean, charge_gradients, neighbors_list, xyz, forces, virial)
+      implicit none
+      real(dp), intent(in) :: phi_mean
+      real(dp), dimension(:, :), intent(in) :: charge_gradients
+      integer, dimension(:), intent(in) :: neighbors_list
+      real(dp), dimension(:, :), intent(in) :: xyz
+      real(dp), intent(inout), dimension(:, :) :: forces
+      real(dp), intent(inout), dimension(3, 3) :: virial
+
+      real(dp), dimension(3) :: f
+      integer :: n_sites_global
+      integer :: k
+      integer :: j
+
+      n_sites_global = size(forces, 2)
+      do k = 1, size(neighbors_list)
+         j = modulo(neighbors_list(k) - 1, n_sites_global) + 1
+         f = phi_mean*charge_gradients(:, k)
+         forces(:, j) = forces(:, j) + f
+         virial = virial + 0.5_dp*(outer_prod(f, xyz(:, k)) + outer_prod(xyz(:, k), f))
+      end do
+
+   end subroutine add_neutral_charge_gradients
 
    ! Compute electrostatic energies, forces, and virials via a direct
    ! summation of the Coulomb law.  This should _not_ be used for any
@@ -833,7 +867,7 @@ contains
                                      n_neigh, neighbors_list, &
                                      rcut, rcut_in, rcin_width, rjs, xyz, &
                                      neighbor_charges, do_gradients, &
-                                     local_energies, forces, virial, options)
+                                     local_energies, forces, virial, options, phi_sum)
       implicit none
       real(dp), dimension(:), intent(in) :: charges
       real(dp), dimension(:), intent(in) :: neighbor_charges
@@ -852,8 +886,11 @@ contains
       real(dp), intent(inout), dimension(:, :) :: forces
       real(dp), intent(inout), dimension(3, 3) :: virial
       type(options_estat) :: options
+!     dE/dq_i summed over these centres, for add_neutral_charge_gradients.
+      real(dp), intent(out) :: phi_sum
 
       integer :: center_i
+      integer :: center_id
       integer :: neigh_id
       integer :: soap_neigh_id
       integer :: neigh_seq
@@ -881,6 +918,8 @@ contains
       soap_pair_counter = 0
       do center_i = 1, n_sites_this
          pair_counter = pair_counter + 1
+         ! center_i indexes this rank's slice; forces is indexed by atom.
+         center_id = modulo(neighbors_list(pair_counter) - 1, n_sites_global) + 1
          !soap_pair_counter = soap_pair_counter + 1 ! No, because we include the center as a SOAP neighbour
          ! First we precompute q_i/4πε_0
          ! TODO this is where we add an effective dielectric constant to scale the interaction
@@ -918,17 +957,18 @@ contains
                                        0.5_dp*pair_energy*inner_damp_ij
             if (do_gradients) then
                ! ...but we don't double-count the centers (?)
-               fij_vec = rij_vec*inner_damp_ij*der_pair_energy_direct(rij)/rij
+               fij_vec = center_term*neigh_charge*rij_vec*inner_damp_ij*der_pair_energy_direct(rij)/rij
                if (rij < rcut_in .and. options%damped) then
                   fij_vec = fij_vec + der_damping_function_cosine( &
                             rij, rcut_in - rcin_width, rcut_in) &
                             *pair_energy*rij_vec/rij
                end if
                ! TODO omit forces on periodic replicas? They should cancel in any case.
-               forces(:, center_i) = forces(:, center_i) + fij_vec
+               forces(:, center_id) = forces(:, center_id) + fij_vec
                ! TODO check virial sign convention
                ! This convention aligns with more positive virials indicating greater internal pressure
-               virial = virial - outer_prod(fij_vec, rij_vec)
+               ! Each pair is visited from both ends, so half its virial each time.
+               virial = virial - 0.5_dp*outer_prod(fij_vec, rij_vec)
                ! Accumulate ij-pair prefactor for variable-charge gradient term
                ! (the inner-damping factor is 1.0 outside the inner cutoff)
                ! Note we need to divide by the center charge later, since it's
@@ -959,6 +999,8 @@ contains
             end do
          end if
       end do
+      phi_sum = 0.0_dp
+      if (do_gradients) phi_sum = sum(vc_grad_prefactor/charges)
       ! Symmetrize the viral (is this necessary?)
       virial = 0.5_dp*(virial + transpose(virial))
 
@@ -974,7 +1016,7 @@ contains
                                   n_neigh, neighbors_list, &
                                   dsf_alpha, rcut, rcut_in, rcin_width, rjs, xyz, &
                                   neighbor_charges, do_gradients, &
-                                  local_energies, forces, virial, options)
+                                  local_energies, forces, virial, options, phi_sum)
       implicit none
       real(dp), dimension(:), intent(in) :: charges
       real(dp), dimension(:), intent(in) :: neighbor_charges
@@ -994,8 +1036,11 @@ contains
       real(dp), intent(inout), dimension(:) :: local_energies
       real(dp), intent(inout), dimension(:, :) :: forces
       real(dp), intent(inout), dimension(3, 3) :: virial
+!     dE/dq_i summed over these centres, for add_neutral_charge_gradients.
+      real(dp), intent(out) :: phi_sum
 
       integer :: center_i
+      integer :: center_id
       integer :: neigh_id
       integer :: soap_neigh_id
       integer :: neigh_seq
@@ -1027,6 +1072,8 @@ contains
       soap_pair_counter = 0
       do center_i = 1, n_sites_this
          pair_counter = pair_counter + 1
+         ! center_i indexes this rank's slice; forces is indexed by atom.
+         center_id = modulo(neighbors_list(pair_counter) - 1, n_sites_global) + 1
          !soap_pair_counter = soap_pair_counter + 1 ! No, because we include the center as a SOAP neighbour
          ! First we precompute q_i/4πε_0
          ! TODO this is where we add an effective dielectric constant to scale the interaction
@@ -1058,16 +1105,17 @@ contains
             local_energies(center_i) = local_energies(center_i) + &
                                        0.5_dp*pair_energy*inner_damp_ij
             if (do_gradients) then
-               fij_vec = rij_vec/rij*inner_damp_ij* &
+               fij_vec = center_term*neigh_charge*rij_vec/rij*inner_damp_ij* &
                          (der_pair_energy_dsf(rij, dsf_alpha) - der_pair_energy_rcut)
                if (rij < rcut_in .and. options%damped) then
                   fij_vec = fij_vec + der_damping_function_cosine( &
                             rij, rcut_in - rcin_width, rcut_in) &
                             *pair_energy*rij_vec/rij
                end if
-               forces(:, center_i) = forces(:, center_i) + fij_vec
+               forces(:, center_id) = forces(:, center_id) + fij_vec
                ! This sign convention aligns with more positive virials indicating greater internal pressure
-               virial = virial - outer_prod(fij_vec, rij_vec)
+               ! Each pair is visited from both ends, so half its virial each time.
+               virial = virial - 0.5_dp*outer_prod(fij_vec, rij_vec)
                ! Accumulate ij-pair prefactor for variable-charge gradient term
                ! (the inner-damping factor is 1.0 outside the inner cutoff)
                ! Note we need to divide by the center charge later, since it's
@@ -1098,6 +1146,8 @@ contains
             end do
          end if
       end do
+      phi_sum = 0.0_dp
+      if (do_gradients) phi_sum = sum(vc_grad_prefactor/charges)
       ! Symmetrize the viral (is this necessary?)
       virial = 0.5_dp*(virial + transpose(virial))
 
@@ -1137,7 +1187,7 @@ contains
       else if (distance > r_outer) then
          der_damping_function_cosine = 0
       else
-         der_damping_function_cosine = 0.5/(r_outer - r_inner)*dsin( &
+         der_damping_function_cosine = 0.5*PI/(r_outer - r_inner)*dsin( &
                                        (distance - r_inner)*PI/(r_outer - r_inner))
       end if
    end function

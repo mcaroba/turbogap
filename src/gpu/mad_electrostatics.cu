@@ -180,12 +180,12 @@ __device__ double damping_function_cosine_der(double distance, double r_inner, d
 // device already has too much of. It needs a TeamPolicy that reproduces this
 // tree order, which is worth doing separately and checking on its own.
 __global__ void kernel_electrostatics_gsf(const int i_beg, const int nk_max, double* energies_d, double* forces_d, double* virial_d,
-                                          int* j2_index_d, const int n_sites, const int this_n_sites, const int this_n_pairs,
-                                          int* n_neigh_index_d, double* charges_d, double* charge_gradients_d,
-                                          double* neighbor_charges_index_d, double* rjs_index_d, double* xyz_index_d,
-                                          const double alpha, const double rcut, const double rcut_in, const double rcut_width,
-                                          const double B0_rcut, const double B0_rcut_der, const bool do_cosine_damping,
-                                          const bool do_forces) {
+                                          double* phi_sum_d, int* j2_index_d, const int n_sites, const int this_n_sites,
+                                          const int this_n_pairs, int* n_neigh_index_d, double* charges_d,
+                                          double* charge_gradients_d, double* neighbor_charges_index_d, double* rjs_index_d,
+                                          double* xyz_index_d, const double alpha, const double rcut, const double rcut_in,
+                                          const double rcut_width, const double B0_rcut, const double B0_rcut_der,
+                                          const bool do_cosine_damping, const bool do_forces) {
   int i_site = i_beg - 1 + blockIdx.x;
   int temp_i_site = blockIdx.x;
   int i, n_strides;
@@ -311,12 +311,12 @@ __global__ void kernel_electrostatics_gsf(const int i_beg, const int nk_max, dou
         atomicAdd(&forces_d[3 * neigh_idx + 1], this_force[1]);
         atomicAdd(&forces_d[3 * neigh_idx + 2], this_force[2]);
 
-        // Virial --------------------------------
+        // Virial: each pair is visited from both ends, so half of it here.
 #pragma unroll
         for (int k1 = 0; k1 < 3; k1++) {
 #pragma unroll
           for (int k2 = 0; k2 < 3; k2++) {
-            loc_viri = 0.5 * (this_force[k1] * this_xyz[k2] + this_force[k2] * this_xyz[k1]);
+            loc_viri = 0.25 * (this_force[k1] * this_xyz[k2] + this_force[k2] * this_xyz[k1]);
             atomicAdd(&virial_d[k2 + 3 * k1], loc_viri);
           }
         }
@@ -354,6 +354,11 @@ __global__ void kernel_electrostatics_gsf(const int i_beg, const int nk_max, dou
   // Syncing threads so every thread can get the prefactor value
   __syncthreads();
   temp_prefactor = shared_prefactor[0];
+
+  // This site's dE/dq, for the neutralisation term the host adds.
+  if (do_forces && tid == 0) {
+    atomicAdd(phi_sum_d, temp_prefactor / charge_site);
+  }
 
   if (do_forces) {
     for (int stride_idx = 0; stride_idx < n_strides; ++stride_idx) {
@@ -401,12 +406,13 @@ __global__ void kernel_electrostatics_gsf(const int i_beg, const int nk_max, dou
 
 
 extern "C" void gpu_get_electrostatics_energies(const int i_beg, const int nk_max, double* energies_d, double* forces_d,
-                                                double* virial_d, int* j2_index_d, const int n_sites, const int this_n_sites,
-                                                const int this_n_pairs, int* n_neigh_index_d, double* charges_d,
-                                                double* charge_gradients_d, double* neighbor_charges_index_d, double* rjs_index_d,
-                                                double* xyz_index_d, const double alpha, const double rcut, const double rcut_in,
-                                                const double rcut_width, const double B0_rcut, const double B0_rcut_der,
-                                                const bool do_damping, const bool do_forces, hipStream_t* stream) {
+                                                double* virial_d, double* phi_sum_d, int* j2_index_d, const int n_sites,
+                                                const int this_n_sites, const int this_n_pairs, int* n_neigh_index_d,
+                                                double* charges_d, double* charge_gradients_d, double* neighbor_charges_index_d,
+                                                double* rjs_index_d, double* xyz_index_d, const double alpha, const double rcut,
+                                                const double rcut_in, const double rcut_width, const double B0_rcut,
+                                                const double B0_rcut_der, const bool do_damping, const bool do_forces,
+                                                hipStream_t* stream) {
   // We want to reduce over the total number of pairs up to the maximum number of pairs
   // Each charge can be associated with a thread
   //
@@ -435,8 +441,8 @@ extern "C" void gpu_get_electrostatics_energies(const int i_beg, const int nk_ma
 
 
   kernel_electrostatics_gsf<<<nblocks, nthreads, 0, stream[0]>>>(
-      i_beg, nk_max, energies_d, forces_d, virial_d, j2_index_d, n_sites, this_n_sites, this_n_pairs, n_neigh_index_d, charges_d,
-      charge_gradients_d, neighbor_charges_index_d, rjs_index_d, xyz_index_d, alpha, rcut, rcut_in, rcut_width, B0_rcut,
+      i_beg, nk_max, energies_d, forces_d, virial_d, phi_sum_d, j2_index_d, n_sites, this_n_sites, this_n_pairs, n_neigh_index_d,
+      charges_d, charge_gradients_d, neighbor_charges_index_d, rjs_index_d, xyz_index_d, alpha, rcut, rcut_in, rcut_width, B0_rcut,
       B0_rcut_der, do_damping, do_forces);
 }
 
