@@ -50,7 +50,8 @@ program turbogap
    use turbogap_setup
    use turbogap_structure, only: state_t
    use turbogap_domain, only: domain_t, neighbors_t, domain_sync_state, domain_build, &
-                              domain_complete_sites
+                              domain_complete_sites, domain_complete_e0, &
+                              domain_complete_contributions
    use turbogap_results, only: results_t
    use turbogap_loop, only: loop_t
    use turbogap_exp
@@ -177,12 +178,6 @@ program turbogap
    real(dp), allocatable :: ir_fft_I_fit(:)
    integer :: ir_fft_n_chron = 0
 
-   real(dp), allocatable :: all_energies(:, :)
-   real(dp), allocatable :: all_forces(:, :, :)
-   real(dp), allocatable :: all_virial(:, :, :)
-   real(dp), allocatable :: all_this_energies(:, :)
-   real(dp), allocatable :: all_this_forces(:, :, :)
-   real(dp), allocatable :: all_this_virial(:, :, :)
    real(dp) :: instant_temp
    real(dp) :: kB = 8.6173303d-5
    real(dp) :: E_kinetic = 0.d0
@@ -255,32 +250,8 @@ program turbogap
    integer :: n_max
    integer :: central_species = 0
    integer :: iostatus
-   integer :: counter2
 
-!   The eleven additive contribution families that are reduced together after the
-!   descriptor loop. Their predicates used to be written out three times -- to
-!   count the slots, to pack them and to unpack them -- and evaluated
-!   independently each time. Two copies disagreeing shifts counter2 and
-!   silently attributes one term's energies to another. That is the same shape
-!   as the ts+mbd predicate defect (KNOWN_ISSUES.md #1), so it is killed the
-!   same way: evaluated once, into contrib_on, and only read thereafter.
-   integer, parameter :: C_SOAP = 1
-   integer, parameter :: C_VDW = 2
-   integer, parameter :: C_ESTAT = 3
-   integer, parameter :: C_LP = 4
-   integer, parameter :: C_PDF = 5
-   integer, parameter :: C_SF = 6
-   integer, parameter :: C_XRD = 7
-   integer, parameter :: C_ND = 8
-   integer, parameter :: C_2B = 9
-   integer, parameter :: C_CP = 10
-   integer, parameter :: C_3B = 11
-   integer, parameter :: N_CONTRIB = 11
-   logical :: contrib_on(1:N_CONTRIB)
-   type(contribution_ref) :: contrib(1:N_CONTRIB)
    type(perform_t) :: perform
-   integer :: n_active
-   integer :: i_contrib
    integer :: which_atom = 0
    integer :: n_omp = 1
    integer :: radial_enhancement = 0
@@ -1339,10 +1310,7 @@ program turbogap
             end do
          end if
          !     Collect all energies
-         call time_start(time%mpi_ef)
-         call comm_sum_to_root(comm, res%energies, res%this_energies, state%n_sites)
-         call time_end(time%mpi_ef)
-         res%energies = res%this_energies
+         call domain_complete_e0(dom, comm, res, state, time)
 
          !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
          n_lp_count = 0 ! This counts the local properties
@@ -1893,243 +1861,7 @@ program turbogap
             call time_end(time%gap)
             !       Communicate all energies and forces here for all
             !       terms
-            call time_start(time%mpi_ef)
-!       One evaluation of the eleven predicates, and one list built from them.
-!       The pack and unpack walks below read only that list, so they cannot
-!       disagree about which slot belongs to which family -- the failure mode
-!       this replaces was three independent copies of these conditions, where
-!       any two disagreeing shifts the slot numbering and silently attributes
-!       one family's energies and forces to another.
-            contrib_on(C_SOAP) = (model%n_soap_turbo > 0)
-            contrib_on(C_VDW) = allocated(res%this_energies_vdw)
-            contrib_on(C_ESTAT) = allocated(res%this_energies_estat)
-            contrib_on(C_LP) = allocated(res%this_energies_lp)
-            contrib_on(C_PDF) = allocated(res%this_energies_pdf) .and. params%valid_pdf
-            contrib_on(C_SF) = allocated(res%this_energies_sf) .and. params%valid_sf
-            contrib_on(C_XRD) = allocated(res%this_energies_xrd) .and. params%valid_xrd
-            contrib_on(C_ND) = allocated(res%this_energies_nd) .and. params%valid_nd
-            contrib_on(C_2B) = (model%n_distance_2b > 0)
-            contrib_on(C_CP) = (model%n_core_pot > 0)
-            contrib_on(C_3B) = (model%n_angle_3b > 0)
-
-            n_active = 0
-            if (contrib_on(C_SOAP)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%energies_soap
-               contrib(n_active)%e_dst => res%energies_soap
-               contrib(n_active)%forces = params%do_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%forces_soap
-                  contrib(n_active)%v_src => res%virial_soap
-                  contrib(n_active)%f_dst => res%forces_soap
-                  contrib(n_active)%v_dst => res%virial_soap
-               end if
-            end if
-            if (contrib_on(C_VDW)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%this_energies_vdw
-               contrib(n_active)%e_dst => res%energies_vdw
-               contrib(n_active)%forces = params%do_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%this_forces_vdw
-                  contrib(n_active)%v_src => res%this_virial_vdw
-                  contrib(n_active)%f_dst => res%forces_vdw
-                  contrib(n_active)%v_dst => res%virial_vdw
-               end if
-            end if
-            if (contrib_on(C_ESTAT)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%this_energies_estat
-               contrib(n_active)%e_dst => res%energies_estat
-               contrib(n_active)%forces = params%do_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%this_forces_estat
-                  contrib(n_active)%v_src => res%this_virial_estat
-                  contrib(n_active)%f_dst => res%forces_estat
-                  contrib(n_active)%v_dst => res%virial_estat
-               end if
-            end if
-            if (contrib_on(C_LP)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%this_energies_lp
-               contrib(n_active)%e_dst => res%energies_lp
-               contrib(n_active)%forces = params%do_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%this_forces_lp
-                  contrib(n_active)%v_src => res%this_virial_lp
-                  contrib(n_active)%f_dst => res%forces_lp
-                  contrib(n_active)%v_dst => res%virial_lp
-               end if
-            end if
-            if (contrib_on(C_PDF)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%this_energies_pdf
-               contrib(n_active)%e_dst => res%energies_pdf
-               contrib(n_active)%forces = params%do_forces .and. params%exp_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%this_forces_pdf
-                  contrib(n_active)%v_src => res%this_virial_pdf
-                  contrib(n_active)%f_dst => res%forces_pdf
-                  contrib(n_active)%v_dst => res%virial_pdf
-               end if
-            end if
-            if (contrib_on(C_SF)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%this_energies_sf
-               contrib(n_active)%e_dst => res%energies_sf
-               contrib(n_active)%forces = params%do_forces .and. params%exp_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%this_forces_sf
-                  contrib(n_active)%v_src => res%this_virial_sf
-                  contrib(n_active)%f_dst => res%forces_sf
-                  contrib(n_active)%v_dst => res%virial_sf
-               end if
-            end if
-            if (contrib_on(C_XRD)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%this_energies_xrd
-               contrib(n_active)%e_dst => res%energies_xrd
-               contrib(n_active)%forces = params%do_forces .and. params%exp_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%this_forces_xrd
-                  contrib(n_active)%v_src => res%this_virial_xrd
-                  contrib(n_active)%f_dst => res%forces_xrd
-                  contrib(n_active)%v_dst => res%virial_xrd
-               end if
-            end if
-            if (contrib_on(C_ND)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%this_energies_nd
-               contrib(n_active)%e_dst => res%energies_nd
-               contrib(n_active)%forces = params%do_forces .and. params%exp_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%this_forces_nd
-                  contrib(n_active)%v_src => res%this_virial_nd
-                  contrib(n_active)%f_dst => res%forces_nd
-                  contrib(n_active)%v_dst => res%virial_nd
-               end if
-            end if
-            if (contrib_on(C_2B)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%energies_2b
-               contrib(n_active)%e_dst => res%energies_2b
-               contrib(n_active)%forces = params%do_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%forces_2b
-                  contrib(n_active)%v_src => res%virial_2b
-                  contrib(n_active)%f_dst => res%forces_2b
-                  contrib(n_active)%v_dst => res%virial_2b
-               end if
-            end if
-            if (contrib_on(C_CP)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%energies_core_pot
-               contrib(n_active)%e_dst => res%energies_core_pot
-               contrib(n_active)%forces = params%do_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%forces_core_pot
-                  contrib(n_active)%v_src => res%virial_core_pot
-                  contrib(n_active)%f_dst => res%forces_core_pot
-                  contrib(n_active)%v_dst => res%virial_core_pot
-               end if
-            end if
-            if (contrib_on(C_3B)) then
-               n_active = n_active + 1
-               contrib(n_active)%e_src => res%energies_3b
-               contrib(n_active)%e_dst => res%energies_3b
-               contrib(n_active)%forces = params%do_forces
-               if (contrib(n_active)%forces) then
-                  contrib(n_active)%f_src => res%forces_3b
-                  contrib(n_active)%v_src => res%virial_3b
-                  contrib(n_active)%f_dst => res%forces_3b
-                  contrib(n_active)%v_dst => res%virial_3b
-               end if
-            end if
-
-            counter2 = n_active
-
-            allocate (all_energies(1:state%n_sites, 1:counter2))
-            allocate (all_this_energies(1:state%n_sites, 1:counter2))
-            if (params%do_forces) then
-               allocate (all_forces(1:3, 1:state%n_sites, 1:counter2))
-               allocate (all_this_forces(1:3, 1:state%n_sites, 1:counter2))
-               allocate (all_virial(1:3, 1:3, 1:counter2))
-               allocate (all_this_virial(1:3, 1:3, 1:counter2))
-            end if
-
-!       Pack. A family owns a slot whenever it is active, but only contributes
-!       forces when it carries them -- the exp-spectra families additionally
-!       need exp_forces. Their slot must still be cleared: all_forces is
-!       allocated and never zeroed, and mpi_reduce below reads the whole array
-!       regardless of who wrote what into it.
-            do i_contrib = 1, n_active
-               all_energies(1:state%n_sites, i_contrib) = contrib(i_contrib)%e_src(1:state%n_sites)
-               if (contrib(i_contrib)%forces) then
-                  all_forces(1:3, 1:state%n_sites, i_contrib) = contrib(i_contrib)%f_src(1:3, 1:state%n_sites)
-                  all_virial(1:3, 1:3, i_contrib) = contrib(i_contrib)%v_src(1:3, 1:3)
-               else if (params%do_forces) then
-                  all_forces(1:3, 1:state%n_sites, i_contrib) = 0.d0
-                  all_virial(1:3, 1:3, i_contrib) = 0.d0
-               end if
-            end do
-
-            !       Here we communicate
-            call comm_sum_to_root(comm, all_energies, all_this_energies, state%n_sites*counter2)
-            if (params%do_forces) then
-               call comm_sum_to_root(comm, all_forces, all_this_forces, 3*state%n_sites*counter2)
-               call comm_sum_to_root(comm, all_virial, all_this_virial, 9*counter2)
-            end if
-
-!       Unpack. For the six families packed from a this_ array this is where
-!       the reduced result lands in the un-prefixed one.
-            do i_contrib = 1, n_active
-               contrib(i_contrib)%e_dst(1:state%n_sites) = all_this_energies(1:state%n_sites, i_contrib)
-               if (contrib(i_contrib)%forces) then
-                  contrib(i_contrib)%f_dst(1:3, 1:state%n_sites) = all_this_forces(1:3, 1:state%n_sites, i_contrib)
-                  contrib(i_contrib)%v_dst(1:3, 1:3) = all_this_virial(1:3, 1:3, i_contrib)
-               end if
-            end do
-
-!       Release the this_ arrays now that their contents have been unpacked.
-!       Kept explicit rather than folded into the loop: an allocatable cannot
-!       be deallocated through a pointer, and this_local_virial_vdw_diag has no
-!       counterpart in the list.
-            if (contrib_on(C_VDW)) then
-               deallocate (res%this_energies_vdw)
-               if (params%do_forces) deallocate (res%this_forces_vdw, res%this_local_virial_vdw_diag)
-            end if
-            if (contrib_on(C_ESTAT)) then
-               deallocate (res%this_energies_estat)
-               if (params%do_forces) deallocate (res%this_forces_estat)
-            end if
-            if (contrib_on(C_LP)) then
-               deallocate (res%this_energies_lp)
-               if (params%do_forces) deallocate (res%this_forces_lp)
-            end if
-            if (contrib_on(C_PDF)) then
-               deallocate (res%this_energies_pdf)
-               if (params%do_forces .and. params%exp_forces) deallocate (res%this_forces_pdf)
-            end if
-            if (contrib_on(C_SF)) then
-               deallocate (res%this_energies_sf)
-               if (params%do_forces .and. params%exp_forces) deallocate (res%this_forces_sf)
-            end if
-            if (contrib_on(C_XRD)) then
-               deallocate (res%this_energies_xrd)
-               if (params%do_forces .and. params%exp_forces) deallocate (res%this_forces_xrd)
-            end if
-            if (contrib_on(C_ND)) then
-               deallocate (res%this_energies_nd)
-               if (params%do_forces .and. params%exp_forces) deallocate (res%this_forces_nd)
-            end if
-
-            !       Clean up
-            deallocate (all_energies, all_this_energies)
-            if (params%do_forces) then
-               deallocate (all_forces, all_this_forces, all_virial, all_this_virial)
-            end if
-
-            call time_end(time%mpi_ef)
+            call domain_complete_contributions(dom, comm, res, state, params, model, time)
 
             !       Add up all the energy terms
             res%energies = res%energies + res%energies_soap + res%energies_2b +&
