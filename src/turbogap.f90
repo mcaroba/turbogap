@@ -52,13 +52,14 @@ program turbogap
    use turbogap_domain, only: domain_t, neighbors_t, domain_sync_state, domain_build, &
                               domain_complete_sites, domain_complete_e0, &
                               domain_complete_contributions, domain_sync_after_md, &
-                              domain_sync_after_ipi, domain_free
+                              domain_sync_after_ipi, domain_free, domain_end_step
    use turbogap_results, only: results_t, results_prepare, results_free
    use turbogap_soap, only: compute_soap, soap_free_device
    use turbogap_sampling, only: sampling_t, mc_prepare_step, nested_step, mc_step
    use turbogap_ir, only: ir_run_t, ir_init, ir_step_begin, ir_before_evaluate, ir_push_frame, &
                           ir_after_forces, ir_step_end, ir_finish, ir_report
-   use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, creturn
+   use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, loop_sync, &
+                            loop_end_step, creturn
    use turbogap_output, only: print_banner, print_options, print_single_point_energies, &
                               write_debug_forces, write_single_point, print_nothing_to_do, &
                               print_timing_report
@@ -681,64 +682,15 @@ program turbogap
 
       ! This can be optimised, so please do if you are smarter than me
 
-      call time_start(time%mpi)
-      call comm_bcast(comm, params%do_md)
-      call comm_bcast(comm, loop%md_istep)
-      call time_end(time%mpi)
+      call loop_sync(loop, params, comm, time)
       call domain_sync_state(dom, comm, state, params, time)
-      !   Now that all ranks know the size of n_sites, we allocate do_list
-      if (.not. params%do_md .or. (params%do_md .and. loop%md_istep == 0) .or. &
-          (params%do_mc)) then
-         if (allocated(dom%do_list)) deallocate (dom%do_list)
-         allocate (dom%do_list(1:state%n_sites))
-         dom%do_list = .true.
-      end if
-      !   Parallel neighbors list build
-      call comm_bcast(comm, nl%rebuild_neighbors_list)
+      call domain_end_step(dom, nl, comm, state, params, loop)
 
-      if (nl%rebuild_neighbors_list) then
-         deallocate (nl%rjs, nl%xyz, nl%thetas, nl%phis, nl%neighbor_species)
-         deallocate (nl%neighbors_list, nl%n_neigh)
-         deallocate (nl%n_neigh_local)
-      end if
-      if ((params%do_nested_sampling .and. .not. params%do_mc) .and. &
-          (params%do_md .and. (loop%md_istep == params%md_nsteps .or. loop%exit_loop))) then
-         deallocate (state%positions, state%xyz_species, state%xyz_species_supercell, state%species, state%species_supercell, &
-                     dom%do_list)
-         if (allocated(state%velocities)) deallocate (state%velocities)
-      end if
-      if (params%do_mc .and. params%do_md) then
-         if (params%do_mc .and. (loop%mc_istep == params%mc_nsteps .or. loop%exit_loop)) then
-            deallocate (state%positions, state%xyz_species, state%xyz_species_supercell, state%species, &
-                        state%species_supercell, dom%do_list)
-            if (allocated(state%velocities)) deallocate (state%velocities)
-         end if
-      end if
-
-      if ((params%do_md .and. .not. params%do_mc) .and. &
-          (loop%md_istep == params%md_nsteps .or. loop%exit_loop) .and. rank == 0) then
-         deallocate (state%positions_prev, state%forces_prev)
-      end if
-      if (params%do_mc .and. (loop%mc_istep == params%mc_nsteps .or. loop%exit_loop) .and. rank == 0) then
-         if (allocated(state%forces_prev)) deallocate (state%forces_prev)
-         if (allocated(state%positions_prev)) deallocate (state%positions_prev)
-      end if
-
-      if (params%exp_forces .and. (loop%md_istep == params%md_nsteps .or.&
-           & loop%mc_istep == params%mc_nsteps .or. loop%exit_loop)) then
-         do i = 1, params%n_exp
-            if (allocated(params%exp_data(i)%x)) deallocate (params%exp_data(i)%x)
-            if (allocated(params%exp_data(i)%y)) deallocate (params%exp_data(i)%y)
-            if (allocated(params%exp_data(i)%y_pred)) deallocate (params%exp_data(i)%y_pred)
-         end do
-      end if
+      call exp_end_run(params, loop)
 
       call ir_step_end(ir, params, loop)
 
-      if (.not. params%do_mc) loop%n_sites_prev = state%n_sites
-      dom%n_atom_pairs_by_rank_prev = dom%n_atom_pairs_by_rank(rank + 1)
-
-      call comm_bcast(comm, loop%exit_loop)
+      call loop_end_step(loop, state%n_sites, params, comm)
       if (loop%exit_loop) exit
       ! End of loop through structures in the xyz file or MD steps
    end do

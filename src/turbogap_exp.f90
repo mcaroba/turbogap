@@ -19,6 +19,7 @@
 ! block onto the GPU; compute_exp_xps is shared.
 
 module turbogap_exp
+   use turbogap_loop, only: loop_t
 #ifdef _GPU
 
    use kinds
@@ -39,6 +40,7 @@ module turbogap_exp
 
    private
    public :: compute_exp_xps
+   public :: exp_end_run
    public :: compute_exp_spectra
 
 contains
@@ -1714,5 +1716,21 @@ contains
 
    end subroutine compute_exp_spectra
 #endif
+
+!  Once the run is over, the interpolated experimental data can go.
+   subroutine exp_end_run(params, loop)
+      type(input_parameters), intent(inout) :: params
+      type(loop_t), intent(in) :: loop
+      integer :: i
+
+      if (params%exp_forces .and. (loop%md_istep == params%md_nsteps .or.&
+           & loop%mc_istep == params%mc_nsteps .or. loop%exit_loop)) then
+         do i = 1, params%n_exp
+            if (allocated(params%exp_data(i)%x)) deallocate (params%exp_data(i)%x)
+            if (allocated(params%exp_data(i)%y)) deallocate (params%exp_data(i)%y)
+            if (allocated(params%exp_data(i)%y_pred)) deallocate (params%exp_data(i)%y_pred)
+         end do
+      end if
+   end subroutine exp_end_run
 
 end module turbogap_exp

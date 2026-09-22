@@ -30,7 +30,8 @@
 !  should go round again, and the progress bar's state.
 module turbogap_loop
 
-   use turbogap_comm, only: comm_t
+   use turbogap_comm, only: comm_t, comm_bcast
+   use timing, only: times_t, time_start, time_end
    use types, only: input_parameters
 
    implicit none
@@ -39,6 +40,8 @@ module turbogap_loop
    public :: loop_init
    public :: loop_continues
    public :: loop_begin_step
+   public :: loop_sync
+   public :: loop_end_step
 
    character*1, parameter, public :: creturn = achar(13)
 
@@ -144,5 +147,29 @@ contains
          loop%counter = loop%counter + 1
       end if
    end subroutine loop_begin_step
+
+!  What MC may have changed on rank 0 about how the loop proceeds.
+   subroutine loop_sync(loop, params, comm, time)
+      type(loop_t), intent(inout) :: loop
+      type(input_parameters), intent(inout) :: params
+      type(comm_t), intent(in) :: comm
+      type(times_t), intent(inout) :: time
+
+      call time_start(time%mpi)
+      call comm_bcast(comm, params%do_md)
+      call comm_bcast(comm, loop%md_istep)
+      call time_end(time%mpi)
+   end subroutine loop_sync
+
+!  Remember this pass's site count and agree on whether to stop.
+   subroutine loop_end_step(loop, n_sites, params, comm)
+      type(loop_t), intent(inout) :: loop
+      integer, intent(in) :: n_sites
+      type(input_parameters), intent(in) :: params
+      type(comm_t), intent(in) :: comm
+
+      if (.not. params%do_mc) loop%n_sites_prev = n_sites
+      call comm_bcast(comm, loop%exit_loop)
+   end subroutine loop_end_step
 
 end module turbogap_loop

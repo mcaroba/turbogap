@@ -49,6 +49,7 @@ module turbogap_domain
    public :: domain_sync_state
    public :: domain_sync_after_md
    public :: domain_sync_after_ipi
+   public :: domain_end_step
    public :: domain_build
    public :: domain_complete_sites
    public :: domain_complete_e0
@@ -206,6 +207,56 @@ contains
          call comm_bcast(comm, state%c_box, 3)
       end if
    end subroutine domain_sync_after_ipi
+
+!  End of a pass: the site mask for the next one, whether the neighbour list
+!  is to be rebuilt, and the arrays a finished MD or MC run no longer needs.
+   subroutine domain_end_step(dom, nl, comm, state, params, loop)
+      type(domain_t), intent(inout) :: dom
+      type(neighbors_t), intent(inout) :: nl
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      type(input_parameters), intent(in) :: params
+      type(loop_t), intent(in) :: loop
+
+      !   Now that all ranks know the size of n_sites, we allocate do_list
+      if (.not. params%do_md .or. (params%do_md .and. loop%md_istep == 0) .or. &
+          (params%do_mc)) then
+         if (allocated(dom%do_list)) deallocate (dom%do_list)
+         allocate (dom%do_list(1:state%n_sites))
+         dom%do_list = .true.
+      end if
+      !   Parallel neighbors list build
+      call comm_bcast(comm, nl%rebuild_neighbors_list)
+
+      if (nl%rebuild_neighbors_list) then
+         deallocate (nl%rjs, nl%xyz, nl%thetas, nl%phis, nl%neighbor_species)
+         deallocate (nl%neighbors_list, nl%n_neigh)
+         deallocate (nl%n_neigh_local)
+      end if
+      if ((params%do_nested_sampling .and. .not. params%do_mc) .and. &
+          (params%do_md .and. (loop%md_istep == params%md_nsteps .or. loop%exit_loop))) then
+         deallocate (state%positions, state%xyz_species, state%xyz_species_supercell, state%species, state%species_supercell, &
+                     dom%do_list)
+         if (allocated(state%velocities)) deallocate (state%velocities)
+      end if
+      if (params%do_mc .and. params%do_md) then
+         if (params%do_mc .and. (loop%mc_istep == params%mc_nsteps .or. loop%exit_loop)) then
+            deallocate (state%positions, state%xyz_species, state%xyz_species_supercell, state%species, &
+                        state%species_supercell, dom%do_list)
+            if (allocated(state%velocities)) deallocate (state%velocities)
+         end if
+      end if
+
+      if ((params%do_md .and. .not. params%do_mc) .and. &
+          (loop%md_istep == params%md_nsteps .or. loop%exit_loop) .and. comm%rank == 0) then
+         deallocate (state%positions_prev, state%forces_prev)
+      end if
+      if (params%do_mc .and. (loop%mc_istep == params%mc_nsteps .or. loop%exit_loop) .and. comm%rank == 0) then
+         if (allocated(state%forces_prev)) deallocate (state%forces_prev)
+         if (allocated(state%positions_prev)) deallocate (state%positions_prev)
+      end if
+      dom%n_atom_pairs_by_rank_prev = dom%n_atom_pairs_by_rank(comm%rank + 1)
+   end subroutine domain_end_step
 
 !  Split the sites over the ranks and build each rank's neighbour list for its
 !  share. Replicated data: a contiguous block of sites per rank, every rank
