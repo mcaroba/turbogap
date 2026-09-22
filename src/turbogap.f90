@@ -55,6 +55,7 @@ program turbogap
                               domain_sync_after_ipi
    use turbogap_results, only: results_t, results_prepare
    use turbogap_soap, only: compute_soap
+   use turbogap_sampling, only: sampling_t
    use turbogap_ir, only: ir_run_t, ir_init, ir_step_begin, ir_before_evaluate, ir_push_frame, &
                           ir_after_forces, ir_step_end, ir_finish, ir_report
    use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, creturn
@@ -92,14 +93,6 @@ program turbogap
    implicit none
 
    ! Variable definitions
-   real(dp) :: v_uc_prev
-   real(dp) :: v_a_uc
-   real(dp) :: v_a_uc_prev
-   real(dp) :: ranf
-   real(dp) :: disp(1:3)
-   real(dp) :: d_disp
-   real(dp) :: p_accept
-   real(dp) :: virial_prev(1:3, 1:3)
 
    real(dp) :: time1
    real(dp) :: time2
@@ -108,7 +101,6 @@ program turbogap
 !   extracted modules take a single argument instead of thirteen and the two
 !   branches' signatures agree.
    type(times_t) :: time
-   integer, allocatable :: mc_id(:)
    logical :: write_condition = .false.
    logical :: overwrite_condition = .false.
 
@@ -118,9 +110,6 @@ program turbogap
    integer, allocatable :: i_end_list(:)
    integer, allocatable :: j_beg_list(:)
    integer, allocatable :: j_end_list(:)
-   integer, allocatable :: species_idx(:)
-   integer, allocatable :: n_mc_species(:)
-   integer, allocatable :: n_mc_species_prev(:)
    integer :: i
    integer :: j
    integer :: ierr
@@ -136,6 +125,7 @@ program turbogap
    type(loop_t) :: loop
    type(dynamics_t) :: dyn
    type(ir_run_t) :: ir
+   type(sampling_t) :: smp
    integer :: n_pos
    integer :: this_i_beg
    integer :: this_i_end
@@ -151,22 +141,8 @@ program turbogap
    integer :: which_atom = 0
    integer :: n_omp = 1
    integer :: radial_enhancement = 0
-   integer :: mc_mu_id = 1
-   logical :: do_mc_relax = .false.
-!  Whether the trial about to be tested came out of an MD or relaxation burst,
-!  captured before params%do_md is cleared just below.
-   logical :: trial_came_from_md = .false.
-!  Molecule bookkeeping for grand-canonical moves that exchange whole molecules
-!  (mc_molecule_files). mc_mol_id tags each atom with the inserted copy it
-!  belongs to, mc_mol_mu with the chemical potential that copy came from, and
-!  both are zero for a free atom. mc_mol_next hands out the tags. Rank 0 only:
-!  the energy evaluation never reads any of it, so none of it is broadcast.
-   integer, allocatable :: mc_mol_id(:)
-   integer, allocatable :: mc_mol_mu(:)
-   integer :: mc_mol_next = 0
 
    character*1024 :: filename
-   character*1024 :: mc_file = "mc_trial.xyz"
    character*1024 :: string
    character*1024 :: temp_string
    character*1024 :: temp_string2
@@ -174,29 +150,15 @@ program turbogap
    ! This is the mode in which we run TurboGAP
    character*16 :: mode = "none"
    character*16 :: help_topic = ""
-   character*32 :: mc_move = "none"
    character*32 :: exp_output = "none"
 
    ! Here we store the input parameters
    type(input_parameters) :: params
 
-   integer :: temp_md_nsteps
-
    logical :: do_electrostatics = .true.
 ! Persistent ts+mbd correction state, owned by turbogap_vdw
    type(vdw_state) :: vdw_ws
 
-   ! Nested sampling
-   real(dp) :: e_max
-   real(dp) :: rand
-   real(dp) :: rand_scale(1:6)
-   integer :: i_nested
-   integer :: i_max
-   integer :: i_image
-   integer :: i_current_image = 1
-   integer :: i_trial_image = 2
-   type(image), allocatable :: images(:)
-   type(image), allocatable :: images_temp(:)
    character*32 :: implemented_exp_observables(1:5)
 #ifdef _GPU
    integer :: omp_task
@@ -305,8 +267,8 @@ program turbogap
    ! Print progress bar and initialize timers
 
    model%xps_idx = params%xps_idx
-   i_nested = 0
-   i_image = 0
+   smp%i_nested = 0
+   smp%i_image = 0
 
    call loop_init(loop, params, comm)
 
@@ -351,7 +313,7 @@ program turbogap
 
       call loop_begin_step(loop, params, comm)
 
-      call structure_acquire(state, nl%rebuild_neighbors_list, loop, params, model, comm, mc_file, time)
+      call structure_acquire(state, nl%rebuild_neighbors_list, loop, params, model, comm, smp%mc_file, time)
       !   Broadcast the info in the XYZ file: positions, velocities, masses, xyz_species, xyz_species_supercell,
       !   species, species_supercell, indices, a_box, b_box, c_box and n_sites. I should put this into a module!!!!!!!
 
@@ -361,7 +323,7 @@ program turbogap
                                       params%t_beg, &
                                       params%velocity_distribution)
          end if
-         if (params%do_mc .and. (mc_move /= "md" .or. loop%md_istep == 0) .and. params%mc_hamiltonian) then
+         if (params%do_mc .and. (smp%mc_move /= "md" .or. loop%md_istep == 0) .and. params%mc_hamiltonian) then
             if (loop%mc_istep > 0) dyn%E_kinetic_prev = dyn%E_kinetic
             call random_number(state%velocities)
             call remove_cm_vel(state%velocities(1:3, 1:state%n_sites), state%masses(1:state%n_sites))
@@ -388,7 +350,7 @@ program turbogap
 
       end if
       call domain_sync_state(dom, comm, state, params, time)
-      call domain_build(dom, nl, comm, state, params, model, loop, mc_file, time)
+      call domain_build(dom, nl, comm, state, params, model, loop, smp%mc_file, time)
       !   Compute the volume of the "primitive" unit cell
       state%v_uc = dot_product(cross_product(state%a_box, state%b_box), &
                                state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
@@ -685,7 +647,7 @@ program turbogap
                if (.not. params%do_mc .or. (params%do_mc .and. loop%mc_istep <= 1)) then
                   write (*, '(A,1X,F21.8,1X,A)') ' Total energy:', sum(res%energies), 'eV |'
                else
-                  write (*, '(A,1X,F21.8,1X,A)') ' Total energy:', sum(images(i_trial_image)%energies), 'eV |'
+                  write (*, '(A,1X,F21.8,1X,A)') ' Total energy:', sum(smp%images(smp%i_trial_image)%energies), 'eV |'
                end if
 
                if (.not. params%do_mc) then
@@ -912,7 +874,7 @@ program turbogap
                          res%energies_vdw, res%energies_lp, res%energies_exp, res%energies_pdf, res%energies_sf, res%energies_xrd, &
                          res%energies_nd, res%local_properties, model%local_property_labels, dyn%instant_temp, &
                          dyn%instant_pressure, dyn%instant_pressure_prev, dyn%e_kin, dyn%e_kinetic, dyn%kb, dyn%evpera3tobar, &
-                         state%fix_atom, loop%exit_loop, nl%rebuild_neighbors_list, i_image, i_nested, n_pos, dyn%nrows, &
+                         state%fix_atom, loop%exit_loop, nl%rebuild_neighbors_list, smp%i_image, smp%i_nested, n_pos, dyn%nrows, &
                          filename, string, dyn%allelstopdata, dyn%ephbeta, dyn%ephfdm, dyn%ephlsc, time, &
                          dyn%cum_eel, dyn%gd_istep, &
                          dyn%target_temp, dyn%time_step_prev, res%dipole, res%local_dipoles, res%energies_dipole)
@@ -923,21 +885,21 @@ program turbogap
       !   PUT THIS INTO A MODULE!!!!!!!!!!!!!!
 
       !   This runs at the beginning to read in the initial images
-      if (params%do_nested_sampling .and. loop%n_xyz > i_image .and. .not. params%do_md) then
-         i_image = i_image + 1
-         if (.not. allocated(images)) then
-            allocate (images(1:i_image))
+      if (params%do_nested_sampling .and. loop%n_xyz > smp%i_image .and. .not. params%do_md) then
+         smp%i_image = smp%i_image + 1
+         if (.not. allocated(smp%images)) then
+            allocate (smp%images(1:smp%i_image))
          else
-            allocate (images_temp(1:i_image))
-            images_temp(1:i_image - 1) = images(1:i_image - 1)
-            deallocate (images)
-            allocate (images(1:i_image))
-            images = images_temp
-            deallocate (images_temp)
+            allocate (smp%images_temp(1:smp%i_image))
+            smp%images_temp(1:smp%i_image - 1) = smp%images(1:smp%i_image - 1)
+            deallocate (smp%images)
+            allocate (smp%images(1:smp%i_image))
+            smp%images = smp%images_temp
+            deallocate (smp%images_temp)
          end if
          !     Save initial pool of structures
          state%velocities = 0.d0
-         call from_properties_to_image(images(i_image), state%positions, state%velocities, state%masses, &
+         call from_properties_to_image(smp%images(smp%i_image), state%positions, state%velocities, state%masses, &
                                        res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
                                        res%energy_exp, dyn%E_kinetic, &
                                        state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
@@ -948,7 +910,7 @@ program turbogap
       !   This handles the nested sampling iterations after all images have
       !   been read and their energies computed
       if (params%do_nested_sampling .and. .not. loop%repeat_xyz) then
-         if (i_nested == 0) then
+         if (smp%i_nested == 0) then
             loop%md_istep = -1
             params%write_xyz = params%md_nsteps
             params%do_md = .true.
@@ -972,76 +934,77 @@ program turbogap
             state%v_uc = dot_product(cross_product(state%a_box, state%b_box), &
                                      state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
             !       We check enthalpy, not internal energy (they are the same for P = 0)
-            if (res%energy + dyn%E_kinetic + params%p_nested/dyn%eVperA3tobar*state%v_uc < e_max) then
-               call from_properties_to_image(images(i_image), state%positions, state%velocities, state%masses, &
+            if (res%energy + dyn%E_kinetic + params%p_nested/dyn%eVperA3tobar*state%v_uc < smp%e_max) then
+               call from_properties_to_image(smp%images(smp%i_image), state%positions, state%velocities, state%masses, &
                                              res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
                                              res%energy_exp, dyn%E_kinetic, &
                                              state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
                                              state%xyz_species, state%xyz_species_supercell, res%local_properties, &
-                                             res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
+                                             res%local_dipoles, res%energies_dipole, res%dipole, smp%mc_mol_id, smp%mc_mol_mu)
             end if
          end if
          !     This selects the highest energy image from the pool
-         if (loop%md_istep == -1 .and. i_nested < params%n_nested) then
-            i_nested = i_nested + 1
+         if (loop%md_istep == -1 .and. smp%i_nested < params%n_nested) then
+            smp%i_nested = smp%i_nested + 1
             nl%rebuild_neighbors_list = .true.
-            i_max = 0
-            e_max = -1.d100
+            smp%i_max = 0
+            smp%e_max = -1.d100
             do i = 1, loop%n_xyz
-               state%v_uc = dot_product(cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box)/ &
-                            (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
+               state%v_uc = dot_product(cross_product(smp%images(i)%a_box, smp%images(i)%b_box), smp%images(i)%c_box)/ &
+                            (dfloat(smp%images(i)%indices(1)*smp%images(i)%indices(2)*smp%images(i)%indices(3)))
                !         We check enthalpy, not potential energy (they are the same for P = 0)
-               if (images(i)%energy + images(i)%e_kin + params%p_nested/dyn%eVperA3tobar*state%v_uc > e_max) then
-                  e_max = images(i)%energy + images(i)%e_kin + params%p_nested/dyn%eVperA3tobar*state%v_uc
-                  i_max = i
+               if (smp%images(i)%energy + smp%images(i)%e_kin + params%p_nested/dyn%eVperA3tobar*state%v_uc > smp%e_max) then
+                  smp%e_max = smp%images(i)%energy + smp%images(i)%e_kin + params%p_nested/dyn%eVperA3tobar*state%v_uc
+                  smp%i_max = i
                end if
             end do
-            i_image = i_max
+            smp%i_image = smp%i_max
             deallocate (state%positions, state%velocities, state%masses, res%forces, state%species, &
                         state%species_supercell, state%fix_atom, state%xyz_species, state%xyz_species_supercell)
             !       Make a copy of a randonmly chosen image which is not i_image
             if (loop%n_xyz == 1) then
-               i = i_image
+               i = smp%i_image
             else
-               i = i_image
-               do while (i == i_image)
+               i = smp%i_image
+               do while (i == smp%i_image)
                   i = mod(irand(), loop%n_xyz) + 1
                end do
             end if
             if (rank == 0) then
                loop%counter = 1
                write (*, *) '                                       |'
-               write (*, '(A,I8,A,I8,A)') "Nested sampling iter.:", i_nested, "/", params%n_nested, " |"
-               write (*, '(A,I8,A)') " - Highest enthalpy walker:    ", i_image, " |"
+               write (*, '(A,I8,A,I8,A)') "Nested sampling iter.:", smp%i_nested, "/", params%n_nested, " |"
+               write (*, '(A,I8,A)') " - Highest enthalpy walker:    ", smp%i_image, " |"
                write (*, '(A,I8,A)') " - Walker selected for cloning:", i, " |"
-               write (*, '(A,F15.7,A)') " - Max. enthalpy: ", e_max, " eV |"
+               write (*, '(A,F15.7,A)') " - Max. enthalpy: ", smp%e_max, " eV |"
             end if
-            call from_image_to_properties(images(i), state%positions, state%velocities, state%masses, &
+            call from_image_to_properties(smp%images(i), state%positions, state%velocities, state%masses, &
                                           res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
                                           res%energy_exp, dyn%E_kinetic, &
                                           state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
                                           state%xyz_species, state%xyz_species_supercell, res%local_properties, &
                                           res%local_dipoles, res%energies_dipole, res%dipole)
-            state%v_uc = dot_product(cross_product(images(i)%a_box, images(i)%b_box), images(i)%c_box)/ &
-                         (dfloat(images(i)%indices(1)*images(i)%indices(2)*images(i)%indices(3)))
+            state%v_uc = dot_product(cross_product(smp%images(i)%a_box, smp%images(i)%b_box), smp%images(i)%c_box)/ &
+                         (dfloat(smp%images(i)%indices(1)*smp%images(i)%indices(2)*smp%images(i)%indices(3)))
             !       This only gets triggered if we are doing box rescaling, i.e., if the target nested sampling pressure (*not* the
             !       actual pressure for the atomic configuration) is > 0
 !!!!!!!!!!!!!!!!!!!!!!!!!! Temporary hack
             if (params%scale_box_nested) then
                params%scale_box = .true.
-               call random_number(rand_scale)
+               call random_number(smp%rand_scale)
 !!!!!!!!!!!!!!! The size of the scaling should also decrease as we reach convergence (otherwise all trial moves will be rejected)
 !!!!!!!!!!!!!!! Finally, there should be a limit for the acceptable aspect ratio of the simulation box
-               rand_scale = 2.d0*(rand_scale - 0.5d0)*params%nested_max_strain
-               params%box_scaling_factor = reshape([1.d0 + rand_scale(1), rand_scale(6)/2.d0, rand_scale(5)/2.d0, &
-                                                    rand_scale(6)/2.d0, 1.d0 + rand_scale(2), rand_scale(4)/2.d0, &
-                                                    rand_scale(5)/2.d0, rand_scale(4)/2.d0, 1.d0 + rand_scale(3)], [3, 3])
+               smp%rand_scale = 2.d0*(smp%rand_scale - 0.5d0)*params%nested_max_strain
+               params%box_scaling_factor = reshape([1.d0 + smp%rand_scale(1), smp%rand_scale(6)/2.d0, smp%rand_scale(5)/2.d0, &
+                                                    smp%rand_scale(6)/2.d0, 1.d0 + smp%rand_scale(2), smp%rand_scale(4)/2.d0, &
+                                                    smp%rand_scale(5)/2.d0, smp%rand_scale(4)/2.d0, 1.d0 + smp%rand_scale(3)], &
+                                                   [3, 3])
                ! Make the transformation volume-preserving
                call volume_preserving_strain_transformation(state%a_box, state%b_box, state%c_box, params%box_scaling_factor)
                ! Volume scaling
                call get_ns_unbiased_volume_proposal(1.d0 - params%nested_max_volume_change, &
-                                                    1.d0 + params%nested_max_volume_change, state%n_sites, rand)
-               params%box_scaling_factor = params%box_scaling_factor*(rand)**(1.d0/3.d0)
+                                                    1.d0 + params%nested_max_volume_change, state%n_sites, smp%rand)
+               params%box_scaling_factor = params%box_scaling_factor*(smp%rand)**(1.d0/3.d0)
                ! Each MPI process has a different set of random numbers so we need to broadcast
                call comm_bcast(comm, params%box_scaling_factor, 9)
             end if
@@ -1054,10 +1017,10 @@ program turbogap
             do i = 1, state%n_sites
                dyn%e_kin = dyn%e_kin + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
             end do
-            call random_number(rand)
-            state%velocities = state%velocities/sqrt(dyn%e_kin)*sqrt(rand*(e_max - res%energy - &
-                                                                           params%p_nested/dyn%eVperA3tobar*state%v_uc))
-         else if (i_nested == params%n_nested) then
+            call random_number(smp%rand)
+            state%velocities = state%velocities/sqrt(dyn%e_kin)*sqrt(smp%rand*(smp%e_max - res%energy - &
+                                                                               params%p_nested/dyn%eVperA3tobar*state%v_uc))
+         else if (smp%i_nested == params%n_nested) then
             loop%exit_loop = .true.
          end if
       end if
@@ -1094,11 +1057,11 @@ program turbogap
                   !       > We care about comparing e_store to the energy of the new configuration based on the mc_movw
 
                   ! Reset the parameters for md / relaxation
-                  trial_came_from_md = params%do_md
+                  smp%trial_came_from_md = params%do_md
                   if (params%do_md) then
                      loop%md_istep = -1
                      params%do_md = .false.
-                     do_mc_relax = .false.
+                     smp%do_mc_relax = .false.
                      ! Assume that the number of steps has already been set.
                   end if
 
@@ -1120,52 +1083,52 @@ program turbogap
 !                 512 atoms after a 0.5 fs velocity-Verlet burst. Rewind by the
 !                 one step, which also pairs the stored positions with the
 !                 stored velocities.
-                  if (trial_came_from_md) then
+                  if (smp%trial_came_from_md) then
                      state%positions(1:3, 1:state%n_sites) = state%positions_prev(1:3, 1:state%n_sites)
                   end if
 
-                  call from_properties_to_image(images(i_trial_image), state%positions, state%velocities, state%masses, &
+                  call from_properties_to_image(smp%images(smp%i_trial_image), state%positions, state%velocities, state%masses, &
                                                 res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
                                                 res%energy_exp, dyn%E_kinetic, &
                                                 state%species, state%species_supercell, state%n_sites, state%indices, &
                                                 state%fix_atom, &
                                                 state%xyz_species, state%xyz_species_supercell, res%local_properties, &
-                                                res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
+                                                res%local_dipoles, res%energies_dipole, res%dipole, smp%mc_mol_id, smp%mc_mol_mu)
 
                   if (params%verb > 50) write (*, *) '.......................................|'
                   if (params%verb > 50) write (*, '(A,1X,I0)') ' MC Iteration:', loop%mc_istep
-                  if (params%verb > 50) write (*, '(A,1X,A)') '    Move type:', mc_move
+                  if (params%verb > 50) write (*, '(A,1X,A)') '    Move type:', smp%mc_move
 
                   if (params%verb > 50) write (*, '(A,1X,F22.8)') '   &
-                       & Ekin_prev:', images(i_current_image)%e_kin
+                       & Ekin_prev:', smp%images(smp%i_current_image)%e_kin
                   if (params%verb > 50) write (*, '(A,1X,F22.8)') '   &
-                       & Etot_prev:', images(i_current_image)&
-                       &%energy + images(i_current_image)%e_kin
+                       & Etot_prev:', smp%images(smp%i_current_image)&
+                       &%energy + smp%images(smp%i_current_image)%e_kin
 
                   if (params%verb > 50) write (*, '(A,1X,F22.8)') '   &
-                       & Ekin_new:', images(i_trial_image)%e_kin
+                       & Ekin_new:', smp%images(smp%i_trial_image)%e_kin
                   if (params%verb > 50) write (*, '(A,1X,F22.8)') '   &
-                       & Etot_new :', images(i_trial_image)%energy &
-                       &+ images(i_trial_image)%e_kin
+                       & Etot_new :', smp%images(smp%i_trial_image)%energy &
+                       &+ smp%images(smp%i_trial_image)%e_kin
 
                   state%v_uc = dot_product(cross_product(state%a_box, state%b_box), &
                                            state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
 
                   if (params%accessible_volume) then
-                     call get_accessible_volume(state%v_uc, v_a_uc, state%species, params%radii)
+                     call get_accessible_volume(state%v_uc, smp%v_a_uc, state%species, params%radii)
                      if (params%verb > 50) write (*, '(A,F12.6,A,F12.6&
-                          &,1X,A)') ' V_acc new: ', v_a_uc, ' A^3&
-                          & V_acc old ', v_a_uc_prev, 'A^3 |'
+                          &,1X,A)') ' V_acc new: ', smp%v_a_uc, ' A^3&
+                          & V_acc old ', smp%v_a_uc_prev, 'A^3 |'
                   else
-                     v_a_uc = state%v_uc
+                     smp%v_a_uc = state%v_uc
                   end if
 
-                  call get_mc_acceptance(mc_move, p_accept, &
+                  call get_mc_acceptance(smp%mc_move, smp%p_accept, &
                        res%energy + dyn%E_kinetic, &
-                       images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                       params%t_beg, mc_mu_id, &
-                       params%mc_mu, n_mc_species, state%v_uc, v_uc_prev,&
-                       & v_a_uc, v_a_uc_prev, params%mc_exchange_mass, &
+                       smp%images(smp%i_current_image)%energy + smp%images(smp%i_current_image)%e_kin, &
+                       params%t_beg, smp%mc_mu_id, &
+                       params%mc_mu, smp%n_mc_species, state%v_uc, smp%v_uc_prev,&
+                       & smp%v_a_uc, smp%v_a_uc_prev, params%mc_exchange_mass, &
                        & params%mc_exchange_e0, params%mc_mu_reference, &
                        & params%p_beg, state%n_sites)
 
@@ -1177,17 +1140,17 @@ program turbogap
 !                      & v_a_uc, v_a_uc_prev, params&
 !                      &%masses_types(mc_id(mc_mu_id)), params%p_beg)
 
-                  call random_number(ranf)
+                  call random_number(smp%ranf)
 
-                  if (mc_move == "insertion") n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) + 1
-                  if (mc_move == "removal") n_mc_species(mc_mu_id) = n_mc_species(mc_mu_id) - 1
+                  if (smp%mc_move == "insertion") smp%n_mc_species(smp%mc_mu_id) = smp%n_mc_species(smp%mc_mu_id) + 1
+                  if (smp%mc_move == "removal") smp%n_mc_species(smp%mc_mu_id) = smp%n_mc_species(smp%mc_mu_id) - 1
 
                   !    ACCEPT OR REJECT
                   if (params%verb > 50) write (*, '(A,1X,A,1X,A,L4,1X&
                        &,A,ES12.6,1X,A,1X,ES12.6)') 'Is ',&
-                       & trim(mc_move), 'accepted?', p_accept >&
-                       & ranf, ' p_accept =', p_accept, ' ranf = ',&
-                       & ranf
+                       & trim(smp%mc_move), 'accepted?', smp%p_accept >&
+                       & smp%ranf, ' p_accept =', smp%p_accept, ' ranf = ',&
+                       & smp%ranf
 
                   if (loop%mc_istep == 1) then
                      open (unit=200, file="mc.log", status="unknown")
@@ -1213,41 +1176,41 @@ program turbogap
 
                   do i = 1, params%n_mc_mu
                      temp_string = ""
-                     write (temp_string, "(A,1X,I8)") trim(params%mc_species(i)), n_mc_species(i)
+                     write (temp_string, "(A,1X,I8)") trim(params%mc_species(i)), smp%n_mc_species(i)
                      temp_string2 = trim(temp_string2)//" "//trim(temp_string)
                   end do
 
                   if (res%energy_exp > 0.d0) then
 
                      write (200, "(I8, 1X, A10, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, A)") &
-                          loop%mc_istep, trim(adjustl(mc_move)), p_accept > ranf, res%energy + dyn%E_kinetic, &
-                          images(i_current_image)%energy +&
-                          & images(i_current_image)%e_kin, res%energy_exp,&
-                          & images(i_current_image)%energy_exp,&
-                          & images(i_trial_image)%n_sites,&
+                          loop%mc_istep, trim(adjustl(smp%mc_move)), smp%p_accept > smp%ranf, res%energy + dyn%E_kinetic, &
+                          smp%images(smp%i_current_image)%energy +&
+                          & smp%images(smp%i_current_image)%e_kin, res%energy_exp,&
+                          & smp%images(smp%i_current_image)%energy_exp,&
+                          & smp%images(smp%i_trial_image)%n_sites,&
                           & trim(temp_string2)
                   else
                      write (200, "(I8, 1X, A10, 1X, L4, 1X, F20.8, 1X, F20.8, 1X, I8, 1X, A)") &
-                        loop%mc_istep, trim(adjustl(mc_move)), p_accept > ranf, res%energy + dyn%E_kinetic, &
-                        images(i_current_image)%energy + images(i_current_image)%e_kin, &
-                        images(i_trial_image)%n_sites, trim(temp_string2)
+                        loop%mc_istep, trim(adjustl(smp%mc_move)), smp%p_accept > smp%ranf, res%energy + dyn%E_kinetic, &
+                        smp%images(smp%i_current_image)%energy + smp%images(smp%i_current_image)%e_kin, &
+                        smp%images(smp%i_trial_image)%n_sites, trim(temp_string2)
 
                   end if
 
                   if (loop%mc_istep >= 1) close (200)
 
-                  if (p_accept > ranf) then
+                  if (smp%p_accept > smp%ranf) then
                      !             Accept
                      ! Set variables
                      loop%n_sites_prev = state%n_sites
-                     v_uc_prev = state%v_uc
-                     v_a_uc_prev = v_a_uc
-                     virial_prev = res%virial
+                     smp%v_uc_prev = state%v_uc
+                     smp%v_a_uc_prev = smp%v_a_uc
+                     smp%virial_prev = res%virial
                      !   Assigning the default image with the accepted one
-                     images(i_current_image) = images(i_trial_image)
+                     smp%images(smp%i_current_image) = smp%images(smp%i_trial_image)
 
                      if (params%n_mc_mu > 0) then
-                        n_mc_species_prev = n_mc_species
+                        smp%n_mc_species_prev = smp%n_mc_species
                      end if
 
                   end if
@@ -1266,14 +1229,14 @@ program turbogap
                      if (params%verb > 50) write (*, '(1X,A)') '&
                           & Writing mc_current.xyz and&
                           & mc_all.xyz '
-                     call wrap_pbc(images(i_current_image)&
+                     call wrap_pbc(smp%images(smp%i_current_image)&
                           &%positions(1:3,&
-                          & 1:images(i_current_image)%n_sites),&
-                          & images(i_current_image)%a_box&
+                          & 1:smp%images(smp%i_current_image)%n_sites),&
+                          & smp%images(smp%i_current_image)%a_box&
                           &/dfloat(state%indices(1)),&
-                          & images(i_current_image)%b_box&
+                          & smp%images(smp%i_current_image)%b_box&
                           &/dfloat(state%indices(2)),&
-                          & images(i_current_image)%c_box&
+                          & smp%images(smp%i_current_image)%c_box&
                           &/dfloat(state%indices(3)))
                      call get_xyz_energy_string(res%energies_soap, res%energies_2b,&
                           & res%energies_3b, res%energies_core_pot, res%energies_vdw, res%energies_exp&
@@ -1283,48 +1246,50 @@ program turbogap
                           & params%do_pair_distribution, params&
                           &%do_structure_factor, params%do_xrd,&
                           & params%do_nd, string, params%do_dipole,&
-                          & images(i_current_image)%dipole,&
-                          & images(i_current_image)%energies_dipole)
+                          & smp%images(smp%i_current_image)%dipole,&
+                          & smp%images(smp%i_current_image)%energies_dipole)
 
-                     call write_extxyz(images(i_current_image)%n_sites, 0, 1.0d0, 0.d0, dyn%instant_temp, dyn%instant_pressure, &
-                          images(i_current_image)%a_box/dfloat(state%indices(1)), &
-                          images(i_current_image)%b_box/dfloat(state%indices(2)), &
-                          images(i_current_image)%c_box/dfloat(state%indices(3)), &
-                          virial_prev, images(i_current_image)%xyz_species, &
-                          images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                          images(i_current_image)%velocities, &
-                          images(i_current_image)%forces, &
-                          images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
-                          images(i_current_image)%masses, &
+                     call write_extxyz(smp%images(smp%i_current_image)%n_sites, 0, 1.0d0, 0.d0, dyn%instant_temp, &
+                        dyn%instant_pressure, &
+                          smp%images(smp%i_current_image)%a_box/dfloat(state%indices(1)), &
+                          smp%images(smp%i_current_image)%b_box/dfloat(state%indices(2)), &
+                          smp%images(smp%i_current_image)%c_box/dfloat(state%indices(3)), &
+                          smp%virial_prev, smp%images(smp%i_current_image)%xyz_species, &
+                          smp%images(smp%i_current_image)%positions(1:3, 1:smp%images(smp%i_current_image)%n_sites), &
+                          smp%images(smp%i_current_image)%velocities, &
+                          smp%images(smp%i_current_image)%forces, &
+                          smp%images(smp%i_current_image)%energies(1:smp%images(smp%i_current_image)%n_sites), &
+                          smp%images(smp%i_current_image)%masses, &
                           params%write_property, params&
                           &%write_array_property, params&
                           &%write_local_properties,&
                           & model%local_property_labels,&
-                          & images(i_current_image)%local_properties&
-                          &, images(i_current_image)%fix_atom,&
+                          & smp%images(smp%i_current_image)%local_properties&
+                          &, smp%images(smp%i_current_image)%fix_atom,&
                           & "mc_current.xyz", string, .true., &
                           & params%do_dipole,&
-                          & images(i_current_image)%local_dipoles)
+                          & smp%images(smp%i_current_image)%local_dipoles)
 
-                     call write_extxyz(images(i_current_image)%n_sites, 1, 1.0d0, 0.d0, dyn%instant_temp, dyn%instant_pressure, &
-                          images(i_current_image)%a_box/dfloat(state%indices(1)), &
-                          images(i_current_image)%b_box/dfloat(state%indices(2)), &
-                          images(i_current_image)%c_box/dfloat(state%indices(3)), &
-                          virial_prev, images(i_current_image)%xyz_species, &
-                          images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                          images(i_current_image)%velocities, &
-                          images(i_current_image)%forces, &
-                          images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
-                          images(i_current_image)%masses, &
+                     call write_extxyz(smp%images(smp%i_current_image)%n_sites, 1, 1.0d0, 0.d0, dyn%instant_temp, &
+                        dyn%instant_pressure, &
+                          smp%images(smp%i_current_image)%a_box/dfloat(state%indices(1)), &
+                          smp%images(smp%i_current_image)%b_box/dfloat(state%indices(2)), &
+                          smp%images(smp%i_current_image)%c_box/dfloat(state%indices(3)), &
+                          smp%virial_prev, smp%images(smp%i_current_image)%xyz_species, &
+                          smp%images(smp%i_current_image)%positions(1:3, 1:smp%images(smp%i_current_image)%n_sites), &
+                          smp%images(smp%i_current_image)%velocities, &
+                          smp%images(smp%i_current_image)%forces, &
+                          smp%images(smp%i_current_image)%energies(1:smp%images(smp%i_current_image)%n_sites), &
+                          smp%images(smp%i_current_image)%masses, &
                           params%write_property, params&
                           &%write_array_property, params&
                           &%write_local_properties,&
                           & model%local_property_labels,&
-                          & images(i_current_image)%local_properties,&
-                          & images(i_current_image)%fix_atom,&
+                          & smp%images(smp%i_current_image)%local_properties,&
+                          & smp%images(smp%i_current_image)%fix_atom,&
                           & "mc_all.xyz", string, .false., &
                           & params%do_dipole,&
-                          & images(i_current_image)%local_dipoles)
+                          & smp%images(smp%i_current_image)%local_dipoles)
 
                   end if
 
@@ -1332,7 +1297,7 @@ program turbogap
                   call time_end(time%mc)
 
                else ! if (mc_istep == 0)
-                  temp_md_nsteps = params%md_nsteps
+                  smp%temp_md_nsteps = params%md_nsteps
                   if (params%verb > 50) write (*, *) '                                       |'
                   if (params%verb > 50) write (*, *) 'Starting MC, using parameters:         |'
                   if (params%verb > 50) write (*, *) '                                       |'
@@ -1403,45 +1368,45 @@ program turbogap
                   if (params%verb > 50) write (*, *) '                                       |'
                   ! t_beg must
 
-                  if (.not. allocated(images) .and. .not. params%do_nested_sampling) then
-                     allocate (images(1:2))
-                  else if (.not. allocated(images) .and. params%do_nested_sampling) then
-                     allocate (images(1:2*i_image))
+                  if (.not. allocated(smp%images) .and. .not. params%do_nested_sampling) then
+                     allocate (smp%images(1:2))
+                  else if (.not. allocated(smp%images) .and. params%do_nested_sampling) then
+                     allocate (smp%images(1:2*smp%i_image))
                   end if
 
-                  if (.not. allocated(mc_mol_id)) then
-                     allocate (mc_mol_id(1:state%n_sites), mc_mol_mu(1:state%n_sites))
-                     mc_mol_id = 0
-                     mc_mol_mu = 0
+                  if (.not. allocated(smp%mc_mol_id)) then
+                     allocate (smp%mc_mol_id(1:state%n_sites), smp%mc_mol_mu(1:state%n_sites))
+                     smp%mc_mol_id = 0
+                     smp%mc_mol_mu = 0
                   end if
 
-                  if (.not. allocated(mc_id) .and. params%n_mc_mu > 0) then
-                     allocate (mc_id(1:params%n_mc_mu))
-                     allocate (n_mc_species(1:params%n_mc_mu))
-                     allocate (n_mc_species_prev(1:params%n_mc_mu))
+                  if (.not. allocated(smp%mc_id) .and. params%n_mc_mu > 0) then
+                     allocate (smp%mc_id(1:params%n_mc_mu))
+                     allocate (smp%n_mc_species(1:params%n_mc_mu))
+                     allocate (smp%n_mc_species_prev(1:params%n_mc_mu))
 
-                     mc_id = 1
-                     n_mc_species = 0
+                     smp%mc_id = 1
+                     smp%n_mc_species = 0
 
                      !    get the mc species types
 
                      do j = 1, params%n_mc_mu
                         do i = 1, model%n_species
                            if (params%species_types(i) == params%mc_species(j)) then
-                              mc_id(j) = i
+                              smp%mc_id(j) = i
                            end if
                         end do
                      end do
                   end if
 
                   !       Now use the image construct to store this as the image to compare to
-                  call from_properties_to_image(images(i_current_image), state%positions, state%velocities, state%masses, &
+                  call from_properties_to_image(smp%images(smp%i_current_image), state%positions, state%velocities, state%masses, &
                                                 res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
                                                 res%energy_exp, dyn%E_kinetic, &
                                                 state%species, state%species_supercell, state%n_sites, state%indices, &
                                                 state%fix_atom, &
                                                 state%xyz_species, state%xyz_species_supercell, res%local_properties, &
-                                                res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
+                                                res%local_dipoles, res%energies_dipole, res%dipole, smp%mc_mol_id, smp%mc_mol_mu)
 
                   dyn%instant_temp = 2.d0/3.d0/dfloat(state%n_sites - 1)/dyn%kB*dyn%E_kinetic
                   dyn%instant_pressure = (dyn%kB*dfloat(state%n_sites - 1)*dyn%instant_temp&
@@ -1451,99 +1416,102 @@ program turbogap
                   if ((loop%mc_istep == 0 .or. loop%mc_istep == params%mc_nsteps .or. &
                        modulo(loop%mc_istep, params%write_xyz) == 0)) then
                      if (params%verb > 50) write (*, '(1X,A)') ' Writing mc_current.xyz and mc_all.xyz '
-                     call wrap_pbc(images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                                   images(i_current_image)%a_box/dfloat(state%indices(1)), &
-                                   images(i_current_image)%b_box/dfloat(state%indices(2)), &
-                                   images(i_current_image)%c_box/dfloat(state%indices(3)))
+                     call wrap_pbc(smp%images(smp%i_current_image)%positions(1:3, 1:smp%images(smp%i_current_image)%n_sites), &
+                                   smp%images(smp%i_current_image)%a_box/dfloat(state%indices(1)), &
+                                   smp%images(smp%i_current_image)%b_box/dfloat(state%indices(2)), &
+                                   smp%images(smp%i_current_image)%c_box/dfloat(state%indices(3)))
                      call get_xyz_energy_string(res%energies_soap, res%energies_2b,&
                           & res%energies_3b, res%energies_core_pot, res%energies_vdw, res%energies_exp&
                           &, res%energies_lp, res%energies_pdf, res%energies_sf, res%energies_xrd, res%energies_nd,&
                           & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                           & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
-                          & params%do_dipole, images(i_current_image)%dipole,&
-                          & images(i_current_image)%energies_dipole)
+                          & params%do_dipole, smp%images(smp%i_current_image)%dipole,&
+                          & smp%images(smp%i_current_image)%energies_dipole)
 
-                     call write_extxyz(images(i_current_image)%n_sites, 0, 1.0d0, 0.0d0, dyn%instant_temp, dyn%instant_pressure, &
-                          images(i_current_image)%a_box/dfloat(state%indices(1)), &
-                          images(i_current_image)%b_box/dfloat(state%indices(2)), &
-                          images(i_current_image)%c_box/dfloat(state%indices(3)), &
-                          virial_prev, images(i_current_image)%xyz_species, &
-                          images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                          images(i_current_image)%velocities, &
-                          images(i_current_image)%forces, &
-                          images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
-                          images(i_current_image)%masses, &
+                     call write_extxyz(smp%images(smp%i_current_image)%n_sites, 0, 1.0d0, 0.0d0, dyn%instant_temp, &
+                        dyn%instant_pressure, &
+                          smp%images(smp%i_current_image)%a_box/dfloat(state%indices(1)), &
+                          smp%images(smp%i_current_image)%b_box/dfloat(state%indices(2)), &
+                          smp%images(smp%i_current_image)%c_box/dfloat(state%indices(3)), &
+                          smp%virial_prev, smp%images(smp%i_current_image)%xyz_species, &
+                          smp%images(smp%i_current_image)%positions(1:3, 1:smp%images(smp%i_current_image)%n_sites), &
+                          smp%images(smp%i_current_image)%velocities, &
+                          smp%images(smp%i_current_image)%forces, &
+                          smp%images(smp%i_current_image)%energies(1:smp%images(smp%i_current_image)%n_sites), &
+                          smp%images(smp%i_current_image)%masses, &
                           params%write_property, params&
                           &%write_array_property, params&
                           &%write_local_properties,&
-                          & model%local_property_labels, images(i_current_image)%local_properties&
-                          &, images(i_current_image)%fix_atom,&
+                          & model%local_property_labels, smp%images(smp%i_current_image)%local_properties&
+                          &, smp%images(smp%i_current_image)%fix_atom,&
                           & "mc_current.xyz", string, .true., &
                           & params%do_dipole,&
-                          & images(i_current_image)%local_dipoles)
+                          & smp%images(smp%i_current_image)%local_dipoles)
 
-                     call write_extxyz(images(i_current_image)%n_sites, 1, 1.0d0, 0.0d0, dyn%instant_temp, dyn%instant_pressure, &
-                          images(i_current_image)%a_box/dfloat(state%indices(1)), &
-                          images(i_current_image)%b_box/dfloat(state%indices(2)), &
-                          images(i_current_image)%c_box/dfloat(state%indices(3)), &
-                          virial_prev, images(i_current_image)%xyz_species, &
-                          images(i_current_image)%positions(1:3, 1:images(i_current_image)%n_sites), &
-                          images(i_current_image)%velocities, &
-                          images(i_current_image)%forces, &
-                          images(i_current_image)%energies(1:images(i_current_image)%n_sites), &
-                          images(i_current_image)%masses, &
+                     call write_extxyz(smp%images(smp%i_current_image)%n_sites, 1, 1.0d0, 0.0d0, dyn%instant_temp, &
+                        dyn%instant_pressure, &
+                          smp%images(smp%i_current_image)%a_box/dfloat(state%indices(1)), &
+                          smp%images(smp%i_current_image)%b_box/dfloat(state%indices(2)), &
+                          smp%images(smp%i_current_image)%c_box/dfloat(state%indices(3)), &
+                          smp%virial_prev, smp%images(smp%i_current_image)%xyz_species, &
+                          smp%images(smp%i_current_image)%positions(1:3, 1:smp%images(smp%i_current_image)%n_sites), &
+                          smp%images(smp%i_current_image)%velocities, &
+                          smp%images(smp%i_current_image)%forces, &
+                          smp%images(smp%i_current_image)%energies(1:smp%images(smp%i_current_image)%n_sites), &
+                          smp%images(smp%i_current_image)%masses, &
                           params%write_property, params&
                           &%write_array_property, params&
                           &%write_local_properties,&
-                          & model%local_property_labels, images(i_current_image)%local_properties&
-                          &, images(i_current_image)%fix_atom,&
+                          & model%local_property_labels, smp%images(smp%i_current_image)%local_properties&
+                          &, smp%images(smp%i_current_image)%fix_atom,&
                           & "mc_all.xyz", string, .true., &
                           & params%do_dipole,&
-                          & images(i_current_image)%local_dipoles)
+                          & smp%images(smp%i_current_image)%local_dipoles)
 
-                     v_uc_prev = dot_product(cross_product(state%a_box, state%b_box), &
-                                             state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
+                     smp%v_uc_prev = dot_product(cross_product(state%a_box, state%b_box), &
+                                                 state%c_box)/(dfloat(state%indices(1)*state%indices(2)*state%indices(3)))
                      if (params%accessible_volume) then
-                        call get_accessible_volume(v_uc_prev, v_a_uc_prev, state%species, params%radii)
+                        call get_accessible_volume(smp%v_uc_prev, smp%v_a_uc_prev, state%species, params%radii)
                      else
-                        v_a_uc_prev = v_uc_prev
+                        smp%v_a_uc_prev = smp%v_uc_prev
                      end if
                   end if
 
                end if
 
                !  Now start the mc logic: first, use the stored images properties
-               call from_image_to_properties(images(i_current_image), state%positions, state%velocities, state%masses, &
+               call from_image_to_properties(smp%images(smp%i_current_image), state%positions, state%velocities, state%masses, &
                                              res%forces, state%a_box, state%b_box, state%c_box, res%energy, res%energies, &
                                              res%energy_exp, dyn%E_kinetic, &
                                              state%species, state%species_supercell, state%n_sites, state%indices, state%fix_atom, &
                                              state%xyz_species, state%xyz_species_supercell, res%local_properties, &
-                                             res%local_dipoles, res%energies_dipole, res%dipole, mc_mol_id, mc_mol_mu)
+                                             res%local_dipoles, res%energies_dipole, res%dipole, smp%mc_mol_id, smp%mc_mol_mu)
 
                call perform_mc_step(&
                     & state%positions, state%species, state%xyz_species, state%masses, state%fix_atom,&
-                    & state%velocities, state%positions_prev, state%positions_diff, disp, d_disp, params%n_local_properties,&
+                    & state%velocities, state%positions_prev, state%positions_diff, smp%disp, smp%d_disp, &
+                       params%n_local_properties,&
                     & params%mc_acceptance, params%mc_mu_acceptance, res%local_properties, &
-                    images(i_current_image)%local_properties, res%energies,&
-                    & res%forces, state%forces_prev, state%n_sites, params%n_mc_mu, mc_mu_id, n_mc_species,&
-                    & mc_move, params%mc_species,&
+                    smp%images(smp%i_current_image)%local_properties, res%energies,&
+                    & res%forces, state%forces_prev, state%n_sites, params%n_mc_mu, smp%mc_mu_id, smp%n_mc_species,&
+                    & smp%mc_move, params%mc_species,&
                     & params%mc_move_max, params%mc_min_dist, params%mc_max_dist, params%mc_max_insertion_trials, &
-                    params%mc_lnvol_max, params%mc_types, params%masses_types, species_idx,&
-                    & images(i_current_image)%positions,&
-                    & images(i_current_image)%species,&
-                    & images(i_current_image)%xyz_species,&
-                    & images(i_current_image)%fix_atom,&
-                    & images(i_current_image)%masses, state%a_box(1:3), state%b_box(1:3),&
+                    params%mc_lnvol_max, params%mc_types, params%masses_types, smp%species_idx,&
+                    & smp%images(smp%i_current_image)%positions,&
+                    & smp%images(smp%i_current_image)%species,&
+                    & smp%images(smp%i_current_image)%xyz_species,&
+                    & smp%images(smp%i_current_image)%fix_atom,&
+                    & smp%images(smp%i_current_image)%masses, state%a_box(1:3), state%b_box(1:3),&
                     & state%c_box(1:3), state%indices, params%do_md, params%mc_relax,&
-                    & loop%md_istep, mc_id, dyn%E_kinetic, dyn%instant_temp, params%t_beg,&
+                    & loop%md_istep, smp%mc_id, dyn%E_kinetic, dyn%instant_temp, params%t_beg,&
                     & params%n_mc_swaps, params%mc_swaps, params%mc_swaps_id, &
                     & params%species_types, params%mc_hamiltonian,&
                     & params%n_mc_relax_after, params&
-                    &%mc_relax_after, do_mc_relax, params%verb, &
+                    &%mc_relax_after, smp%do_mc_relax, params%verb, &
                     params%mc_n_planes, params%mc_planes, params%mc_max_dist_to_planes, &
                     params%mc_planes_restrict_to_polyhedron, &
-                    params%mc_molecules, mc_mol_id, mc_mol_mu, &
-                    images(i_current_image)%mc_mol_id, images(i_current_image)%mc_mol_mu, mc_mol_next)
+                    params%mc_molecules, smp%mc_mol_id, smp%mc_mol_mu, &
+                    smp%images(smp%i_current_image)%mc_mol_id, smp%images(smp%i_current_image)%mc_mol_mu, smp%mc_mol_next)
 
                nl%rebuild_neighbors_list = .true.
 
@@ -1554,7 +1522,7 @@ program turbogap
                ! the supercell in the usual way, but for convenience, one has
                ! not done that.
 
-               if (params%mc_relax .and. do_mc_relax) then
+               if (params%mc_relax .and. smp%do_mc_relax) then
                   ! Set the parameters for relaxatrino
                   loop%md_istep = -1
                   params%do_md = .true.
@@ -1573,12 +1541,12 @@ program turbogap
                   ! Note, that this may override md steps if the same is chosen! More testing needed
                end if
                ! If doing md, don't relax
-               if (mc_move == 'md') then
+               if (smp%mc_move == 'md') then
                   ! Set the parameters for relaxatrino
                   loop%md_istep = -1
                   params%do_md = .true.
                   params%optimize = params%mc_hybrid_opt
-                  params%md_nsteps = temp_md_nsteps
+                  params%md_nsteps = smp%temp_md_nsteps
 
                   if (state%n_sites == 1) then
                      params%do_md = .false.
@@ -1613,11 +1581,11 @@ program turbogap
                        &%write_array_property, params&
                        &%write_local_properties,&
                        & model%local_property_labels, res%local_properties&
-                       &, state%fix_atom, mc_file, string, .true.)
+                       &, state%fix_atom, smp%mc_file, string, .true.)
                end if
                ! As we have moved/added/removed, we must check the supercell and  broadcast the results
 
-               call read_xyz(mc_file, .true., params%all_atoms, params%do_timing, &
+               call read_xyz(smp%mc_file, .true., params%all_atoms, params%do_timing, &
                              model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
                              state%positions, params%do_md, state%velocities, params%masses_types, state%masses, &
                              state%xyz_species, &
@@ -1627,7 +1595,7 @@ program turbogap
                              params%write_array_property(6), .true., params%randomize_velocities)
 
             else
-               if (mc_move == 'md') then
+               if (smp%mc_move == 'md') then
                   if (params%print_progress .and. loop%md_istep == 0) then
                      write (*, *) '                                       |'
                      write (*, *) 'Progress:                              |'
@@ -1728,7 +1696,7 @@ program turbogap
                      loop%counter = loop%counter + 1
                   end if
 
-                  if (params%verb > 50 .and. do_mc_relax) write (*, '(1X,A,1X,F20.8,1X,A&
+                  if (params%verb > 50 .and. smp%do_mc_relax) write (*, '(1X,A,1X,F20.8,1X,A&
                        &,1X,I8,1X,A,1X,I8)') "MC Relax md step: energy &
                        &= ", res%energy, ", iteration ", loop%md_istep, "/",&
                        & params%mc_nrelax
