@@ -126,7 +126,6 @@ contains
           .and. valid_xps) then
          call time_start(time%xps, "xps")
 
-#ifdef _MPIF90
          allocate (energies_lp(1:n_sites))
          energies_lp = 0.d0
          if (params%do_forces) then
@@ -134,7 +133,6 @@ contains
             forces_lp = 0.d0
             virial_lp = 0.d0
          end if
-#endif
          allocate (v_neigh_lp(1:j_end - j_beg + 1))
          v_neigh_lp = 0.d0
          k = 0

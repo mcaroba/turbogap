@@ -114,7 +114,6 @@ contains
             end if
          else
             call time_start(time%estat, "estat")
-#ifdef _MPIF90
             allocate (energies_estat(1:n_sites))
             energies_estat = 0.d0
             if (params%do_forces) then
@@ -122,7 +121,6 @@ contains
                forces_estat = 0.d0
                virial_estat = 0.d0
             end if
-#endif
             allocate (chg_neigh_estat(1:j_end - j_beg + 1))
             chg_neigh_estat = 0.d0
 

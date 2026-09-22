@@ -1306,33 +1306,25 @@ program turbogap
             if (perform%pdf_forces) then
                res%forces_pdf = 0.d0
                res%virial_pdf = 0.d0
-#ifdef _MPIF90
                res%this_virial_pdf = 0.d0
-#endif
             end if
 
             if (perform%sf_forces) then
                res%forces_sf = 0.d0
                res%virial_sf = 0.d0
-#ifdef _MPIF90
                res%this_virial_sf = 0.d0
-#endif
             end if
 
             if (perform%xrd_forces) then
                res%forces_xrd = 0.d0
                res%virial_xrd = 0.d0
-#ifdef _MPIF90
                res%this_virial_xrd = 0.d0
-#endif
             end if
 
             if (perform%nd_forces) then
                res%forces_nd = 0.d0
                res%virial_nd = 0.d0
-#ifdef _MPIF90
                res%this_virial_nd = 0.d0
-#endif
             end if
          end if
 
@@ -1711,11 +1703,9 @@ program turbogap
 !        deck that asks for electrostatics against a GAP with no atomic_charge local
 !        property indexes local_properties with an uninitialised charge_lp_index and
 !        segfaults. Same shape as the has_vdw/has_local_properties defect.
-!        Moved to src/turbogap_estat.f90. The #ifdef is here, at the one call,
-!        rather than inside three continued argument lists where nothing
-!        Fortran-aware could parse it.
+!        Writes this rank's partial sums into the this_ arrays, which the
+!        reduction below completes.
 #ifdef _GPU
-#ifdef _MPIF90
          call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
                             state%n_sites, nl%n_neigh, nl%neighbors_list, state%species, nl%neighbor_species, nl%rjs, nl%xyz, &
                             res%local_properties, res%local_properties_cart_der, &
@@ -1723,25 +1713,10 @@ program turbogap
                             res%this_energies_estat, res%this_forces_estat, res%this_virial_estat, time)
 #else
          call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
-                            state%n_sites, nl%n_neigh, nl%neighbors_list, state%species, nl%neighbor_species, nl%rjs, nl%xyz, &
-                            res%local_properties, res%local_properties_cart_der, &
-                            dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, n_omp, &
-                            res%energies_estat, res%forces_estat, res%virial_estat, time)
-#endif
-#else
-#ifdef _MPIF90
-         call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
                             state%n_sites, nl%n_neigh, nl%neighbors_list, nl%rjs, nl%xyz, &
                             res%local_properties, res%local_properties_cart_der, &
                             dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, &
                             res%this_energies_estat, res%this_forces_estat, res%this_virial_estat, time)
-#else
-         call compute_estat(params, do_electrostatics, model%valid_estat_charges, model%charge_lp_index, &
-                            state%n_sites, nl%n_neigh, nl%neighbors_list, nl%rjs, nl%xyz, &
-                            res%local_properties, res%local_properties_cart_der, &
-                            dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, &
-                            res%energies_estat, res%forces_estat, res%virial_estat, time)
-#endif
 #endif
 
          call compute_vdw(params, any_has_vdw(model%soap_turbo_hypers), state%n_sites, &
@@ -1842,10 +1817,7 @@ program turbogap
 
          !     Compute core_electron_be energies and forces
          !
-         ! Moved to src/turbogap_exp.f90. The #ifdef is here, at the one call,
-         ! rather than inside a continued argument list where nothing
-         ! Fortran-aware could parse it.
-#ifdef _MPIF90
+         ! Partial sums into the this_ arrays, as for electrostatics.
          call compute_exp_xps(params, state%n_sites, loop%n_xyz, nl%xyz, nl%neighbors_list, nl%n_neigh, &
                               res%local_properties, res%local_properties_cart_der, model%soap_turbo_hypers, &
                               state%a_box, state%b_box, state%c_box, state%indices, dom%i_beg, dom%i_end, dom%j_beg, &
@@ -1853,25 +1825,11 @@ program turbogap
                               loop%md_istep, loop%mc_istep, model%valid_xps, model%xps_idx, model%core_be_lp_index, &
                               write_condition, overwrite_condition, exp_output, &
                               res%this_energies_lp, res%this_forces_lp, res%this_virial_lp, time)
-#else
-         call compute_exp_xps(params, state%n_sites, loop%n_xyz, nl%xyz, nl%neighbors_list, nl%n_neigh, &
-                              res%local_properties, res%local_properties_cart_der, model%soap_turbo_hypers, &
-                              state%a_box, state%b_box, state%c_box, state%indices, dom%i_beg, dom%i_end, dom%j_beg, &
-                              dom%j_end, rank, &
-                              loop%md_istep, loop%mc_istep, model%valid_xps, model%xps_idx, model%core_be_lp_index, &
-                              write_condition, overwrite_condition, exp_output, &
-                              res%energies_lp, res%forces_lp, res%virial_lp, time)
-#endif
 
          !###---   (Partial) Pair distribution functions and XRD   ---###!
          !
-         ! Moved to src/turbogap_exp.f90. The #ifdef below is the whole reason
-         ! it is here rather than inside: the exp_interface routines take the
-         ! this_-prefixed arrays under MPI and the plain ones otherwise. Choosing
-         ! once, at the call, is what let four preprocessor-interrupted argument
-         ! lists disappear from the moved code.
+         ! Partial sums into the this_ arrays; exp_interface allocates them.
 #ifdef _GPU
-#ifdef _MPIF90
          call compute_exp_spectra(params, state%n_sites, state%species, state%positions, nl%rjs, nl%xyz, nl%neighbors_list, &
                                   nl%n_neigh, nl%neighbor_species, state%indices, state%a_box, state%b_box, state%c_box, &
                                   dom%i_beg, dom%i_end, dom%j_beg, &
@@ -1886,35 +1844,12 @@ program turbogap
 #else
          call compute_exp_spectra(params, state%n_sites, state%species, state%positions, nl%rjs, nl%xyz, nl%neighbors_list, &
                                   nl%n_neigh, nl%neighbor_species, state%indices, state%a_box, state%b_box, state%c_box, &
-                                  dom%i_beg, dom%i_end, dom%j_beg, &
-                                  dom%j_end, rank, ntasks, ierr, loop%md_istep, loop%mc_istep, res%energies_pdf, res%forces_pdf, &
-                                  res%virial_pdf, res%energies_sf, res%forces_sf, &
-                                  res%virial_sf, res%energies_xrd, res%forces_xrd, res%virial_xrd, res%energies_nd, res%forces_nd, &
-                                  res%virial_nd, time, i_beg_list, &
-                                  i_end_list, j_beg_list, j_end_list, n_omp, omp_task, this_i_beg, this_i_end, &
-                                  this_j_beg, this_j_end, n_sites_temp, n_pairs_temp, write_condition, &
-                                  overwrite_condition, temp_string, species_types_actual, state%v_uc)
-#endif
-#else
-#ifdef _MPIF90
-         call compute_exp_spectra(params, state%n_sites, state%species, state%positions, nl%rjs, nl%xyz, nl%neighbors_list, &
-                                  nl%n_neigh, nl%neighbor_species, state%indices, state%a_box, state%b_box, state%c_box, &
                                   dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, ntasks, ierr, loop%md_istep, loop%mc_istep, &
                                   res%this_energies_pdf, res%this_forces_pdf, res%this_virial_pdf, &
                                   res%this_energies_sf, res%this_forces_sf, res%this_virial_sf, &
                                   res%this_energies_xrd, res%this_forces_xrd, res%this_virial_xrd, &
                                   res%this_energies_nd, res%this_forces_nd, res%this_virial_nd, &
                                   time)
-#else
-         call compute_exp_spectra(params, state%n_sites, state%species, state%positions, nl%rjs, nl%xyz, nl%neighbors_list, &
-                                  nl%n_neigh, nl%neighbor_species, state%indices, state%a_box, state%b_box, state%c_box, &
-                                  dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rank, ntasks, ierr, loop%md_istep, loop%mc_istep, &
-                                  res%energies_pdf, res%forces_pdf, res%virial_pdf, &
-                                  res%energies_sf, res%forces_sf, res%virial_sf, &
-                                  res%energies_xrd, res%forces_xrd, res%virial_xrd, &
-                                  res%energies_nd, res%forces_nd, res%virial_nd, &
-                                  time)
-#endif
 #endif
 
          if (params%do_prediction) then
@@ -1958,7 +1893,6 @@ program turbogap
             call time_end(time%gap)
             !       Communicate all energies and forces here for all
             !       terms
-#ifdef _MPIF90
             call time_start(time%mpi_ef)
 !       One evaluation of the eleven predicates, and one list built from them.
 !       The pack and unpack walks below read only that list, so they cannot
@@ -2196,7 +2130,6 @@ program turbogap
             end if
 
             call time_end(time%mpi_ef)
-#endif
 
             !       Add up all the energy terms
             res%energies = res%energies + res%energies_soap + res%energies_2b +&
