@@ -45,6 +45,7 @@ module turbogap_domain
    implicit none
 
    private
+   public :: domain_free
    public :: domain_sync_state
    public :: domain_sync_after_md
    public :: domain_sync_after_ipi
@@ -628,5 +629,12 @@ contains
 
       call time_end(time%mpi_ef)
    end subroutine domain_complete_contributions
+
+   subroutine domain_free(dom)
+      type(domain_t), intent(inout) :: dom
+
+      deallocate (dom%n_atom_pairs_by_rank)
+      if (allocated(dom%do_list)) deallocate (dom%do_list)
+   end subroutine domain_free
 
 end module turbogap_domain

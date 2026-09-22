@@ -43,6 +43,7 @@ module turbogap_setup
 
    private
    public :: read_input_and_gap_files
+   public :: model_free
 
 !  The potential as read from the input and the GAP files, and the indices into
 !  its local properties the rest of the run looks things up by.
@@ -680,5 +681,20 @@ contains
 !! -------------------------                                ---- untill here for initializing eph model elec. stopping
 
    end subroutine read_input_and_gap_files
+
+   subroutine model_free(model)
+      type(model_t), intent(inout) :: model
+
+      if (allocated(model%soap_turbo_hypers)) deallocate (model%soap_turbo_hypers)
+      if (allocated(model%distance_2b_hypers)) deallocate (model%distance_2b_hypers)
+      if (allocated(model%angle_3b_hypers)) deallocate (model%angle_3b_hypers)
+      if (allocated(model%core_pot_hypers)) deallocate (model%core_pot_hypers)
+      if (allocated(model%n_local_properties_mpi)) deallocate (model%n_local_properties_mpi)
+      if (allocated(model%local_properties_n_sparse_mpi_soap_turbo)) deallocate (model%local_properties_n_sparse_mpi_soap_turbo)
+      if (allocated(model%local_properties_dim_mpi_soap_turbo)) deallocate (model%local_properties_dim_mpi_soap_turbo)
+      if (allocated(model%has_local_properties_mpi)) deallocate (model%has_local_properties_mpi)
+      if (allocated(model%local_property_labels)) deallocate (model%local_property_labels)
+      if (allocated(model%local_property_indexes)) deallocate (model%local_property_indexes)
+   end subroutine model_free
 
 end module turbogap_setup

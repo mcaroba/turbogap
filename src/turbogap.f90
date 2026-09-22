@@ -48,13 +48,13 @@ program turbogap
    use vdw
    use electrostatics, only: compute_coulomb_direct, compute_coulomb_dsf, compute_coulomb_lamichhane
    use turbogap_setup
-   use turbogap_structure, only: state_t, structure_acquire
+   use turbogap_structure, only: state_t, structure_acquire, structure_free
    use turbogap_domain, only: domain_t, neighbors_t, domain_sync_state, domain_build, &
                               domain_complete_sites, domain_complete_e0, &
                               domain_complete_contributions, domain_sync_after_md, &
-                              domain_sync_after_ipi
-   use turbogap_results, only: results_t, results_prepare
-   use turbogap_soap, only: compute_soap
+                              domain_sync_after_ipi, domain_free
+   use turbogap_results, only: results_t, results_prepare, results_free
+   use turbogap_soap, only: compute_soap, soap_free_device
    use turbogap_sampling, only: sampling_t, mc_prepare_step, nested_step, mc_step
    use turbogap_ir, only: ir_run_t, ir_init, ir_step_begin, ir_before_evaluate, ir_push_frame, &
                           ir_after_forces, ir_step_end, ir_finish, ir_report
@@ -752,97 +752,14 @@ program turbogap
 
    call print_timing_report(comm, params, model, loop, ir, do_electrostatics, time3, time)
 
-#ifdef _GPU
-   do i = 1, model%n_soap_turbo
-      if (.not. model%soap_turbo_hypers(i)%recompute_basis) then
-         call gpu_free_async(model%soap_turbo_hypers(i)%W_d, gpu_stream)
-         call gpu_free_async(model%soap_turbo_hypers(i)%S_d, gpu_stream)
-         call gpu_free_async(model%soap_turbo_hypers(i)%multiplicity_array_d, gpu_stream)
-      end if
-   end do
-#endif
-   if (allocated(state%fix_atom)) deallocate (state%fix_atom)
-   if (allocated(state%positions)) deallocate (state%positions)
-   if (allocated(state%velocities)) deallocate (state%velocities)
-   if (allocated(state%positions_diff)) deallocate (state%positions_diff)
-
-   if (allocated(res%energies)) deallocate (res%energies)
-   if (allocated(res%local_dipoles)) deallocate (res%local_dipoles, res%this_local_dipoles)
-   if (allocated(res%energies_dipole)) deallocate (res%energies_dipole, res%this_energies_dipole)
-   if (allocated(res%energies_soap)) deallocate (res%energies_soap)
-   if (allocated(res%energies_2b)) deallocate (res%energies_2b)
-   if (allocated(res%energies_3b)) deallocate (res%energies_3b)
-   if (allocated(res%energies_core_pot)) deallocate (res%energies_core_pot)
-   if (allocated(res%energies_vdw)) deallocate (res%energies_vdw)
-   if (allocated(res%energies_exp)) deallocate (res%energies_exp)
-   if (allocated(res%energies_lp)) deallocate (res%energies_lp)
-   if (allocated(res%energies_pdf)) deallocate (res%energies_pdf)
-   if (allocated(res%energies_sf)) deallocate (res%energies_sf)
-   if (allocated(res%energies_xrd)) deallocate (res%energies_xrd)
-   if (allocated(res%energies_nd)) deallocate (res%energies_nd)
-
-   if (allocated(res%this_energies)) deallocate (res%this_energies)
-   if (allocated(res%this_energies_vdw)) deallocate (res%this_energies_vdw)
-   if (allocated(res%this_energies_lp)) deallocate (res%this_energies_lp)
-   if (allocated(res%this_energies_pdf)) deallocate (res%this_energies_pdf)
-   if (allocated(res%this_energies_sf)) deallocate (res%this_energies_sf)
-   if (allocated(res%this_energies_xrd)) deallocate (res%this_energies_xrd)
-   if (allocated(res%this_energies_nd)) deallocate (res%this_energies_nd)
-
-   if (allocated(res%forces)) deallocate (res%forces)
-   if (allocated(res%forces_soap)) deallocate (res%forces_soap)
-   if (allocated(res%forces_2b)) deallocate (res%forces_2b)
-   if (allocated(res%forces_3b)) deallocate (res%forces_3b)
-   if (allocated(res%forces_core_pot)) deallocate (res%forces_core_pot)
-   if (allocated(res%forces_vdw)) deallocate (res%forces_vdw)
-   if (allocated(res%forces_lp)) deallocate (res%forces_lp)
-   if (allocated(res%forces_pdf)) deallocate (res%forces_pdf)
-   if (allocated(res%forces_sf)) deallocate (res%forces_sf)
-   if (allocated(res%forces_xrd)) deallocate (res%forces_xrd)
-   if (allocated(res%forces_nd)) deallocate (res%forces_nd)
-
-   if (allocated(res%this_forces)) deallocate (res%this_forces)
-   if (allocated(res%this_forces_vdw)) deallocate (res%this_forces_vdw)
-   if (allocated(res%this_forces_lp)) deallocate (res%this_forces_lp)
-   if (allocated(res%this_forces_pdf)) deallocate (res%this_forces_pdf)
-   if (allocated(res%this_forces_sf)) deallocate (res%this_forces_sf)
-   if (allocated(res%this_forces_xrd)) deallocate (res%this_forces_xrd)
-   if (allocated(res%this_forces_nd)) deallocate (res%this_forces_nd)
-
-   if (allocated(res%local_properties)) deallocate (res%local_properties)
-   if (allocated(res%local_properties_cart_der)) deallocate (res%local_properties_cart_der)
-   if (allocated(res%this_local_properties)) deallocate (res%this_local_properties)
-   if (allocated(res%this_local_properties_cart_der)) deallocate (res%this_local_properties_cart_der)
-
-   if (allocated(model%soap_turbo_hypers)) deallocate (model%soap_turbo_hypers)
-   if (allocated(model%distance_2b_hypers)) deallocate (model%distance_2b_hypers)
-   if (allocated(model%angle_3b_hypers)) deallocate (model%angle_3b_hypers)
-   if (allocated(model%core_pot_hypers)) deallocate (model%core_pot_hypers)
-
-   deallocate (dom%n_atom_pairs_by_rank)
-   if (allocated(model%n_local_properties_mpi)) deallocate (model%n_local_properties_mpi)
-   if (allocated(model%local_properties_n_sparse_mpi_soap_turbo)) deallocate (model%local_properties_n_sparse_mpi_soap_turbo)
-   if (allocated(model%local_properties_dim_mpi_soap_turbo)) deallocate (model%local_properties_dim_mpi_soap_turbo)
-   if (allocated(model%has_local_properties_mpi)) deallocate (model%has_local_properties_mpi)
-
-   if (allocated(model%local_property_labels)) deallocate (model%local_property_labels)
-   if (allocated(model%local_property_indexes)) deallocate (model%local_property_indexes)
-   if (allocated(dom%do_list)) deallocate (dom%do_list)
+   call soap_free_device(model)
+   call structure_free(state)
+   call results_free(res)
+   call model_free(model)
+   call domain_free(dom)
    if (allocated(params%write_local_properties)) deallocate (params%write_local_properties)
 
-   if (params%vdw_type == "ts+mbd") then
-      if (rank == 0) then
-         open (unit=30, file="mbd_ts_scaling.dat", status="unknown")
-         do i = 1, state%n_sites
-#ifdef _MPIF90
-            write (30, *) res%this_mbd_ts_scaling(i)
-#else
-            write (30, *) res%mbd_ts_scaling(i)
-#endif
-         end do
-         close (30)
-      end if
-   end if
+   call vdw_write_ts_scaling(res, state, params, comm)
 
    if (rank == 0) then
       write (*, *) '                                       |'

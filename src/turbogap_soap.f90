@@ -55,6 +55,7 @@ module turbogap_soap
 
    private
    public :: compute_soap
+   public :: soap_free_device
 
 contains
 
@@ -434,5 +435,21 @@ contains
       end do
       call time_end(time%gap)
    end subroutine compute_soap
+
+!  Release the device copies of the compression basis that outlive a step.
+   subroutine soap_free_device(model)
+      type(model_t), intent(inout) :: model
+#ifdef _GPU
+      integer :: i
+
+      do i = 1, model%n_soap_turbo
+         if (.not. model%soap_turbo_hypers(i)%recompute_basis) then
+            call gpu_free_async(model%soap_turbo_hypers(i)%W_d, gpu_stream)
+            call gpu_free_async(model%soap_turbo_hypers(i)%S_d, gpu_stream)
+            call gpu_free_async(model%soap_turbo_hypers(i)%multiplicity_array_d, gpu_stream)
+         end if
+      end do
+#endif
+   end subroutine soap_free_device
 
 end module turbogap_soap

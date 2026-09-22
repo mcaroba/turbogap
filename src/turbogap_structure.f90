@@ -41,6 +41,7 @@ module turbogap_structure
    implicit none
 
    private
+   public :: structure_free
    public :: structure_acquire
 
    type, public :: state_t
@@ -167,5 +168,14 @@ contains
          rebuild = .true.
       end if
    end subroutine structure_acquire
+
+   subroutine structure_free(state)
+      type(state_t), intent(inout) :: state
+
+      if (allocated(state%fix_atom)) deallocate (state%fix_atom)
+      if (allocated(state%positions)) deallocate (state%positions)
+      if (allocated(state%velocities)) deallocate (state%velocities)
+      if (allocated(state%positions_diff)) deallocate (state%positions_diff)
+   end subroutine structure_free
 
 end module turbogap_structure

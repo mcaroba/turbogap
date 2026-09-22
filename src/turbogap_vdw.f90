@@ -38,6 +38,7 @@ module turbogap_vdw
    public :: vdw_state
    public :: compute_vdw
    public :: vdw_read_ts_scaling
+   public :: vdw_write_ts_scaling
 
 ! Persistent state of the ts+mbd correction.
 !
@@ -743,5 +744,28 @@ contains
          call comm_bcast(comm, res%this_mbd_ts_scaling, state%n_sites)
       end if
    end subroutine vdw_read_ts_scaling
+
+!  Leave the ts+mbd scaling factors for the next run to start from.
+   subroutine vdw_write_ts_scaling(res, state, params, comm)
+      type(results_t), intent(in) :: res
+      type(state_t), intent(in) :: state
+      type(input_parameters), intent(in) :: params
+      type(comm_t), intent(in) :: comm
+      integer :: i
+
+      if (params%vdw_type == "ts+mbd") then
+         if (comm%rank == 0) then
+            open (unit=30, file="mbd_ts_scaling.dat", status="unknown")
+            do i = 1, state%n_sites
+#ifdef _MPIF90
+               write (30, *) res%this_mbd_ts_scaling(i)
+#else
+               write (30, *) res%mbd_ts_scaling(i)
+#endif
+            end do
+            close (30)
+         end if
+      end if
+   end subroutine vdw_write_ts_scaling
 
 end module turbogap_vdw

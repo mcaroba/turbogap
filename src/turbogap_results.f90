@@ -43,6 +43,7 @@ module turbogap_results
    implicit none
 
    private
+   public :: results_free
    public :: results_prepare
 
    type, public :: results_t
@@ -375,5 +376,53 @@ contains
          end if
       end if
    end subroutine results_prepare
+
+   subroutine results_free(res)
+      type(results_t), intent(inout) :: res
+
+      if (allocated(res%energies)) deallocate (res%energies)
+      if (allocated(res%local_dipoles)) deallocate (res%local_dipoles, res%this_local_dipoles)
+      if (allocated(res%energies_dipole)) deallocate (res%energies_dipole, res%this_energies_dipole)
+      if (allocated(res%energies_soap)) deallocate (res%energies_soap)
+      if (allocated(res%energies_2b)) deallocate (res%energies_2b)
+      if (allocated(res%energies_3b)) deallocate (res%energies_3b)
+      if (allocated(res%energies_core_pot)) deallocate (res%energies_core_pot)
+      if (allocated(res%energies_vdw)) deallocate (res%energies_vdw)
+      if (allocated(res%energies_exp)) deallocate (res%energies_exp)
+      if (allocated(res%energies_lp)) deallocate (res%energies_lp)
+      if (allocated(res%energies_pdf)) deallocate (res%energies_pdf)
+      if (allocated(res%energies_sf)) deallocate (res%energies_sf)
+      if (allocated(res%energies_xrd)) deallocate (res%energies_xrd)
+      if (allocated(res%energies_nd)) deallocate (res%energies_nd)
+      if (allocated(res%this_energies)) deallocate (res%this_energies)
+      if (allocated(res%this_energies_vdw)) deallocate (res%this_energies_vdw)
+      if (allocated(res%this_energies_lp)) deallocate (res%this_energies_lp)
+      if (allocated(res%this_energies_pdf)) deallocate (res%this_energies_pdf)
+      if (allocated(res%this_energies_sf)) deallocate (res%this_energies_sf)
+      if (allocated(res%this_energies_xrd)) deallocate (res%this_energies_xrd)
+      if (allocated(res%this_energies_nd)) deallocate (res%this_energies_nd)
+      if (allocated(res%forces)) deallocate (res%forces)
+      if (allocated(res%forces_soap)) deallocate (res%forces_soap)
+      if (allocated(res%forces_2b)) deallocate (res%forces_2b)
+      if (allocated(res%forces_3b)) deallocate (res%forces_3b)
+      if (allocated(res%forces_core_pot)) deallocate (res%forces_core_pot)
+      if (allocated(res%forces_vdw)) deallocate (res%forces_vdw)
+      if (allocated(res%forces_lp)) deallocate (res%forces_lp)
+      if (allocated(res%forces_pdf)) deallocate (res%forces_pdf)
+      if (allocated(res%forces_sf)) deallocate (res%forces_sf)
+      if (allocated(res%forces_xrd)) deallocate (res%forces_xrd)
+      if (allocated(res%forces_nd)) deallocate (res%forces_nd)
+      if (allocated(res%this_forces)) deallocate (res%this_forces)
+      if (allocated(res%this_forces_vdw)) deallocate (res%this_forces_vdw)
+      if (allocated(res%this_forces_lp)) deallocate (res%this_forces_lp)
+      if (allocated(res%this_forces_pdf)) deallocate (res%this_forces_pdf)
+      if (allocated(res%this_forces_sf)) deallocate (res%this_forces_sf)
+      if (allocated(res%this_forces_xrd)) deallocate (res%this_forces_xrd)
+      if (allocated(res%this_forces_nd)) deallocate (res%this_forces_nd)
+      if (allocated(res%local_properties)) deallocate (res%local_properties)
+      if (allocated(res%local_properties_cart_der)) deallocate (res%local_properties_cart_der)
+      if (allocated(res%this_local_properties)) deallocate (res%this_local_properties)
+      if (allocated(res%this_local_properties_cart_der)) deallocate (res%this_local_properties_cart_der)
+   end subroutine results_free
 
 end module turbogap_results
