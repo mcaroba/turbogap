@@ -286,6 +286,8 @@ TURBOGAP_BIN=$(realpath bin-gpu/turbogap) tests/ipi_pimd/run.sh
 
 ## Developing TurboGAP
 
+Follow the details of how the code is structured in `docs/DEVELOPMENT.md`. Install the developer tooling as stated above.
+
 To develop for TurboGAP, one can install the development tools python environment (which has fprettify and pre-commit and so on which is installed through uv) such that formatting is preserved. Make a new branch or fork and then once ready submit a pull request. Please add tests for your new feature in the ` tests/` folder such that the CI interface can test upon pushing.
 
 If you're including new source files, make sure to run the script which
