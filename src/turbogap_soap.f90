@@ -214,19 +214,29 @@ contains
             this_j_beg = dom%j_beg - 1 + j_beg_list(j)
             this_j_end = dom%j_beg - 1 + j_end_list(j)
             this_n_sites_mpi = this_i_end - this_i_beg + 1
+            call time_start(time%soap_solo)
+#ifndef _GPU
+!           Host-only scratch: the device backend writes energies_soap,
+!           forces_soap and the dipole arrays itself and is never handed these,
+!           so zeroing them and adding them back moves zeros.
             res%this_energies = 0.d0
             if (params%do_forces) then
                res%this_forces = 0.d0
-               res%this_virial = 0.d0
             end if
             if (model%soap_turbo_hypers(i)%is_dipole_model) then
                res%this_local_dipoles = 0.d0
                res%this_energies_dipole = 0.d0
             end if
+#endif
+            if (params%do_forces) then
+               res%this_virial = 0.d0
+            end if
             if (model%soap_turbo_hypers(i)%has_local_properties) then
                res%this_local_properties = 0.d0
                if (params%do_forces) then
-                  res%this_local_properties_cart_der = 0.d0
+!                 Pair-wide, and the backend gets a pointer to this batch's
+!                 slice of it, so only that slice can have been written.
+                  res%this_local_properties_cart_der(:, this_j_beg:this_j_end, :) = 0.d0
                   !             I don't remember why this needs a pointer <----------------------------------------- CHECK
                   nullify (res%this_local_properties_cart_der_pt)
                   res%this_local_properties_cart_der_pt =>&
@@ -235,6 +245,7 @@ contains
                        &%n_local_properties)
                end if
             end if
+            call time_end(time%soap_solo)
 
 #ifdef _GPU
             call get_gap_soap( &
@@ -305,12 +316,14 @@ contains
 !              zero they were set to above -- get_gap_soap never writes them --
 !              so its fictitious energy stays out of energies_soap and its
 !              gradient out of forces_soap. It is carried separately.
+#ifndef _GPU
             res%energies_soap = res%energies_soap + res%this_energies
 
             if (model%soap_turbo_hypers(i)%is_dipole_model) then
                res%local_dipoles = res%local_dipoles + res%this_local_dipoles
                res%energies_dipole = res%energies_dipole + res%this_energies_dipole
             end if
+#endif
 
             if (model%soap_turbo_hypers(i)%has_local_properties) then
 
@@ -318,14 +331,16 @@ contains
                if (any(model%soap_turbo_hypers(i)&
                     &%local_property_models(:)%do_derivatives) &
                     & .and. params%do_derivatives) then
-                  res%local_properties_cart_der(:, :, :) =&
-                       & res%local_properties_cart_der(:, :, :) +&
-                       & res%this_local_properties_cart_der(:, :, :)
+                  res%local_properties_cart_der(:, this_j_beg:this_j_end, :) =&
+                       & res%local_properties_cart_der(:, this_j_beg:this_j_end, :) +&
+                       & res%this_local_properties_cart_der(:, this_j_beg:this_j_end, :)
                end if
 
             end if
             if (params%do_forces) then
+#ifndef _GPU
                res%forces_soap = res%forces_soap + res%this_forces
+#endif
                res%virial_soap = res%virial_soap + res%this_virial
             end if
          end do

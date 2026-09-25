@@ -131,7 +131,16 @@ contains
 !        on this card it asks for 6x more batches than necessary and on a 80 GB
 !        card 80x. Overwriting it here is the whole point of the keyword -- unless
 !        the input named it, which wins here as it does on the host.
-         if (.not. params%max_Gbytes_set) params%max_Gbytes_per_process = budget_gb
+!        ... but not more than gpu_batch_gbytes. The ceiling above is about what
+!        fits; this is about what is fast. Batches sized to most of the card
+!        measured about 8% slower than 0.5 GB ones on a 125k-atom single point,
+!        and the curve is flat below that -- see docs/PROFILING.md.
+         if (.not. params%max_Gbytes_set) then
+            params%max_Gbytes_per_process = budget_gb
+            if (params%gpu_batch_gbytes > 0.d0) then
+               params%max_Gbytes_per_process = min(budget_gb, params%gpu_batch_gbytes)
+            end if
+         end if
 
          if (rank == 0) then
             write (*, '(A,F8.3,A,F8.3,A)') ' <<<< GPU MEM >>>> device has ', free_gb, &
@@ -142,7 +151,12 @@ contains
                write (*, '(A,F8.3)') ' <<<< GPU MEM >>>> max_Gbytes_per_process as given: ', &
                   params%max_Gbytes_per_process
             else
-               write (*, '(A,F8.3)') ' <<<< GPU MEM >>>> max_Gbytes_per_process set from the device to ', budget_gb
+               write (*, '(A,F8.3)') ' <<<< GPU MEM >>>> max_Gbytes_per_process set from the device to ', &
+                  params%max_Gbytes_per_process
+               if (params%gpu_batch_gbytes > 0.d0 .and. params%max_Gbytes_per_process < budget_gb) then
+                  write (*, '(A,F8.3,A)') ' <<<< GPU MEM >>>> batches capped at gpu_batch_gbytes = ', &
+                     params%gpu_batch_gbytes, ' GB (speed, not capacity)'
+               end if
             end if
          end if
       end if

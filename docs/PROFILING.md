@@ -402,9 +402,50 @@ atom line from the start once per field. The string is one per frame;
 `xyz_parse_properties` now reads it once and `read_xyz_line_layout` uses the
 offsets. Bit-exact: the same 44 cases pass against the frozen baseline.
 
-What is left on this case is the device's own work -- `soap_turbo` 29.1 s and
-`3b` 8.6 s of the 41.3 -- which is where the next measurement should start. Two
-notes for whoever does:
+## 9. Inside soap_turbo (2026-09-26, same box and case)
+
+`get_gap_soap` had been filling `time%get_soap`, `time%soap_lin` and
+`time%local_prop` all along and nothing printed them, so 29 s was one opaque
+line. The report breaks it down now:
+
+| | before | after | |
+| --- | --- | --- | --- |
+| soap_turbo | 29.19 s | **23.59 s** | |
+| - descriptor | 0.87 s | 0.87 s | the SOAP vectors themselves |
+| - prediction | 13.17 s | 13.18 s | FP64 GEMM against the sparse set |
+| - local properties | 8.70 s | 8.73 s | the same shape, per property |
+| - batch scratch | 1.85 s | 0.14 s | zeroing and re-adding full-width arrays |
+
+Two things were being done for nothing, per batch:
+
+* the device backend writes `energies_soap`, `forces_soap` and the dipole
+  arrays itself and is never handed `this_energies`, `this_forces` or the
+  `this_` dipole arrays -- so zeroing them and adding them back moved zeros;
+* `this_local_properties_cart_der` is pair-wide, and the backend is handed a
+  pointer to one batch's pair slice, so the whole-array zero and the
+  whole-array add touched memory nothing could have written.
+
+**Bigger batches are slower.** The device budget was the whole card, which is
+the right ceiling and the wrong target. `diamond_125k`, one rank:
+
+| max_Gbytes_per_process | 0.1 | 0.25 | 0.5 | 1 | 2 | 4.15 (0.8 x free) | 16 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| total | 36.96 | 36.53 | **35.89** | 38.26 | 38.75 | 38.84 | OOM |
+
+`diamond_14k` has the same shape (4.98 s at 0.25 against 5.30 at 4.15), and at
+16 GB the run dies in a 3.19 GB allocation on a 5.7 GB card -- which is what
+the ceiling is for. So the device now sizes from the card and then takes the
+smaller of that and `gpu_batch_gbytes` (default 0.5). The host is the opposite
+and is left alone: there, bigger is better (15.21 s at 0.25 GB against 14.48 s
+at the 7.76 GB it sizes itself), and its budget is a fraction of *total*
+memory rather than free, so a batch split cannot depend on what else the
+machine happens to be running.
+
+Together with section 8, `diamond_125k` on this box went 48.78 s to 35.88 s.
+
+What is left is `prediction` at 13.2 s and `local properties` at 8.7 s, both
+FP64 GEMM against the sparse set on a card whose FP64 runs at 1/32 rate, and
+`3b` at 8.6 s. Two notes for whoever measures next:
 
 * `gpu_get_2b_forces_energies` and `gpu_get_core_pot_energy_and_forces` still
   recompute each thread's neighbour offset by walking the prefix, which the 3b

@@ -2325,6 +2325,18 @@ contains
 !       cannot know about.
          params%max_Gbytes_set = .true.
          if (rank == 0) call print_parameter("max_Gbytes_per_process", params%max_Gbytes_per_process)
+         !> @kw gpu_batch_gbytes
+         !> Batch size the device SOAP loop aims for, in GB per rank. gpu_mem_fraction sets the
+         !> ceiling, which is about what fits on the card; this sets the target under it, which is
+         !> about what is fast. Bigger batches are not faster: on an RTX A2000 a 125k-atom single
+         !> point ran ~8% slower with batches sized to the whole card than with 0.5 GB ones, and the
+         !> curve is flat below that. Raise it on a card with more memory; 0 turns the cap off.
+         !> @see gpu_mem_fraction, max_gbytes_per_process
+      else if (keyword == 'gpu_batch_gbytes') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_batch_gbytes
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_batch_gbytes", params%gpu_batch_gbytes)
          !> @kw gpu_mem_fraction
          !> Fraction of the device's free memory one rank may use. A GPU build sizes the pdf/xrd
          !> batch count from it, and max_gbytes_per_process for the SOAP batches unless the input

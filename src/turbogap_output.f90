@@ -440,6 +440,12 @@ contains
             write (*, '(A,F13.3,A)') ' * Neighbor lists:', time%neigh(3), ' seconds |'
             write (*, '(A,F13.3,A)') ' *  GAP desc/pred:', time%gap(3), ' seconds |'
             write (*, '(A,F13.3,A)') '     - soap_turbo:', time%soap(3), ' seconds |'
+!       Inside soap_turbo. get_gap_soap fills these; they are reported, never
+!       summed, because they overlap and nest differently on the two backends.
+            write (*, '(A,F13.3,A)') '        descriptor:', time%get_soap(3), ' seconds |'
+            write (*, '(A,F13.3,A)') '        prediction:', time%soap_lin(3), ' seconds |'
+            write (*, '(A,F13.3,A)') '        local prop:', time%local_prop(3), ' seconds |'
+            write (*, '(A,F13.3,A)') '        batch zero:', time%soap_solo(3), ' seconds |'
             write (*, '(A,F13.3,A)') '     -         2b:', time%gap_2b(3), ' seconds |'
             write (*, '(A,F13.3,A)') '     -         3b:', time%gap_3b(3), ' seconds |'
             write (*, '(A,F13.3,A)') '     -   core_pot:', time%gap_core_pot(3), ' seconds |'

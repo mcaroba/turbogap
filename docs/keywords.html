@@ -240,11 +240,11 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">355 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">356 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
-<a href="#general"><span>General</span><span class="n">54</span></a>
+<a href="#general"><span>General</span><span class="n">55</span></a>
 <a href="#run-control"><span>Run control</span><span class="n">19</span></a>
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">23</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
@@ -307,6 +307,15 @@ footer {
 <td class="mo">all</td>
 <td class="de">Constant energy offset per species, added to every atom of that species. One value per entry in species, in the same order. The GAP predicts energies relative to these, so they set the zero of the energy scale.</td>
 <td class="dp"></td>
+</tr>
+<tr data-h="gpu_batch_gbytes batch size the device soap loop aims for, in gb per rank. gpu_mem_fraction sets the ceiling, which is about what fits on the card; this sets the target under it, which is about what is fast. bigger batches are not faster: on an rtx a2000 a 125k-atom single point ran ~8% slower with batches sized to the whole card than with 0.5 gb ones, and the curve is flat below that. raise it on a card with more memory; 0 turns the cap off." data-m="predict md mc soap ipi">
+<td class="kw"><code>gpu_batch_gbytes</code></td>
+<td class="ty">real</td>
+<td class="df"><code>0.5</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Batch size the device SOAP loop aims for, in GB per rank. gpu_mem_fraction sets the ceiling, which is about what fits on the card; this sets the target under it, which is about what is fast. Bigger batches are not faster: on an RTX A2000 a 125k-atom single point ran ~8% slower with batches sized to the whole card than with 0.5 GB ones, and the curve is flat below that. Raise it on a card with more memory; 0 turns the cap off.</td>
+<td class="dp"><span class="dep">see <code>gpu_mem_fraction</code></span><span class="dep">see <code>max_gbytes_per_process</code></span></td>
 </tr>
 <tr data-h="gpu_mem_fraction fraction of the device&#x27;s free memory one rank may use. a gpu build sizes the pdf/xrd batch count from it, and max_gbytes_per_process for the soap batches unless the input gives that. the device analogue of mem_fraction; 0 turns the sizing off." data-m="predict md mc soap ipi">
 <td class="kw"><code>gpu_mem_fraction</code></td>
