@@ -197,6 +197,7 @@ contains
       integer :: j
       integer :: n_sites_supercell
       integer :: counter
+      type(xyz_layout_type) :: layout
       integer :: ijunk
       integer :: k2
       integer :: i2
@@ -315,18 +316,19 @@ contains
 !    allocate( species_multiplicity(1:n_sites) )
 !    species = 0
 !    species_multiplicity = 0
+            call xyz_parse_properties(properties, layout)
             do i = 1, n_sites
                read (11, '(A)') cjunk1024
                if (do_md) then
-                  call read_xyz_line(properties, cjunk1024, i_char, positions(1:3, i), velocities(1:3, i), fix_atom(1:3, i), &
-                                     has_velocities, masses(i), masses_from_xyz)
+                  call read_xyz_line_layout(layout, cjunk1024, i_char, positions(1:3, i), velocities(1:3, i), &
+                                            fix_atom(1:3, i), has_velocities, masses(i), masses_from_xyz)
                   if (masses_from_xyz) then
                      masses(i) = masses(i)*103.6426965268d0
                      write_masses = .true.
                   end if
                else
-                  call read_xyz_line(properties, cjunk1024, i_char, positions(1:3, i), rjunk(1:3), ljunk(1:3), has_velocities, &
-                                     rjunk1d, masses_from_xyz)
+                  call read_xyz_line_layout(layout, cjunk1024, i_char, positions(1:3, i), rjunk(1:3), ljunk(1:3), &
+                                            has_velocities, rjunk1d, masses_from_xyz)
                end if
                do j = 1, n_species
                   if (trim(i_char) == trim(species_types(j))) then

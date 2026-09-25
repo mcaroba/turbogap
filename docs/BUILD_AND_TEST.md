@@ -203,9 +203,34 @@ reads too, so a profile is always of an input the suite checks. **Never profile
 a `DEBUG=1` build** -- the Makefile refuses it, because `-G` is a 2.1x slowdown
 that also reorders the kernel ranking.
 
-`make PROFILE=1` and `make OPENMP=1` each get their own object tree
-(`build-profile/`, `build-omp/`), so neither can silently reuse the other's
-objects or invalidate `bin/turbogap` while the suite is reading it.
+`make PROFILE=1` gets its own object tree (`build-profile/`), so it cannot
+silently reuse another variant's objects or invalidate `bin/turbogap` while the
+suite is reading it. Host threading is the other way round now: `OPENMP=1` is
+the default and untagged, and the opt-out `OPENMP=0` takes `build-noomp/`.
+
+An object depends on `Makefile` and on the architecture makefile, because those
+decide its flags. Before that, flipping a default rebuilt only the sources the
+edit touched and linked the rest from the previous flags -- a binary that is
+half one build and half the other, with nothing to say so.
+
+### Threads
+
+`bin/turbogap` is threaded. How many threads a rank takes is decided at run
+time by `src/threads.f90`: the cores on the node divided by the ranks sharing
+it, unless `OMP_NUM_THREADS` is set, which is left alone. The banner prints the
+number, so a run that oversubscribed is visible in its own output.
+
+What this buys, on a 125k-atom diamond single point (alt, 12 cores, one rank):
+
+| bucket | one thread | twelve |
+| --- | --- | --- |
+| neighbour lists | 3.24 s | 0.48 s |
+
+The directives are in `src/neighbors.f90` and the loops are per-atom -- each
+atom writes only its own column of the list -- so the result does not depend on
+how the iterations are divided, and the 44 regression cases are bit-exact with
+threading on. The one floating-point reduction that would have depended on it,
+the IR auxiliary power, sums in index order instead.
 
 ## 2c. Device memory, and systems too big for the suite
 

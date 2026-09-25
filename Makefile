@@ -96,20 +96,33 @@ endif
 # with one MPI rank per GPU a single core built the whole list while the device
 # idled, and a node has tens of cores per rank going spare.
 #
-# Off by default all the same. It is a build-time choice that changes which
-# code runs, so it gets its own object tree and its own bin, and the regression
-# suite keeps testing the untagged one.
+# On by default since it was measured: the neighbour bucket of a 125k-atom
+# single point is 3.14 s on one thread and 0.47 s on twelve, and the 44
+# regression cases are bit-exact with it on. They can be, because each atom
+# writes only its own column of the list -- nothing in those loops depends on
+# how the iterations are divided. The one floating-point reduction that did,
+# the IR auxiliary power, sums in index order instead; see
+# src/ir_auxiliary_dynamics.f90.
+#
+# How many threads a rank takes is decided at run time rather than here:
+# src/threads.f90 divides the cores by the ranks sharing the node, unless
+# OMP_NUM_THREADS says otherwise. Without that, four ranks on a twelve-core
+# node would take twelve threads each and the build would be slower than
+# serial.
+#
+# The opt-out gets the tagged tree, since it is now the variant.
 #
 # gfortran needs -fopenmp at BOTH compile and link: it selects the runtime
 # library as well as enabling the directives, and the !$ sentinel lines are
 # conditionally compiled only when it is present.
 #
-#     make OPENMP=1               build-omp/   bin-omp/turbogap
-OPENMP ?= 0
+#     make OPENMP=0               build-noomp/   bin-noomp/turbogap
+OPENMP ?= 1
 ifeq ($(OPENMP),1)
   F90_OPTS += -fopenmp
   LIBS += -fopenmp
-  BUILD_TAG := $(BUILD_TAG)-omp
+else
+  BUILD_TAG := $(BUILD_TAG)-noomp
 endif
 
 # ----------------------------------------------------------------- KOKKOS=1
@@ -276,7 +289,7 @@ else
   SRC_CC :=
 endif
 
-SRC := printing.f90 error.f90 turbogap_comm.f90 read_utils.f90 nvtx.f90 timing.f90 misc.f90 electrostatics.f90 constants.f90 gle.f90 ipi_socket.f90 ipi_driver.f90 mad_ir.f90 mad_ir_xl.f90 ir_fft.f90 ir_fft_io.f90 nonneg_leastsq.f90 splines.f90 elements.f90 topology.f90 types.f90 $(GPU_CONTEXT) neighbors.f90 neighbors_skin.f90 gap.f90 vdw.f90		\
+SRC := printing.f90 error.f90 turbogap_comm.f90 read_utils.f90 nvtx.f90 timing.f90 misc.f90 threads.f90 electrostatics.f90 constants.f90 gle.f90 ipi_socket.f90 ipi_driver.f90 mad_ir.f90 mad_ir_xl.f90 ir_fft.f90 ir_fft_io.f90 nonneg_leastsq.f90 splines.f90 elements.f90 topology.f90 types.f90 $(GPU_CONTEXT) neighbors.f90 neighbors_skin.f90 gap.f90 vdw.f90		\
 	local_properties.f90 exp_utils.f90  xyz.f90 md.f90 ir_auxiliary_dynamics.f90 mc.f90 read_files.f90	\
 	$(GAP_BACKEND) gap_interface.f90 mpi.f90 exp_interface.f90 turbogap_exp.f90 turbogap_md.f90 turbogap_vdw.f90 turbogap_estat.f90 turbogap_setup.f90 turbogap_structure.f90 turbogap_domain.f90 turbogap_results.f90 turbogap_loop.f90 turbogap_output.f90 turbogap_ir.f90 turbogap_soap.f90 turbogap_sampling.f90 turbogap_evaluate.f90
 
@@ -345,21 +358,27 @@ $(BIN_DIR)/%: src/%.f90 $(OBJ_BASE) $(OBJ_STOP) $(OBJ_TP_BT) $(OBJ_ST) $(OBJ) $(
 # nothing -- the same silent staleness the BUILD_TAG note above describes.
 GPU_HEADERS := $(wildcard src/gpu/*.h)
 
-$(BUILD_DIR)/%.o: src/gpu/%.cu $(GPU_HEADERS) | $$(@D)
+# An object is out of date when the flags change, and the flags live in this
+# file and in the architecture file. Nothing else notices: make compares source
+# timestamps, so flipping OPENMP or DEBUG rebuilds only what the edit touched
+# and links the rest from the previous flags.
+BUILD_FLAGS_DEPS := Makefile makefiles/Makefile.$(TURBOGAP_ARCH)
+
+$(BUILD_DIR)/%.o: src/gpu/%.cu $(GPU_HEADERS) $(BUILD_FLAGS_DEPS) | $$(@D)
 	$(CU) $(CUDA_OPTS) -c $< -o $@
 
-$(BUILD_DIR)/%.o: src/gpu/%.cc $(GPU_HEADERS) | $$(@D)
+$(BUILD_DIR)/%.o: src/gpu/%.cc $(GPU_HEADERS) $(BUILD_FLAGS_DEPS) | $$(@D)
 	$(CC) $(CC_OPTS) -c $< -o $@
 
-$(BUILD_DIR)/%.o: src/stopping/%.f90 | $$(@D)
+$(BUILD_DIR)/%.o: src/stopping/%.f90 $(BUILD_FLAGS_DEPS) | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
-$(BUILD_DIR)/%.o: src/third_party/bussi_thermostat/%.f90 | $$(@D)
+$(BUILD_DIR)/%.o: src/third_party/bussi_thermostat/%.f90 $(BUILD_FLAGS_DEPS) | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
-$(BUILD_DIR)/%.o: src/third_party/nnls/%.f90 | $$(@D)
+$(BUILD_DIR)/%.o: src/third_party/nnls/%.f90 $(BUILD_FLAGS_DEPS) | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
-$(BUILD_DIR)/%.o: $(ST_DIR)/%.f90 | $$(@D)
+$(BUILD_DIR)/%.o: $(ST_DIR)/%.f90 $(BUILD_FLAGS_DEPS) | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
-$(BUILD_DIR)/%.o: src/%.f90 | $$(@D)
+$(BUILD_DIR)/%.o: src/%.f90 $(BUILD_FLAGS_DEPS) | $$(@D)
 	$(F90) $(PP) $(F90_OPTS) -c $< -o $@
 
 $(BUILD_DIR): ${INC_DIR}

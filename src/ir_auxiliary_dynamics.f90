@@ -1058,6 +1058,7 @@ contains
       real(dp) :: e_eff(1:3)
       real(dp) :: acc
       real(dp) :: p_acc
+      real(dp), allocatable :: power_work(:, :)
       logical :: want_power
       integer :: m
       integer :: j
@@ -1081,7 +1082,16 @@ contains
       e_eff = energy_scale*e_eff/dfloat(max(1, this%n_live))
 
       p_acc = 0.0_dp
-      !$omp parallel do private(j, b, a, acc) reduction(+:p_acc) schedule(static)
+!     The power is summed afterwards, in index order, rather than through a
+!     reduction clause: a reduction adds the partial sums in whatever order the
+!     threads finish, so the last digits of the answer would depend on how many
+!     threads the run happened to have. The forces themselves are safe either
+!     way -- each j writes only its own column.
+      if (want_power) then
+         if (allocated(power_work)) deallocate (power_work)
+         allocate (power_work(1:3, 1:n_atoms))
+      end if
+      !$omp parallel do private(j, b, a, acc) schedule(static)
       do j = 1, n_atoms
          do b = 1, 3
             acc = 0.0_dp
@@ -1089,10 +1099,18 @@ contains
                acc = acc + e_eff(a)*dmu_dr(a, b, j)
             end do
             forces(b, j) = forces(b, j) + acc
-            if (want_power) p_acc = p_acc + acc*velocities(b, j)
+            if (want_power) power_work(b, j) = acc*velocities(b, j)
          end do
       end do
       !$omp end parallel do
+      if (want_power) then
+         do j = 1, n_atoms
+            do b = 1, 3
+               p_acc = p_acc + power_work(b, j)
+            end do
+         end do
+         deallocate (power_work)
+      end if
 
       if (present(power)) power = p_acc
 

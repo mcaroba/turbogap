@@ -33,6 +33,7 @@ program turbogap
    use timing, only: times_t, get_time, time_start, time_end
    use types, only: input_parameters, perform_t
    use turbogap_comm, only: comm_t, comm_init, comm_finalize
+   use threads, only: threads_init
    use gpu_context, only: gpu_context_init, gpu_context_finalize, gpu_memory_budget_init, gpu_memory_report
    use gap_backend, only: gap_backend_init
    use turbogap_setup, only: model_t, read_input_and_gap_files, model_free
@@ -88,6 +89,9 @@ program turbogap
    call time_start(time%setup)
 
    call comm_init(comm)
+!  Needs the communicator: how many threads a rank may take depends on how many
+!  ranks share its node.
+   call threads_init()
    call domain_init(dom, comm)
 
    call read_run_mode(mode)

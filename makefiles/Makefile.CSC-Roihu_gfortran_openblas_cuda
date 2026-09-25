@@ -23,7 +23,10 @@ CUDA_ARCH ?= sm_90
 # directory holds four typedefs and nothing else; drop the -I the day either
 # side stops needing it.
 GL_STUB ?= makefiles/roihu-gl-stub
-DEBUG ?= 1
+# DEBUG=1 is -G and no -O at all, which docs/PROFILING.md measures at 2.1x on
+# the device and which leaves the Fortran unoptimised entirely. It is a thing
+# to ask for, not a thing to get by accident from a plain `make`.
+DEBUG ?= 0
 
 F90=mpif90
 PP=-cpp -D _MPIF90 -D _GPU

@@ -31,6 +31,16 @@ module xyz_module
 
    use soap_turbo_functions
 
+!  Where each field sits on an atom line, in tokens to skip before it. -1 when
+!  the frame's Properties string does not carry that field.
+   type :: xyz_layout_type
+      integer :: skip_species = -1
+      integer :: skip_pos = -1
+      integer :: skip_vel = -1
+      integer :: skip_fix = -1
+      integer :: skip_mass = -1
+   end type
+
 contains
 
 ! This subroutine writes the trajectory_out.xyz file with ASE's extended
@@ -472,6 +482,101 @@ contains
 
    end subroutine
 
+!  The Properties string, once per frame rather than once per atom. Walking it
+!  per atom -- 1024 characters and a string concatenation each -- was 5.1 s of
+!  a 125k-atom single point.
+   subroutine xyz_parse_properties(properties, layout)
+
+      implicit none
+
+      character*1024, intent(in) :: properties
+      type(xyz_layout_type), intent(out) :: layout
+
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: iostatus
+      character*1 :: c
+      character*32 :: property
+
+      j = 0
+      property = ""
+      do i = 1, len(properties)
+         c = properties(i:i)
+
+         if (property == "properties") then
+            property = ""
+         else if (c == ":") then
+            if (property == "species") then
+               layout%skip_species = j
+            else if (property == "pos" .or. property == "positions") then
+               layout%skip_pos = j
+            else if (property == "vel" .or. property == "velocities") then
+               layout%skip_vel = j
+            else if (property == "fix_atoms" .or. property == "fix_atom") then
+               layout%skip_fix = j
+            else if (property == "mass" .or. property == "masses") then
+               layout%skip_mass = j
+            else
+!         Advance the pointer by the correct number of fields
+               read (property, *, iostat=iostatus) k
+               if (iostatus == 0) then
+                  j = j + k
+               end if
+            end if
+            property = ""
+         else
+            property = adjustl(trim(property))//c
+         end if
+
+      end do
+
+   end subroutine
+
+!  One atom line, against a layout already parsed. Each read starts from the
+!  beginning of the line and skips into it, as before, so the fields are read
+!  exactly as the list-directed reads read them.
+   subroutine read_xyz_line_layout(layout, line, species, positions, velocities, fix_atom, has_velocities, &
+                                   masses, has_masses)
+
+      implicit none
+
+      type(xyz_layout_type), intent(in) :: layout
+      character*1024, intent(in) :: line
+
+      real(dp), intent(inout) :: velocities(1:3)
+      real(dp), intent(inout) :: positions(1:3)
+      real(dp), intent(inout) :: masses
+      character*8 :: species
+      logical, intent(inout) :: fix_atom(1:3)
+      logical, intent(out) :: has_velocities
+      logical, intent(out) :: has_masses
+
+      integer :: k
+      character*1 :: junk
+
+      has_velocities = layout%skip_vel >= 0
+      has_masses = layout%skip_mass >= 0
+
+      if (layout%skip_species >= 0) then
+         read (line, *) (junk, k=1, layout%skip_species), species
+      end if
+      if (layout%skip_pos >= 0) then
+         read (line, *) (junk, k=1, layout%skip_pos), positions(1:3)
+      end if
+      if (layout%skip_vel >= 0) then
+         read (line, *) (junk, k=1, layout%skip_vel), velocities(1:3)
+      end if
+      if (layout%skip_fix >= 0) then
+         read (line, *) (junk, k=1, layout%skip_fix), fix_atom(1:3)
+      end if
+      if (layout%skip_mass >= 0) then
+         read (line, *) (junk, k=1, layout%skip_mass), masses
+      end if
+
+   end subroutine
+
+!  Kept for callers that have a Properties string and one line.
    subroutine read_xyz_line(properties, line, species, positions, velocities, fix_atom, has_velocities, &
                             masses, has_masses)
 
@@ -488,50 +593,11 @@ contains
       logical, intent(out) :: has_velocities
       logical, intent(out) :: has_masses
 
-      integer :: i
-      integer :: j
-      integer :: k
-      integer :: iostatus
-      character*1 :: c
-      character*1 :: junk
-      character*32 :: property
+      type(xyz_layout_type) :: layout
 
-      has_velocities = .false.
-      has_masses = .false.
-
-      j = 0
-      property = ""
-      do i = 1, len(properties)
-         c = properties(i:i)
-
-         if (property == "properties") then
-            property = ""
-         else if (c == ":") then
-            if (property == "species") then
-               read (line, *) (junk, k=1, j), species
-            else if (property == "pos" .or. property == "positions") then
-               read (line, *) (junk, k=1, j), positions(1:3)
-            else if (property == "vel" .or. property == "velocities") then
-               read (line, *) (junk, k=1, j), velocities(1:3)
-               has_velocities = .true.
-            else if (property == "fix_atoms" .or. property == "fix_atom") then
-               read (line, *) (junk, k=1, j), fix_atom(1:3)
-            else if (property == "mass" .or. property == "masses") then
-               read (line, *) (junk, k=1, j), masses
-               has_masses = .true.
-            else
-!         Advance the pointer by the correct number of fields
-               read (property, *, iostat=iostatus) k
-               if (iostatus == 0) then
-                  j = j + k
-               end if
-            end if
-            property = ""
-         else
-            property = adjustl(trim(property))//c
-         end if
-
-      end do
+      call xyz_parse_properties(properties, layout)
+      call read_xyz_line_layout(layout, line, species, positions, velocities, fix_atom, has_velocities, &
+                                masses, has_masses)
 
    end subroutine
 

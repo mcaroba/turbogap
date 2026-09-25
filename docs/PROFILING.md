@@ -372,3 +372,44 @@ pass. `--launch-count` defaults to 3 for that reason: on `CO_predict`, which
 launches thousands of kernels, an unbounded ncu run does not finish in a useful
 time, and profiling a few launches of each distinct kernel gives the same
 per-kernel numbers.
+
+## 8. Measured state of the host half (2026-09-25, alt, 12 cores + RTX A2000)
+
+`diamond_125k`, one rank, device build, `DEBUG=0`. Two host phases dominated
+what the device was waiting for, and neither was an algorithm:
+
+| bucket | before | after | what it was |
+| --- | --- | --- | --- |
+| Read XYZ files | 5.13 s | 0.44 s | the frame's `Properties` string was parsed per atom |
+| Neighbor lists | 3.15 s | 0.48 s | `-fopenmp` was never passed, so the directives were comments |
+| **total** | **48.8 s** | **41.3 s** | |
+
+Both builds gain, because both phases are host work. Master against the branch,
+same box, same inputs, twelve cores:
+
+| build | case | before | after |
+| --- | --- | --- | --- |
+| host | diamond_14k | 15.50 s | 14.57 s |
+| device | diamond_14k | 6.29 s | 5.36 s |
+| device | diamond_125k | 48.78 s | 41.34 s |
+
+The host build gains least in relative terms because its own SOAP dominates
+what is left: 5.87 s of the 14.57.
+
+The parser walked all 1024 characters of the `Properties` string, with a string
+concatenation per character, for every atom in the frame, and then re-parsed the
+atom line from the start once per field. The string is one per frame;
+`xyz_parse_properties` now reads it once and `read_xyz_line_layout` uses the
+offsets. Bit-exact: the same 44 cases pass against the frozen baseline.
+
+What is left on this case is the device's own work -- `soap_turbo` 29.1 s and
+`3b` 8.6 s of the 41.3 -- which is where the next measurement should start. Two
+notes for whoever does:
+
+* `gpu_get_2b_forces_energies` and `gpu_get_core_pot_energy_and_forces` still
+  recompute each thread's neighbour offset by walking the prefix, which the 3b
+  path already precomputes as `kappas`. On 125k atoms the whole 2b bucket is
+  0.9 s, so the walk is worth tens of milliseconds, not the 11% that the
+  CO_predict profile above might suggest -- it is untidy rather than expensive.
+* The occupancy of the three-body kernel is a closed question; see the sweep
+  recorded in `src/gpu/gap_3b.cc`, where raising it made the kernel slower.

@@ -33,6 +33,7 @@ module turbogap_output
    use kinds, only: dp
    use keyword_help, only: keyword_help_topics, print_keyword_help
    use turbogap_comm, only: comm_t, comm_with_mpi
+   use threads, only: threads_in_use
    use types, only: input_parameters, perform_t
    use timing, only: times_t, get_time, sum_times
    use md, only: wrap_pbc
@@ -109,11 +110,17 @@ contains
             write (*, *) 'Running TurboGAP with MPI support:     |'
             write (*, *) '                                       |'
             write (*, '(A,I6,A)') ' Running TurboGAP on ', comm%size, ' MPI tasks   |'
+            if (threads_in_use() > 1) then
+               write (*, '(A,I6,A)') ' OpenMP threads/rank:', threads_in_use(), '             |'
+            end if
             write (*, *) '                                       |'
             write (*, *) '.......................................|'
          else
             write (*, *) '                                       |'
             write (*, *) 'Running the serial version of TurboGAP |'
+            if (threads_in_use() > 1) then
+               write (*, '(A,I6,A)') ' OpenMP threads:     ', threads_in_use(), '             |'
+            end if
             write (*, *) '                                       |'
             write (*, *) '.......................................|'
          end if
