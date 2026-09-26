@@ -1,0 +1,38 @@
+
+# This Makefile is configured for Mac M1 (Apple Silicon) systems using Homebrew
+# Before compiling, make sure you have installed the required dependencies:
+#
+#     brew install gcc
+#     brew install openblas
+#     brew install open-mpi
+#     brew install lapack
+#
+# If you prefer to use the Accelerate framework instead of OpenBLAS,
+# uncomment the Accelerate LIBS line and comment out the OpenBLAS one.
+
+# User-modifiable variables below
+
+# Compiler, preprocessor directives, etc.
+F90=mpif90
+PP=-cpp -D _MPIF90
+F90_MOD_DIR_OPT=-J
+
+# Optimization flags for Apple Silicon M1
+# -mcpu=native optimizes for Apple Silicon specifically
+F90_OPTS=-fPIC -O3 -mcpu=native -mtune=native
+#F90_OPTS=-fPIC -O3 -mcpu=native -fcheck=bounds -g -fcheck=all -Wall -fbacktrace
+
+# BLAS and LAPACK libraries
+# Option 1: Use OpenBLAS (try different library names)
+OPENBLAS_PREFIX=$(shell brew --prefix openblas)
+LIBS=-L$(OPENBLAS_PREFIX)/lib -lopenblas -llapack
+
+# Option 2: If OpenBLAS is named differently, try these alternatives:
+# LIBS=-L$(OPENBLAS_PREFIX)/lib -llibopenblas -llapack
+# LIBS=-L$(OPENBLAS_PREFIX)/lib -lopenblas64 -llapack
+
+# Option 3: Use Apple's Accelerate framework (fastest fallback)
+# LIBS=-framework Accelerate
+
+# Option 4: Use standard BLAS/LAPACK from Homebrew
+# LIBS=-L/opt/homebrew/lib -llapack -lblas
