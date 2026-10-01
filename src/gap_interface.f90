@@ -374,7 +374,8 @@ contains
 
          if (do_derivatives) then
             allocate (soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs))
-            soap_cart_der = 0.d0
+!           Device get_soap never fills the host copy; only write_derivatives reads it.
+            if (write_derivatives) soap_cart_der = 0.d0
             st_soap_cart_der = 3*n_soap*n_atom_pairs*sizeof(soap_cart_der(1, 1, 1))
             call gpu_malloc_async(soap_cart_der_d, st_soap_cart_der, gpu_stream)
          end if
