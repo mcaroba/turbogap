@@ -394,9 +394,9 @@ contains
 !   Virial tensor
       if (write_property(8)) then
          do i = 1, 3
-            write (lattice_string(i), '(F16.8)') virial(1, i)
-            write (lattice_string(i + 3), '(F16.8)') virial(2, i)
-            write (lattice_string(i + 6), '(F16.8)') virial(3, i)
+            write (lattice_string(i), '(1X,F15.7)') virial(1, i)
+            write (lattice_string(i + 3), '(1X,F15.7)') virial(2, i)
+            write (lattice_string(i + 6), '(1X,F15.7)') virial(3, i)
          end do
          write (10, "(1X,11A)", advance="no") "virial=""", adjustl(lattice_string(1)), lattice_string(2:9), """"
       end if
@@ -404,9 +404,9 @@ contains
       if (write_property(9)) then
          vol = dot_product(cross_product(a_cell, b_cell), c_cell)
          do i = 1, 3
-            write (lattice_string(i), '(F16.8)') - virial(1, i)/vol
-            write (lattice_string(i + 3), '(F16.8)') - virial(2, i)/vol
-            write (lattice_string(i + 6), '(F16.8)') - virial(3, i)/vol
+            write (lattice_string(i), '(1X,F15.7)') - virial(1, i)/vol
+            write (lattice_string(i + 3), '(1X,F15.7)') - virial(2, i)/vol
+            write (lattice_string(i + 6), '(1X,F15.7)') - virial(3, i)/vol
          end do
          write (10, "(1X,11A)", advance="no") "stress=""", adjustl(lattice_string(1)), lattice_string(2:9), """"
       end if
