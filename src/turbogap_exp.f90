@@ -421,6 +421,7 @@ contains
 !     to the host pdf and take ten times as long as the run that also computes
 !     forces. Asking for less should not cost more.
       logical :: batched_pdf
+      logical :: pdf_needed
 !     Whether this step is one the observables are wanted on; see the gate below.
       logical :: observables_wanted
       real(dp), allocatable, target :: sinc_factor_matrix(:, :)
@@ -874,21 +875,30 @@ contains
 !        "pdf: 0.000 seconds" -- unmeasured, not free. On a 7200-atom GST MAD
 !        step it is the largest single cost in the run, and all of it landed in
 !        Miscellaneous.
-         call time_start(time%pdf, "pair_distribution")
+!        Nothing reads the pdf on a GAP-only run.
+         pdf_needed = params%do_pair_distribution .or. &
+                      ((params%do_structure_factor .or. params%do_xrd .or. params%do_nd) .and. .not. params%xrd_debye)
+         do i = 1, params%n_exp
+            if (trim(params%exp_data(i)%label) == 'pair_distribution') pdf_needed = .true.
+         end do
 
-         call calculate_pair_distribution(params, x_pair_distribution&
-           &, y_pair_distribution, y_pair_distribution_temp,&
-           & pair_distribution_partial, pair_distribution_partial_temp,&
-           & n_species_actual, species_types_actual, n_atoms_of_species,&
-           & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep,&
-           & i_beg, i_end, j_beg, j_end, ierr, rjs, xyz,&
-           & neighbors_list, n_neigh, neighbor_species, species, rank,&
-           & params%exp_forces, pair_distribution_der,&
-           & pair_distribution_partial_der,&
-           & pair_distribution_partial_temp_der, energies_pdf,&
-           & forces_pdf, virial_pdf)
+         if (pdf_needed) then
+            call time_start(time%pdf, "pair_distribution")
 
-         call time_end(time%pdf, "pair_distribution")
+            call calculate_pair_distribution(params, x_pair_distribution&
+              &, y_pair_distribution, y_pair_distribution_temp,&
+              & pair_distribution_partial, pair_distribution_partial_temp,&
+              & n_species_actual, species_types_actual, n_atoms_of_species,&
+              & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep,&
+              & i_beg, i_end, j_beg, j_end, ierr, rjs, xyz,&
+              & neighbors_list, n_neigh, neighbor_species, species, rank,&
+              & params%exp_forces, pair_distribution_der,&
+              & pair_distribution_partial_der,&
+              & pair_distribution_partial_temp_der, energies_pdf,&
+              & forces_pdf, virial_pdf)
+
+            call time_end(time%pdf, "pair_distribution")
+         end if
 
       end if
 
