@@ -97,6 +97,13 @@ thermostat, a barostat or box scaling, a variable time step, electronic
 stopping, MC, nested sampling, MAD-IR, and the whole-structure observables.
 The end-of-run report says which ran and how many atoms migrated.
 
+Measured on alt, 8 ranks: 308k atoms, ten MD steps, 341.9 s integrating on
+rank 0 and 333.8 s on the domains (589 atoms migrated). 57k atoms, 200 NVE
+steps: 1173.4 s replicated and 1150.7 s on the domains (5500 migrated), and
+the conserved energy drifts by the same -23.2813 eV in both. On one node the
+saving is small, because rank 0's scatter and gather were already small; what
+changes is that nothing but output passes through rank 0.
+
 This is the legacy branch's `migrate`, rewritten: six face neighbours instead
 of 26, sweeps instead of one exchange, the re-balancing it lacked, every
 per-atom array the integrator needs, and global reductions for the
