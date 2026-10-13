@@ -32,6 +32,7 @@
 module turbogap_comm
 
    use kinds, only: dp
+   use, intrinsic :: iso_fortran_env, only: int64
 #ifdef _MPIF90
    use mpi
 #endif
@@ -45,6 +46,7 @@ module turbogap_comm
    public :: comm_bcast
    public :: comm_sum_to_root
    public :: comm_sum_all
+   public :: comm_any_all
    public :: comm_allgather
    public :: comm_with_mpi
 
@@ -66,6 +68,7 @@ module turbogap_comm
       module procedure bcast_i0
       module procedure bcast_r0
       module procedure bcast_i1
+      module procedure bcast_i8_1
       module procedure bcast_r1
       module procedure bcast_r2
       module procedure bcast_l2
@@ -83,9 +86,15 @@ module turbogap_comm
 !  mpi_allreduce in place.
    interface comm_sum_all
       module procedure sum_all_r0
+      module procedure sum_all_i1
       module procedure sum_all_r2
       module procedure sum_all_r3
    end interface comm_sum_all
+
+!  Logical OR over ranks, in place.
+   interface comm_any_all
+      module procedure any_all_l1
+   end interface comm_any_all
 
    interface comm_allgather
       module procedure allgather_i0
@@ -153,6 +162,16 @@ contains
       call mpi_bcast(x, n, MPI_INTEGER, 0, comm%handle, ierr)
 #endif
    end subroutine bcast_i1
+
+   subroutine bcast_i8_1(comm, x, n)
+      type(comm_t), intent(in) :: comm
+      integer(int64), contiguous, intent(inout) :: x(:)
+      integer, intent(in) :: n
+      integer :: ierr
+#ifdef _MPIF90
+      call mpi_bcast(x, n, MPI_INTEGER8, 0, comm%handle, ierr)
+#endif
+   end subroutine bcast_i8_1
 
    subroutine bcast_r1(comm, x, n)
       type(comm_t), intent(in) :: comm
@@ -256,6 +275,16 @@ contains
 #endif
    end subroutine sum_all_r0
 
+   subroutine sum_all_i1(comm, x, n)
+      type(comm_t), intent(in) :: comm
+      integer, contiguous, intent(inout) :: x(:)
+      integer, intent(in) :: n
+      integer :: ierr
+#ifdef _MPIF90
+      call mpi_allreduce(MPI_IN_PLACE, x, n, MPI_INTEGER, MPI_SUM, comm%handle, ierr)
+#endif
+   end subroutine sum_all_i1
+
    subroutine sum_all_r2(comm, x, n)
       type(comm_t), intent(in) :: comm
       real(dp), contiguous, intent(inout) :: x(:, :)
@@ -275,6 +304,16 @@ contains
       call mpi_allreduce(MPI_IN_PLACE, x, n, MPI_DOUBLE_PRECISION, MPI_SUM, comm%handle, ierr)
 #endif
    end subroutine sum_all_r3
+
+   subroutine any_all_l1(comm, x, n)
+      type(comm_t), intent(in) :: comm
+      logical, contiguous, intent(inout) :: x(:)
+      integer, intent(in) :: n
+      integer :: ierr
+#ifdef _MPIF90
+      call mpi_allreduce(MPI_IN_PLACE, x, n, MPI_LOGICAL, MPI_LOR, comm%handle, ierr)
+#endif
+   end subroutine any_all_l1
 
    subroutine allgather_i0(comm, x, all)
       type(comm_t), intent(in) :: comm
