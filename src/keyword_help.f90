@@ -71,11 +71,22 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  dd_grid                              [integer(1:3), default [1, 1, 1]]'
+         write (*, '(A)') '  dd_balance                           [string, default count]'
+         write (*, '(A)') '      Where the domain borders go, for dd_type legacy. "count" places the'
+         write (*, '(A)') '      cuts along each axis so every slab holds the same number of atoms,'
+         write (*, '(A)') '      recomputed at every neighbour rebuild; "volume" cuts the cell into'
+         write (*, '(A)') '      equal slabs. Count matters for a surface, a cluster or anything else'
+         write (*, '(A)') '      with vacuum in the cell.'
+         write (*, '(A)') '      -> needs dd_type; see dd_grid'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  dd_grid                              [integer(1:3), default [0, 0, 0]]'
          write (*, '(A)') '      Number of domains along each cell vector, for dd_type legacy. Their'
          write (*, '(A)') '      product may not exceed the number of MPI ranks, and each domain must'
-         write (*, '(A)') '      be at least rcut_max across.'
-         write (*, '(A)') '      -> needs dd_type; see dd_grid_affinity'
+         write (*, '(A)') '      be at least rcut_max across. Left at 0 0 0, there is one domain per'
+         write (*, '(A)') '      rank, and the grid is the one whose halos are smallest for the cell.'
+         write (*, '(A)') '      -> needs dd_type; see dd_grid_affinity, dd_balance'
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then

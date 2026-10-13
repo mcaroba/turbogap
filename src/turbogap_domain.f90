@@ -40,8 +40,9 @@ module turbogap_domain
    use turbogap_loop, only: loop_t
    use turbogap_results, only: results_t, results_resize_sites
    use domain_legacy, only: legacy_dd_t, legacy_init, legacy_free, legacy_check_widths, legacy_distribute, &
-                            legacy_reverse, legacy_gather
+                            legacy_reverse, legacy_gather, legacy_refresh, legacy_auto_grid, legacy_make_grid
    use error, only: turbogap_abort
+   use printing, only: print_parameters
    use read_files, only: read_xyz
    use neighbors, only: build_neighbors_list
 
@@ -117,6 +118,9 @@ module turbogap_domain
       real(dp), allocatable :: g_positions(:, :)
       integer, allocatable :: g_species(:)
       character*8, allocatable :: g_xyz_species(:)
+!     Legacy, rank 0: its domain's species, kept for the steps between rebuilds.
+      integer, allocatable :: l_species(:)
+      character*8, allocatable :: l_xyz_species(:)
    end type domain_t
 
 contains
@@ -144,7 +148,7 @@ contains
       case ("legacy")
          dom%dd_type = DD_LEGACY
          call legacy_refuse(comm, params, model, perform, mode)
-         call legacy_init(dom%legacy, comm, params%dd_grid, params%dd_grid_affinity)
+         call legacy_init(dom%legacy, comm, params%dd_grid, params%dd_grid_affinity, params%dd_balance)
       case default
          if (comm%rank == 0) write (*, '(A,A,A)') 'ERROR: dd_type is "', trim(params%dd_type), &
             '"; it must be none or legacy'
@@ -257,9 +261,10 @@ contains
       type(times_t), intent(inout) :: time
       integer :: n_pos
 
-!     Legacy: the halos move with the atoms, so every step rebuilds.
+!     Legacy: whether to rebuild, decided by rank 0's skin test as in the
+!     replicated mode. The positions go out in domain_build.
       if (dom%dd_type == DD_LEGACY) then
-         nl%rebuild_neighbors_list = .true.
+         call comm_bcast(comm, nl%rebuild_neighbors_list)
          return
       end if
       call comm_bcast(comm, nl%rebuild_neighbors_list)
@@ -470,12 +475,19 @@ contains
       type(loop_t), intent(inout) :: loop
       type(times_t), intent(inout) :: time
       integer, allocatable :: pairs(:)
+      integer :: grid(1:3)
       integer :: n_global
       integer :: n_owned
       integer :: n_ranks
       integer :: r
 
       call time_start(time%neigh)
+      call comm_bcast(comm, nl%rebuild_neighbors_list)
+      if (params%do_md .and. dom%legacy%n_builds > 0 .and. .not. nl%rebuild_neighbors_list) then
+         call legacy_reuse(dom, nl, comm, state, params, model, time)
+         call time_end(time%neigh)
+         return
+      end if
       if (comm%rank == 0) then
 !        The replicated build's own supercell check, for a box that has shrunk.
          call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
@@ -497,6 +509,16 @@ contains
             'this one needs a supercell'
          call turbogap_abort()
       end if
+      if (.not. dom%legacy%grid_ready) then
+         grid = legacy_auto_grid(dom%legacy%n_domains, state%a_box, state%b_box, state%c_box, model%rcut_max)
+         if (all(grid == 0)) then
+            if (comm%rank == 0) write (*, '(A,I0,A,F0.3,A)') 'ERROR: dd_grid: no grid of ', dom%legacy%n_domains, &
+               ' domains keeps every domain at least rcut_max = ', model%rcut_max, ' A wide; use fewer ranks'
+            call turbogap_abort()
+         end if
+         call legacy_make_grid(dom%legacy, comm, grid)
+         if (comm%rank == 0) call print_parameters("dd_grid (chosen)", grid)
+      end if
       call legacy_check_widths(dom%legacy, state%a_box, state%b_box, state%c_box, model%rcut_max, comm%rank)
 
       if (comm%rank == 0) then
@@ -514,6 +536,10 @@ contains
       state%n_sites = dom%legacy%n_local
       state%species_supercell = state%species
       state%xyz_species_supercell = state%xyz_species
+      if (comm%rank == 0) then
+         dom%l_species = state%species
+         dom%l_xyz_species = state%xyz_species
+      end if
 
       n_owned = dom%legacy%n_owned
       n_ranks = dom%legacy%local%size
@@ -560,6 +586,41 @@ contains
       dom%this_site_in_rank = 0
       call time_end(time%neigh)
    end subroutine legacy_build
+
+!  Legacy, between rebuilds: the domains, halos and neighbour lists stay; the
+!  positions are refreshed and the pair geometry recomputed, as the replicated
+!  mode does when the skin test passes.
+   subroutine legacy_reuse(dom, nl, comm, state, params, model, time)
+      type(domain_t), intent(inout) :: dom
+      type(neighbors_t), intent(inout) :: nl
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+      type(times_t), intent(inout) :: time
+
+      call comm_bcast(comm, state%a_box, 3)
+      call comm_bcast(comm, state%b_box, 3)
+      call comm_bcast(comm, state%c_box, 3)
+      if (comm%rank == 0) then
+         dom%g_n_sites = state%n_sites
+         call move_alloc(state%positions, dom%g_positions)
+         call move_alloc(state%species, dom%g_species)
+         call move_alloc(state%xyz_species, dom%g_xyz_species)
+         state%species = dom%l_species
+         state%xyz_species = dom%l_xyz_species
+         state%species_supercell = state%species
+         state%xyz_species_supercell = state%xyz_species
+      end if
+      call legacy_refresh(dom%legacy, comm, dom%g_positions, state%positions, time%dd_scatter, time%dd_share)
+      state%n_sites = dom%legacy%n_local
+      dom%do_list = .false.
+      dom%do_list(dom%i_beg:dom%i_end) = .true.
+      call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
+                                state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
+                                nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
+                                state%n_sites, state%indices, .false., dom%do_list, comm%rank)
+   end subroutine legacy_reuse
 
 !  Make every rank's copy of the per-site properties whole. Replicated data:
 !  each rank computed its own sites and left zeros elsewhere, so a sum is the
@@ -1054,6 +1115,8 @@ contains
       allocate (all(1:N_COL*comm%size))
       call comm_gather(comm, mine, N_COL, all)
       if (comm%rank /= 0) return
+      write (*, '(A,I0,A,I0,A)') ' dd_type legacy: ', dom%legacy%n_builds, ' rebuilds, ', dom%legacy%n_refreshes, &
+         ' steps reusing the domains'
       write (*, '(A)') ' dd_type legacy, per rank (seconds over the run; sites and pairs of the last step):'
       write (*, '(A)') '  rank  dom.rank  owned   local  slice     pairs      gap    neigh  scatter     halo    share'// &
          '  reverse   gather'
@@ -1071,6 +1134,7 @@ contains
       if (allocated(dom%do_list)) deallocate (dom%do_list)
       if (dom%dd_type == DD_LEGACY) call legacy_free(dom%legacy)
       if (allocated(dom%g_positions)) deallocate (dom%g_positions, dom%g_species, dom%g_xyz_species)
+      if (allocated(dom%l_species)) deallocate (dom%l_species, dom%l_xyz_species)
    end subroutine domain_free
 
 end module turbogap_domain

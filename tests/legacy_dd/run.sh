@@ -16,7 +16,10 @@
 #   - several ranks per domain, block and cyclic, so the halo forces of
 #     non-root ranks have to reach the root;
 #   - a sheared cell, where a face's normal is not a cell vector;
-#   - five MD steps, so rank 0 integrates gathered forces and redistributes.
+#   - the grid chosen automatically, and equal-volume cuts;
+#   - a slab with vacuum, where count balancing moves the cuts;
+#   - MD: five steps; twenty, which reuse the domains between rebuilds; and
+#     twenty with a tiny skin, which rebuild nearly every step.
 #
 # Environment:
 #   TURBOGAP_BIN        binary under test (default: <repo>/bin/turbogap)
@@ -61,6 +64,22 @@ check_setup() {
     printf 'SKIP: missing test data %s\n' "$DATA/gap_files/CO.gap"
     exit 0
   fi
+}
+
+# The 897-atom cell with c doubled: half of it vacuum.
+make_slab() {
+  "$PYTHON" - "$DATA/atoms_897.xyz" "$1" <<'EOF'
+import re
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+lines = open(src).read().splitlines()
+old = re.search(r'Lattice="([^"]*)"', lines[1]).group(1)
+lat = [float(x) for x in old.split()]
+lat[6:9] = [2.0 * x for x in lat[6:9]]
+lines[1] = lines[1].replace(old, " ".join(f"{x:.10f}" for x in lat))
+open(dst, "w").write("\n".join(lines) + "\n")
+EOF
 }
 
 # The 897-atom cell with c tilted by 0.3 a, atoms carried along with the cell.
@@ -112,11 +131,12 @@ run_one() {
   (cd "$dir" && OMP_NUM_THREADS=1 mpirun $MPI_OVERSUBSCRIBE -np "$ranks" "$BIN" "$mode" >out.log 2>&1)
 }
 
-# leg <name> <atoms file> <md steps> <ranks> <dd_grid> [affinity]
+# leg <name> <atoms file> <md steps> <ranks> <dd_grid, or auto> [affinity] [extra lines for both runs]
 leg() {
-  local name=$1 atoms=$2 steps=$3 ranks=$4 grid=$5 affinity=${6:-block}
-  local mode=predict
+  local name=$1 atoms=$2 steps=$3 ranks=$4 grid=$5 affinity=${6:-block} extra=${7:-}
+  local mode=predict grid_line=""
   [ "$steps" -gt 0 ] && mode=md
+  [ "$grid" != auto ] && grid_line="dd_grid = $grid"
   printf '== %s: %s ranks, grid %s, %s ==\n' "$name" "$ranks" "$grid" "$affinity"
 
   local ok=1 kind
@@ -125,9 +145,10 @@ leg() {
     ln -sf "$DATA/gap_files" "$WORK/$name/$kind/gap_files"
     cp "$atoms" "$WORK/$name/$kind/atoms.xyz"
   done
-  write_input "$WORK/$name/ref" "$steps"
-  write_input "$WORK/$name/dd" "$steps" "dd_type = legacy
-dd_grid = $grid
+  write_input "$WORK/$name/ref" "$steps" "$extra"
+  write_input "$WORK/$name/dd" "$steps" "$extra
+dd_type = legacy
+$grid_line
 dd_grid_affinity = $affinity"
 
   run_one "$WORK/$name/ref" "$mode" "$ranks" || ok=0
@@ -135,7 +156,7 @@ dd_grid_affinity = $affinity"
   if [ "$ok" -eq 1 ] && grep -q 'dd_type' "$WORK/$name/dd/out.log" &&
      "$PYTHON" "$COMPARE" "$WORK/$name/ref/trajectory_out.xyz" "$WORK/$name/dd/trajectory_out.xyz" \
        --rtol "$RTOL" --atol "$ATOL"; then
-    printf '    PASS\n'
+    printf '    PASS  %s\n' "$(grep -a 'rebuilds,' "$WORK/$name/dd/out.log" | sed 's/^ *dd_type legacy: //')"
     pass=$((pass + 1))
   else
     printf '    FAIL (logs in %s)\n' "$WORK/$name"
@@ -173,7 +194,12 @@ run_leg() {
   block4) leg block4 "$small" 0 4 "2 1 1" block ;;
   cyclic6) leg cyclic6 "$small" 0 6 "1 3 1" cyclic ;;
   sheared) make_sheared "$WORK/sheared.xyz" && leg sheared "$WORK/sheared.xyz" 0 4 "2 1 2" ;;
+  auto8) leg auto8 "$small" 0 8 auto ;;
+  volume4) leg volume4 "$small" 0 4 "2 2 1" block "dd_balance = volume" ;;
+  slab4) make_slab "$WORK/slab.xyz" && leg slab4 "$WORK/slab.xyz" 0 4 "1 1 4" ;;
   md8) leg md8 "$DATA/atoms_7176_vel.xyz" 5 8 "2 2 2" ;;
+  md20) leg md20 "$DATA/atoms_7176_vel.xyz" 20 8 auto ;;
+  md20_skin) leg md20_skin "$DATA/atoms_7176_vel.xyz" 20 8 auto block "neighbors_buffer = 0.01" ;;
   narrow) refused narrow 4 "dd_grid = 4 1 1" ;;
   vdw) refused vdw 2 "dd_grid = 2 1 1
 vdw_type = ts" ;;
@@ -191,7 +217,7 @@ fi
 
 pass=0
 fail=0
-legs=${*:-x2 x3 xy4 xyz8 one3 block4 cyclic6 sheared md8 narrow vdw}
+legs=${*:-x2 x3 xy4 xyz8 one3 block4 cyclic6 sheared auto8 volume4 slab4 md8 md20 md20_skin narrow vdw}
 for l in $legs; do
   run_leg "$l"
 done

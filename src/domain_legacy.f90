@@ -29,12 +29,17 @@
 !  The legacy spatial decomposition (dd_type = legacy); docs/LEGACY_DD.md.
 !
 !  The cell is cut into grid(1) x grid(2) x grid(3) slabs of fractional
-!  coordinate. Rank 0 bins the atoms and sends each domain its own; the domain
-!  roots then trade halos, the atoms within rcut of a face, in six sweeps:
-!  down and up along axis 1, then 2, then 3. An atom received along one axis is
-!  forwarded along the later ones, which is what fills edges and corners.
-!  legacy_reverse runs the sweeps backwards to return what landed on halo
-!  atoms, and legacy_gather brings the owned atoms' results to rank 0.
+!  coordinate, at cuts placed so that each slab holds the same number of atoms
+!  (or the same volume). Rank 0 bins the atoms and sends each domain its own;
+!  the domain roots then trade halos, the atoms within rcut of a face, in six
+!  sweeps: down and up along axis 1, then 2, then 3. An atom received along one
+!  axis is forwarded along the later ones, which is what fills edges and
+!  corners. legacy_reverse runs the sweeps backwards to return what landed on
+!  halo atoms, and legacy_gather brings the owned atoms' results to rank 0.
+!
+!  Between rebuilds the domains keep their atoms: legacy_refresh sends each
+!  domain the new positions of the atoms it already holds, as the replicated
+!  mode refreshes its neighbour list between rebuilds.
 !
 !  Atoms travel as REC_ATOM doubles: global index, species, position, and the
 !  eight characters of the xyz species moved bit for bit.
@@ -51,7 +56,10 @@ module domain_legacy
 
    private
    public :: legacy_init
+   public :: legacy_make_grid
+   public :: legacy_auto_grid
    public :: legacy_free
+   public :: legacy_refresh
    public :: legacy_check_widths
    public :: legacy_distribute
    public :: legacy_reverse
@@ -66,10 +74,20 @@ module domain_legacy
    type, public :: legacy_dd_t
       integer :: grid(1:3) = 1
       integer :: n_domains = 1
+!     The grid is made once the cell is known when it is chosen automatically.
+      logical :: grid_ready = .false.
+!     Cut so each slab holds the same number of atoms, or the same volume.
+      logical :: balance_count = .true.
+!     Fractional coordinate of the cuts along each axis: cuts(0:grid(a), a).
+      real(dp), allocatable :: cuts(:, :)
+      integer :: n_builds = 0
+      integer :: n_refreshes = 0
 !     The ranks of this domain, and one root per domain ranked by domain.
 !     roots has size 0 on every rank that is not a root.
       type(comm_t) :: local
       type(comm_t) :: roots
+!     The roots, before the grid is laid over them.
+      type(comm_t) :: root_split
       integer :: coords(1:3) = 0
 !     roots ranks of the neighbouring domains: (DOWN or UP, axis).
       integer :: nbr(1:2, 1:3) = 0
@@ -85,29 +103,40 @@ module domain_legacy
 !     The halo kept from each sweep, as a run of local sites.
       integer :: halo_beg(1:2, 1:3) = 1
       integer :: halo_n(1:2, 1:3) = 0
+!     Rank 0 only: every domain's local ids, domain after domain, for refresh.
+      integer, allocatable :: all_ids(:)
+      integer, allocatable :: local_counts(:)
+      integer, allocatable :: local_displs(:)
    end type legacy_dd_t
 
 contains
 
-!  Group the ranks into domains and the roots into a periodic grid. block puts
-!  consecutive ranks in a domain; cyclic deals them out round-robin.
-   subroutine legacy_init(ld, world, grid, affinity)
+!  Group the ranks into domains. block puts consecutive ranks in a domain;
+!  cyclic deals them out round-robin. grid = 0 0 0 asks for one domain per rank,
+!  laid out by legacy_auto_grid once the cell is known; any other grid is laid
+!  out now.
+   subroutine legacy_init(ld, world, grid, affinity, balance)
       type(legacy_dd_t), intent(inout) :: ld
       type(comm_t), intent(in) :: world
       integer, intent(in) :: grid(1:3)
       character(len=*), intent(in) :: affinity
-      type(comm_t) :: split
+      character(len=*), intent(in) :: balance
       integer :: color
       integer :: per_domain
-      integer :: axis
-      integer :: i
-      integer :: j
-      integer :: k
-      integer :: r
 
+      if (trim(balance) == "count") then
+         ld%balance_count = .true.
+      else if (trim(balance) == "volume") then
+         ld%balance_count = .false.
+      else
+         if (world%rank == 0) write (*, '(A,A,A)') 'ERROR: dd_balance is "', trim(balance), &
+            '"; it must be count or volume'
+         call turbogap_abort()
+      end if
       ld%grid = grid
       ld%n_domains = product(grid)
-      if (any(grid < 1) .or. ld%n_domains > world%size) then
+      if (all(grid == 0)) ld%n_domains = world%size
+      if (any(grid < 1) .and. .not. all(grid == 0) .or. ld%n_domains > world%size) then
          if (world%rank == 0) write (*, '(A,3(1X,I0),A,I0,A)') 'ERROR: dd_grid', grid, ' needs at least ', &
             max(ld%n_domains, 1), ' MPI ranks'
          call turbogap_abort()
@@ -130,20 +159,33 @@ contains
 
       call comm_split(world, color, world%rank, ld%local)
       if (ld%local%rank == 0) then
-         call comm_split(world, 0, world%rank, split)
+         call comm_split(world, 0, world%rank, ld%root_split)
       else
-         call comm_split(world, -1, world%rank, split)
+         call comm_split(world, -1, world%rank, ld%root_split)
       end if
+      if (.not. all(grid == 0)) call legacy_make_grid(ld, world, grid)
+   end subroutine legacy_init
 
+!  Lay the roots out as a periodic grid. Collective over world.
+   subroutine legacy_make_grid(ld, world, grid)
+      type(legacy_dd_t), intent(inout) :: ld
+      type(comm_t), intent(in) :: world
+      integer, intent(in) :: grid(1:3)
+      integer :: axis
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: r
+
+      ld%grid = grid
       if (ld%local%rank == 0) then
-         call comm_cart_create(split, ld%grid, ld%roots)
-         call comm_free(split)
+         call comm_cart_create(ld%root_split, ld%grid, ld%roots)
          call comm_cart_coords(ld%roots, ld%roots%rank, ld%coords)
          do axis = 1, 3
             call comm_cart_shift(ld%roots, axis, ld%nbr(DOWN, axis), ld%nbr(UP, axis))
          end do
       else
-         ld%roots = split
+         ld%roots = ld%root_split
       end if
 
       if (world%rank == 0) then
@@ -157,14 +199,72 @@ contains
             end do
          end do
       end if
-   end subroutine legacy_init
+      allocate (ld%cuts(0:maxval(grid), 1:3))
+      ld%cuts = 1.d0
+      do axis = 1, 3
+         do i = 0, grid(axis)
+            ld%cuts(i, axis) = dble(i)/dble(grid(axis))
+         end do
+      end do
+      ld%grid_ready = .true.
+   end subroutine legacy_make_grid
+
+!  The grid of n domains whose halos cost least: the factorisation of n that
+!  minimises the local/owned ratio prod(1 + 2 rcut / w_a) over the cut axes,
+!  w_a being a domain's perpendicular width. Domains narrower than rcut are not
+!  allowed; 0 0 0 if no factorisation fits.
+   pure function legacy_auto_grid(n, a_box, b_box, c_box, rcut) result(best)
+      integer, intent(in) :: n
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      real(dp), intent(in) :: rcut
+      integer :: best(1:3)
+      real(dp) :: recip(1:3, 1:3)
+      real(dp) :: width(1:3)
+      real(dp) :: cost
+      real(dp) :: best_cost
+      integer :: g(1:3)
+      integer :: i
+      integer :: j
+      integer :: axis
+      logical :: fits
+
+      call reciprocal_rows(a_box, b_box, c_box, recip)
+      do axis = 1, 3
+         width(axis) = 1.d0/norm2(recip(axis, 1:3))
+      end do
+      best = 0
+      best_cost = huge(1.d0)
+      do i = 1, n
+         if (mod(n, i) /= 0) cycle
+         do j = 1, n/i
+            if (mod(n/i, j) /= 0) cycle
+            g = [i, j, n/(i*j)]
+            fits = .true.
+            cost = 1.d0
+            do axis = 1, 3
+               if (g(axis) == 1) cycle
+               if (width(axis)/dble(g(axis)) < rcut) fits = .false.
+               cost = cost*(1.d0 + 2.d0*rcut*dble(g(axis))/width(axis))
+            end do
+            if (fits .and. cost < best_cost) then
+               best_cost = cost
+               best = g
+            end if
+         end do
+      end do
+   end function legacy_auto_grid
 
    subroutine legacy_free(ld)
       type(legacy_dd_t), intent(inout) :: ld
 
+      if (ld%grid_ready .and. ld%local%rank == 0) call comm_free(ld%roots)
+      call comm_free(ld%root_split)
       call comm_free(ld%local)
-      call comm_free(ld%roots)
       if (allocated(ld%rank_of)) deallocate (ld%rank_of)
+      if (allocated(ld%cuts)) deallocate (ld%cuts)
+      if (allocated(ld%all_ids)) deallocate (ld%all_ids, ld%local_counts, ld%local_displs)
       if (allocated(ld%ids)) deallocate (ld%ids)
       if (allocated(ld%slot)) deallocate (ld%slot)
    end subroutine legacy_free
@@ -204,14 +304,80 @@ contains
       s = modulo(matmul(recip, r), 1.d0)
    end function legacy_frac
 
-!  Grid cell of a fractional coordinate, counting from 0.
-   pure function legacy_cell(s, grid) result(c)
+!  Grid cell of a fractional coordinate, counting from 0: the slab whose cuts
+!  bracket it along each axis.
+   pure function legacy_cell(s, grid, cuts) result(c)
       real(dp), intent(in) :: s(1:3)
       integer, intent(in) :: grid(1:3)
+      real(dp), intent(in) :: cuts(0:, :)
       integer :: c(1:3)
+      integer :: axis
 
-      c = min(grid - 1, int(s*dble(grid)))
+      do axis = 1, 3
+         c(axis) = count(cuts(1:grid(axis) - 1, axis) <= s(axis))
+      end do
    end function legacy_cell
+
+!  Rank 0: cuts that give every slab along an axis the same number of atoms,
+!  from a histogram of fractional coordinates, then pushed apart until every
+!  slab is at least rcut wide.
+   subroutine balance_cuts(ld, positions, n_global, recip, rcut)
+      type(legacy_dd_t), intent(inout) :: ld
+      real(dp), intent(in) :: positions(:, :)
+      integer, intent(in) :: n_global
+      real(dp), intent(in) :: recip(1:3, 1:3)
+      real(dp), intent(in) :: rcut
+      integer, parameter :: BINS_PER_SLAB = 256
+      real(dp), allocatable :: s(:, :)
+      integer, allocatable :: hist(:)
+      real(dp) :: w_min
+      real(dp) :: target
+      integer :: n_bins
+      integer :: axis
+      integer :: g
+      integer :: b
+      integer :: k
+      integer :: below
+      integer :: i
+
+      if (.not. ld%balance_count) return
+      allocate (s(1:3, 1:max(n_global, 1)))
+      do i = 1, n_global
+         s(1:3, i) = legacy_frac(recip, positions(1:3, i))
+      end do
+      do axis = 1, 3
+         g = ld%grid(axis)
+         if (g == 1) cycle
+         n_bins = BINS_PER_SLAB*g
+         allocate (hist(1:n_bins))
+         hist = 0
+         do i = 1, n_global
+            b = min(n_bins, 1 + int(s(axis, i)*dble(n_bins)))
+            hist(b) = hist(b) + 1
+         end do
+         below = 0
+         b = 0
+         do k = 1, g - 1
+            target = dble(k)*dble(n_global)/dble(g)
+            do while (b < n_bins .and. dble(below + hist(min(b + 1, n_bins))) <= target)
+               b = b + 1
+               below = below + hist(b)
+            end do
+            ld%cuts(k, axis) = dble(b)/dble(n_bins)
+            if (b < n_bins .and. hist(b + 1) > 0) then
+               ld%cuts(k, axis) = ld%cuts(k, axis) + (target - dble(below))/dble(hist(b + 1))/dble(n_bins)
+            end if
+         end do
+         deallocate (hist)
+         w_min = rcut*norm2(recip(axis, 1:3))
+         do k = 1, g - 1
+            ld%cuts(k, axis) = max(ld%cuts(k, axis), ld%cuts(k - 1, axis) + w_min)
+         end do
+         do k = g - 1, 1, -1
+            ld%cuts(k, axis) = min(ld%cuts(k, axis), ld%cuts(k + 1, axis) - w_min)
+         end do
+      end do
+   end subroutine balance_cuts
 
 !  A halo comes from the adjacent domain only if every domain is at least rcut
 !  across, measured perpendicular to its faces.
@@ -271,7 +437,7 @@ contains
 
       if (ld%local%rank == 0) then
          call time_start(t_scatter, "dd_scatter")
-         call scatter_owned(ld, world, n_global, positions, species, xyz_species, recip, rec)
+         call scatter_owned(ld, world, n_global, positions, species, xyz_species, recip, rcut, rec)
          call build_slots(ld, rec)
          call time_end(t_scatter, "dd_scatter")
          call time_start(t_halo, "dd_halo")
@@ -302,7 +468,83 @@ contains
          call unpack_atom(rec(1:REC_ATOM, i), ld%ids(i), species_l(i), pos_l(1:3, i), xyz_species_l(i))
       end do
       call time_end(t_share, "dd_share")
+      call time_start(t_scatter, "dd_scatter")
+      call collect_ids(ld, world)
+      call time_end(t_scatter, "dd_scatter")
+      ld%n_builds = ld%n_builds + 1
    end subroutine legacy_distribute
+
+!  Rank 0 learns which atoms every domain holds, owned and halo, in local
+!  order, so that legacy_refresh can send them their positions.
+   subroutine collect_ids(ld, world)
+      type(legacy_dd_t), intent(inout) :: ld
+      type(comm_t), intent(in) :: world
+      real(dp), allocatable :: send(:)
+      real(dp), allocatable :: recv(:)
+      integer :: d
+
+      if (ld%local%rank /= 0) return
+      if (.not. allocated(ld%local_counts)) then
+         allocate (ld%local_counts(1:ld%n_domains))
+         allocate (ld%local_displs(1:ld%n_domains))
+      end if
+      call comm_gather(ld%roots, ld%n_local, ld%local_counts)
+      allocate (send(1:max(ld%n_local, 1)))
+      send(1:ld%n_local) = dble(ld%ids(1:ld%n_local))
+      if (world%rank == 0) then
+         ld%local_displs(1) = 0
+         do d = 2, ld%n_domains
+            ld%local_displs(d) = ld%local_displs(d - 1) + ld%local_counts(d - 1)
+         end do
+         allocate (recv(1:max(sum(ld%local_counts), 1)))
+      else
+         allocate (recv(1))
+      end if
+      call comm_gatherv(ld%roots, send, ld%n_local, recv, ld%local_counts, ld%local_displs)
+      if (world%rank == 0) then
+         if (allocated(ld%all_ids)) deallocate (ld%all_ids)
+         allocate (ld%all_ids(1:size(recv)))
+         ld%all_ids = nint(recv)
+      end if
+   end subroutine collect_ids
+
+!  Between rebuilds: every domain keeps its atoms and gets their new
+!  positions, in the order it holds them. positions is read on rank 0.
+   subroutine legacy_refresh(ld, world, positions, pos_l, t_scatter, t_share)
+      type(legacy_dd_t), intent(inout) :: ld
+      type(comm_t), intent(in) :: world
+      real(dp), intent(in) :: positions(:, :)
+      real(dp), allocatable, intent(inout) :: pos_l(:, :)
+      real(dp), intent(inout) :: t_scatter(3)
+      real(dp), intent(inout) :: t_share(3)
+      real(dp), allocatable :: send(:)
+      real(dp), allocatable :: recv(:)
+      integer :: i
+
+      if (ld%local%rank == 0) then
+         call time_start(t_scatter, "dd_scatter")
+         if (world%rank == 0) then
+            allocate (send(1:3*max(size(ld%all_ids), 1)))
+            do i = 1, size(ld%all_ids)
+               send(3*i - 2:3*i) = positions(1:3, ld%all_ids(i))
+            end do
+         else
+            allocate (send(1:3))
+         end if
+         allocate (recv(1:3*max(ld%n_local, 1)))
+         call comm_scatterv(ld%roots, send, 3*ld%local_counts, 3*ld%local_displs, recv, 3*ld%n_local)
+         call time_end(t_scatter, "dd_scatter")
+      else
+         allocate (recv(1:3*max(ld%n_local, 1)))
+      end if
+      call time_start(t_share, "dd_share")
+      call comm_bcast(ld%local, recv, 3*ld%n_local)
+      if (allocated(pos_l)) deallocate (pos_l)
+      allocate (pos_l(1:3, 1:ld%n_local))
+      pos_l = reshape(recv(1:3*ld%n_local), [3, ld%n_local])
+      call time_end(t_share, "dd_share")
+      ld%n_refreshes = ld%n_refreshes + 1
+   end subroutine legacy_refresh
 
    pure subroutine pack_atom(id, species, r, xyz_species, rec)
       integer, intent(in) :: id
@@ -332,7 +574,7 @@ contains
 
 !  Rank 0 bins the atoms and each root receives its domain's, in global order.
 !  Called on the roots only.
-   subroutine scatter_owned(ld, world, n_global, positions, species, xyz_species, recip, rec)
+   subroutine scatter_owned(ld, world, n_global, positions, species, xyz_species, recip, rcut, rec)
       type(legacy_dd_t), intent(inout) :: ld
       type(comm_t), intent(in) :: world
       integer, intent(in) :: n_global
@@ -340,6 +582,7 @@ contains
       integer, intent(in) :: species(:)
       character*8, intent(in) :: xyz_species(:)
       real(dp), intent(in) :: recip(1:3, 1:3)
+      real(dp), intent(in) :: rcut
       real(dp), allocatable, intent(inout) :: rec(:, :)
       real(dp), allocatable :: send(:, :)
       real(dp), allocatable :: recv(:)
@@ -353,11 +596,13 @@ contains
 
       allocate (counts(1:ld%n_domains))
       allocate (displs(1:ld%n_domains))
+      if (world%rank == 0) call balance_cuts(ld, positions, n_global, recip, rcut)
+      call comm_bcast(ld%roots, ld%cuts, size(ld%cuts))
       if (world%rank == 0) then
          allocate (domain(1:n_global))
          counts = 0
          do i = 1, n_global
-            c = legacy_cell(legacy_frac(recip, positions(1:3, i)), ld%grid)
+            c = legacy_cell(legacy_frac(recip, positions(1:3, i)), ld%grid, ld%cuts)
             domain(i) = ld%rank_of(c(1), c(2), c(3)) + 1
             counts(domain(i)) = counts(domain(i)) + 1
          end do
@@ -435,8 +680,8 @@ contains
       do axis = 1, 3
          if (ld%grid(axis) == 1) cycle
          width = 1.d0/norm2(recip(axis, 1:3))
-         lo = dble(ld%coords(axis))/dble(ld%grid(axis))
-         hi = dble(ld%coords(axis) + 1)/dble(ld%grid(axis))
+         lo = ld%cuts(ld%coords(axis), axis)
+         hi = ld%cuts(ld%coords(axis) + 1, axis)
          n_before = ld%n_local
          do dir = DOWN, UP
             n_send = 0

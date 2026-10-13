@@ -2324,8 +2324,10 @@ contains
          !> @kw dd_grid
          !> Number of domains along each cell vector, for dd_type legacy. Their product may not
          !> exceed the number of MPI ranks, and each domain must be at least rcut_max across.
+         !> Left at 0 0 0, there is one domain per rank, and the grid is the one whose halos are
+         !> smallest for the cell.
          !> @needs dd_type
-         !> @see dd_grid_affinity
+         !> @see dd_grid_affinity, dd_balance
       else if (keyword == 'dd_grid') then
          backspace (unit)
          read (unit, *, iostat=iostatus) cjunk, cjunk, (params%dd_grid(nw), nw=1, 3)
@@ -2342,6 +2344,18 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%dd_grid_affinity
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("dd_grid_affinity", params%dd_grid_affinity)
+         !> @kw dd_balance
+         !> Where the domain borders go, for dd_type legacy. "count" places the cuts along each axis
+         !> so every slab holds the same number of atoms, recomputed at every neighbour rebuild;
+         !> "volume" cuts the cell into equal slabs. Count matters for a surface, a cluster or
+         !> anything else with vacuum in the cell.
+         !> @needs dd_type
+         !> @see dd_grid
+      else if (keyword == 'dd_balance') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%dd_balance
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("dd_balance", params%dd_balance)
          !> @kw max_gbytes_per_process
          !> Memory an MPI rank may use for the SOAP descriptor and its derivatives; the rank splits
          !> its atoms into as many batches as it takes to stay under this. Naming it in the input file

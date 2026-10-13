@@ -629,8 +629,10 @@ module types
 
 !     DOMAIN DECOMPOSITION
       character*16 :: dd_type = "none"
-      integer :: dd_grid(1:3) = [1, 1, 1]
+!     0 0 0: one domain per rank, laid out from the cell at the first build.
+      integer :: dd_grid(1:3) = [0, 0, 0]
       character*16 :: dd_grid_affinity = "block"
+      character*16 :: dd_balance = "count"
 
 !     MOLECULAR DYNAMICS
       integer :: md_nsteps = 1

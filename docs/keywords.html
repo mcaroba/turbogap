@@ -240,11 +240,11 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">359 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">360 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
-<a href="#general"><span>General</span><span class="n">58</span></a>
+<a href="#general"><span>General</span><span class="n">59</span></a>
 <a href="#run-control"><span>Run control</span><span class="n">19</span></a>
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">23</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
@@ -290,14 +290,23 @@ footer {
 <td class="de">Path to the extended-XYZ file holding the atomic configuration, or the trajectory of configurations to loop over in predict mode. Required.</td>
 <td class="dp"></td>
 </tr>
-<tr data-h="dd_grid number of domains along each cell vector, for dd_type legacy. their product may not exceed the number of mpi ranks, and each domain must be at least rcut_max across." data-m="predict md mc soap ipi">
-<td class="kw"><code>dd_grid</code></td>
-<td class="ty">integer(1:3)</td>
-<td class="df"><code>[1, 1, 1]</code></td>
+<tr data-h="dd_balance where the domain borders go, for dd_type legacy. &quot;count&quot; places the cuts along each axis so every slab holds the same number of atoms, recomputed at every neighbour rebuild; &quot;volume&quot; cuts the cell into equal slabs. count matters for a surface, a cluster or anything else with vacuum in the cell." data-m="predict md mc soap ipi">
+<td class="kw"><code>dd_balance</code></td>
+<td class="ty">string</td>
+<td class="df"><code>count</code></td>
 <td class="un"></td>
 <td class="mo">all</td>
-<td class="de">Number of domains along each cell vector, for dd_type legacy. Their product may not exceed the number of MPI ranks, and each domain must be at least rcut_max across.</td>
-<td class="dp"><span class="dep">needs <code>dd_type</code></span><span class="dep">see <code>dd_grid_affinity</code></span></td>
+<td class="de">Where the domain borders go, for dd_type legacy. &quot;count&quot; places the cuts along each axis so every slab holds the same number of atoms, recomputed at every neighbour rebuild; &quot;volume&quot; cuts the cell into equal slabs. Count matters for a surface, a cluster or anything else with vacuum in the cell.</td>
+<td class="dp"><span class="dep">needs <code>dd_type</code></span><span class="dep">see <code>dd_grid</code></span></td>
+</tr>
+<tr data-h="dd_grid number of domains along each cell vector, for dd_type legacy. their product may not exceed the number of mpi ranks, and each domain must be at least rcut_max across. left at 0 0 0, there is one domain per rank, and the grid is the one whose halos are smallest for the cell." data-m="predict md mc soap ipi">
+<td class="kw"><code>dd_grid</code></td>
+<td class="ty">integer(1:3)</td>
+<td class="df"><code>[0, 0, 0]</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Number of domains along each cell vector, for dd_type legacy. Their product may not exceed the number of MPI ranks, and each domain must be at least rcut_max across. Left at 0 0 0, there is one domain per rank, and the grid is the one whose halos are smallest for the cell.</td>
+<td class="dp"><span class="dep">needs <code>dd_type</code></span><span class="dep">see <code>dd_grid_affinity</code></span><span class="dep">see <code>dd_balance</code></span></td>
 </tr>
 <tr data-h="dd_grid_affinity how ranks are assigned to domains when there are more ranks than domains: &quot;block&quot; puts consecutive ranks in one domain and needs the ranks to divide evenly, &quot;cyclic&quot; deals them out in turn." data-m="predict md mc soap ipi">
 <td class="kw"><code>dd_grid_affinity</code></td>
