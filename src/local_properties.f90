@@ -404,6 +404,7 @@ contains
       integer :: j
       integer :: i2
       integer :: cart
+      integer, allocatable :: j_first(:)
 
       n_sparse = size(alphas)
       n_soap = size(soap, 1)
@@ -427,9 +428,9 @@ contains
          if (do_derivatives) then
             K_der = zeta_int*K**(zeta_int - 1)
             if (n_sites < n_soap) then
+               Qs_copy = Qs
                do i = 1, n_sites
                   K_der(i, :) = K_der(i, :)*alphas(:)
-                  Qs_copy = Qs
                end do
             else
                do i = 1, n_soap
@@ -442,9 +443,9 @@ contains
          if (do_derivatives) then
             K_der = zeta*K**(zeta - 1.d0)
             if (n_sites < n_soap) then
+               Qs_copy = Qs
                do i = 1, n_sites
                   K_der(i, :) = K_der(i, :)*alphas(:)
-                  Qs_copy = Qs
                end do
             else
                do i = 1, n_soap
@@ -480,8 +481,17 @@ contains
             call dgemm("n", "t", n_sites, n_soap, n_sparse, delta**2, K_der, n_sites, &
                        Qs_copy, n_soap, 0.d0, Qss, n_sites)
          end if
+         allocate (j_first(1:n_sites))
          j = 1
          do i = 1, n_sites
+            j_first(i) = j
+            j = j + n_neigh(i)
+         end do
+         !$omp parallel do default(none) schedule(dynamic, 16) &
+         !$omp shared(n_sites, n_neigh, j_first, truncate, V, V_der, Qss, soap_cart_der) &
+         !$omp private(i, i2, j, cart)
+         do i = 1, n_sites
+            j = j_first(i)
             do i2 = 1, n_neigh(i)
 !              A clamped site has no gradient, because its value no longer
 !              depends on the descriptor. Without the clamp a zero is an
@@ -496,6 +506,8 @@ contains
                j = j + 1
             end do
          end do
+         !$omp end parallel do
+         deallocate (j_first)
          deallocate (Qs_copy)
          deallocate (Qss)
          deallocate (K_der)
