@@ -849,12 +849,21 @@ contains
             end if
          end do
 
-!   Get SOAP vectors and derivatives:
+!   Get SOAP vectors and derivatives. Cleared by the threads that will write
+!   them, so the pages are first touched where they are used.
          allocate (soap(1:n_soap, 1:n_sites))
-         soap = 0.d0
+         !$omp parallel do default(none) shared(n_sites, soap) private(i)
+         do i = 1, n_sites
+            soap(:, i) = 0.d0
+         end do
+         !$omp end parallel do
          if (do_derivatives) then
             allocate (soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs))
-            soap_cart_der = 0.d0
+            !$omp parallel do default(none) shared(n_atom_pairs, soap_cart_der) private(k)
+            do k = 1, n_atom_pairs
+               soap_cart_der(:, :, k) = 0.d0
+            end do
+            !$omp end parallel do
          end if
 
 !   The central-atom second derivatives have to be asked for BEFORE the

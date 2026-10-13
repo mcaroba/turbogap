@@ -678,6 +678,8 @@ contains
       real(dp), allocatable :: Qs_copy(:, :)
       real(dp), allocatable :: this_Qss(:)
       real(dp), allocatable :: kernels_copy(:, :)
+      real(dp), allocatable :: pair_force(:, :)
+      integer, allocatable :: l_first(:)
       real(dp) :: time1
       real(dp) :: time2
       real(dp) :: time3
@@ -789,15 +791,37 @@ contains
 
          virial = 0.d0
          forces = 0.d0
-!!$OMP parallel do private(i,j,l,j2,this_Qss)
+!        The per-pair dot products are independent and are most of the cost;
+!        the sums into forces and virial stay serial, in pair order, so the
+!        result does not depend on the thread count.
+         allocate (l_first(1:n_sites))
+         allocate (pair_force(1:3, 1:sum(n_neigh(1:n_sites))))
          l = 0
          do i = 1, n_sites
+            l_first(i) = l
+            l = l + n_neigh(i)
+         end do
+         !$omp parallel do default(none) schedule(dynamic, 16) &
+         !$omp shared(n_sites, n_neigh, l_first, Qss, n_soap, soap_der, pair_force) &
+         !$omp private(i, j, k, l, this_Qss)
+         do i = 1, n_sites
             this_Qss = Qss(i, 1:n_soap)
+            l = l_first(i)
+            do j = 1, n_neigh(i)
+               l = l + 1
+               do k = 1, 3
+                  pair_force(k, l) = dot_product(this_Qss, soap_der(k, :, l))
+               end do
+            end do
+         end do
+         !$omp end parallel do
+         l = 0
+         do i = 1, n_sites
             do j = 1, n_neigh(i)
                l = l + 1
                j2 = mod(neighbors_list(l) - 1, n_sites0) + 1
                do k = 1, 3
-                  this_force(k) = dot_product(this_Qss, soap_der(k, :, l))
+                  this_force(k) = pair_force(k, l)
                   forces(k, j2) = forces(k, j2) + this_force(k)
                end do
 !         This is a many body potential, so there's no factor of 1/2 here
@@ -809,7 +833,7 @@ contains
                end do
             end do
          end do
-!!$OMP end parallel do
+         deallocate (l_first, pair_force)
 
 ! EXPERIMENTAL CODE
 !      deallocate( neighbors_beg, neighbors_end )
