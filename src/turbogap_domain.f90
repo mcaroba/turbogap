@@ -32,7 +32,10 @@
 module turbogap_domain
 
    use kinds, only: dp
-   use turbogap_comm, only: comm_t, comm_bcast, comm_allgather, comm_sum_to_root, comm_with_mpi, comm_gather
+   use, intrinsic :: iso_fortran_env, only: int64
+   use turbogap_comm, only: comm_t, comm_bcast, comm_allgather, comm_sum_to_root, comm_with_mpi, comm_gather, &
+                            comm_sum_all, comm_any_all
+   use fingerprint, only: fingerprint_of
    use types, only: input_parameters, any_has_local_properties, contribution_ref
    use timing, only: times_t, time_start, time_end
    use turbogap_structure, only: state_t
@@ -101,6 +104,18 @@ module turbogap_domain
    integer, parameter, public :: DD_NONE = 0
    integer, parameter, public :: DD_LEGACY = 1
 
+!   The arrays domain_sync_state keeps identical on every rank.
+   integer, parameter :: SYNC_POSITIONS = 1
+   integer, parameter :: SYNC_VELOCITIES = 2
+   integer, parameter :: SYNC_MASSES = 3
+   integer, parameter :: SYNC_FIX_ATOM = 4
+   integer, parameter :: SYNC_XYZ_SPECIES = 5
+   integer, parameter :: SYNC_XYZ_SPECIES_SC = 6
+   integer, parameter :: SYNC_SPECIES = 7
+   integer, parameter :: SYNC_SPECIES_SC = 8
+   integer, parameter :: SYNC_CELL = 9
+   integer, parameter :: N_SYNC = 9
+
    type, public :: neighbors_t
       real(dp), allocatable :: rjs(:)
       real(dp), allocatable :: thetas(:)
@@ -135,7 +150,6 @@ module turbogap_domain
       integer :: j_end
       logical, allocatable :: do_list(:)
       integer, allocatable :: site_in_rank(:)
-      integer, allocatable :: this_site_in_rank(:)
       integer, allocatable :: n_atom_pairs_by_rank(:)
       integer :: n_atom_pairs_by_rank_prev = 0
       integer :: dd_type = DD_NONE
@@ -252,9 +266,12 @@ contains
       yes = (dom%dd_type == DD_LEGACY .and. dom%integrate)
    end function domain_integrating
 
-!  Give every rank the structure rank 0 holds. Replicated data: the whole of it,
-!  sized from rank 0's arrays. Sending only what an MC move changed was tried,
-!  keyed by a broadcast flag array, and segfaulted; hence everything, every time.
+!  Give every rank the structure rank 0 holds. Replicated data: each rank
+!  fingerprints its copy of every array, rank 0's fingerprints are broadcast,
+!  and only an array some rank disagrees on is sent, resized first if its shape
+!  changed. Whatever moved the structure -- MD, MC, nested sampling, a new
+!  frame -- nothing has to say so; an unchanged structure costs two small
+!  collectives instead of the whole of it.
    subroutine domain_sync_state(dom, comm, state, params, time)
       type(domain_t), intent(inout) :: dom
       type(comm_t), intent(in) :: comm
@@ -273,63 +290,151 @@ contains
       type(state_t), intent(inout) :: state
       type(input_parameters), intent(in) :: params
       type(times_t), intent(inout) :: time
-      integer :: n_pos
-      integer :: n_sp
-      integer :: n_sp_sc
 
-      if (comm%rank == 0) then
-         n_pos = size(state%positions, 2)
-         n_sp = size(state%xyz_species, 1)
-         n_sp_sc = size(state%xyz_species_supercell, 1)
-      end if
-      call time_start(time%mpi)
-      call comm_bcast(comm, n_pos)
-      call comm_bcast(comm, n_sp)
-      call comm_bcast(comm, n_sp_sc)
-      call comm_bcast(comm, state%n_sites)
-      call time_end(time%mpi)
-
-      if (comm%rank /= 0) then
-         if (allocated(state%positions)) deallocate (state%positions)
-         allocate (state%positions(1:3, n_pos))
-         if (params%do_md .or. params%do_nested_sampling .or. params%do_mc) then
-            if (allocated(state%velocities)) deallocate (state%velocities)
-            allocate (state%velocities(1:3, n_pos))
-            if (allocated(state%masses)) deallocate (state%masses)
-            allocate (state%masses(1:n_sp))
-         end if
-         if (allocated(state%xyz_species)) deallocate (state%xyz_species)
-         allocate (state%xyz_species(1:n_sp))
-         if (allocated(state%species)) deallocate (state%species)
-         allocate (state%species(1:n_sp))
-         if (allocated(state%xyz_species_supercell)) deallocate (state%xyz_species_supercell)
-         allocate (state%xyz_species_supercell(1:n_sp_sc))
-         if (allocated(state%species_supercell)) deallocate (state%species_supercell)
-         allocate (state%species_supercell(1:n_sp_sc))
-         if (allocated(state%fix_atom)) deallocate (state%fix_atom)
-         allocate (state%fix_atom(1:3, 1:n_sp))
-      end if
+      if (comm%size == 1) return
       call time_start(time%mpi_positions)
-      call comm_bcast(comm, state%positions, 3*n_pos)
-      if (params%do_md .or. params%do_nested_sampling .or. params%do_mc .or. params%mc_hamiltonian) then
-         call comm_bcast(comm, state%velocities, 3*n_pos)
-         call comm_bcast(comm, state%masses, n_sp)
-         call comm_bcast(comm, state%fix_atom, 3*n_sp)
-      end if
-      call comm_bcast(comm, state%xyz_species, 8*n_sp)
-      call comm_bcast(comm, state%xyz_species_supercell, 8*n_sp_sc)
-      call comm_bcast(comm, state%species, n_sp)
-      call comm_bcast(comm, state%species_supercell, n_sp_sc)
-      call comm_bcast(comm, state%indices, 3)
-      call comm_bcast(comm, state%a_box, 3)
-      call comm_bcast(comm, state%b_box, 3)
-      call comm_bcast(comm, state%c_box, 3)
+      call sync_replicated(comm, state)
       call time_end(time%mpi_positions)
    end subroutine replicate_state
 
-!  After the integrator. Replicated data: rank 0 moved the atoms, so its
-!  positions and velocities, and whether the neighbour list went stale, go to
-!  every rank.
+   subroutine sync_replicated(comm, state)
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      integer(int64) :: mine(1:N_SYNC)
+      integer(int64) :: root(1:N_SYNC)
+      logical :: stale(1:N_SYNC)
+
+      mine(SYNC_POSITIONS) = fingerprint_of(state%positions)
+      mine(SYNC_VELOCITIES) = fingerprint_of(state%velocities)
+      mine(SYNC_MASSES) = fingerprint_of(state%masses)
+      mine(SYNC_FIX_ATOM) = fingerprint_of(state%fix_atom)
+      mine(SYNC_XYZ_SPECIES) = fingerprint_of(state%xyz_species)
+      mine(SYNC_XYZ_SPECIES_SC) = fingerprint_of(state%xyz_species_supercell)
+      mine(SYNC_SPECIES) = fingerprint_of(state%species)
+      mine(SYNC_SPECIES_SC) = fingerprint_of(state%species_supercell)
+      mine(SYNC_CELL) = cell_fingerprint(state)
+      root = mine
+      call comm_bcast(comm, root, N_SYNC)
+      stale = mine /= root
+      call comm_any_all(comm, stale, N_SYNC)
+
+      if (stale(SYNC_POSITIONS)) call send_r2(comm, state%positions)
+      if (stale(SYNC_VELOCITIES)) call send_r2(comm, state%velocities)
+      if (stale(SYNC_MASSES)) call send_r1(comm, state%masses)
+      if (stale(SYNC_FIX_ATOM)) call send_l2(comm, state%fix_atom)
+      if (stale(SYNC_XYZ_SPECIES)) call send_c1(comm, state%xyz_species)
+      if (stale(SYNC_XYZ_SPECIES_SC)) call send_c1(comm, state%xyz_species_supercell)
+      if (stale(SYNC_SPECIES)) call send_i1(comm, state%species)
+      if (stale(SYNC_SPECIES_SC)) call send_i1(comm, state%species_supercell)
+      if (stale(SYNC_CELL)) then
+         call comm_bcast(comm, state%n_sites)
+         call comm_bcast(comm, state%indices, 3)
+         call comm_bcast(comm, state%a_box, 3)
+         call comm_bcast(comm, state%b_box, 3)
+         call comm_bcast(comm, state%c_box, 3)
+      end if
+   end subroutine sync_replicated
+
+   function cell_fingerprint(state) result(h)
+      type(state_t), intent(in) :: state
+      integer(int64) :: h
+      real(dp), allocatable :: cell(:)
+      integer, allocatable :: counts(:)
+
+      cell = [state%a_box, state%b_box, state%c_box]
+      counts = [state%n_sites, state%indices]
+      h = ieor(fingerprint_of(cell), ishftc(fingerprint_of(counts), 17))
+   end function cell_fingerprint
+
+!  Rank 0's shape, then its data. A negative extent means unallocated there.
+   subroutine send_shape(comm, allocated_here, here, dims)
+      type(comm_t), intent(in) :: comm
+      logical, intent(in) :: allocated_here
+      integer, intent(in) :: here(1:2)
+      integer, intent(out) :: dims(1:2)
+
+      dims = -1
+      if (allocated_here) dims = here
+      call comm_bcast(comm, dims, 2)
+   end subroutine send_shape
+
+   subroutine send_r2(comm, x)
+      type(comm_t), intent(in) :: comm
+      real(dp), allocatable, intent(inout) :: x(:, :)
+      integer :: dims(1:2)
+
+      call send_shape(comm, allocated(x), shape(x), dims)
+      if (comm%rank /= 0) then
+         if (allocated(x)) then
+            if (dims(1) < 0 .or. any(shape(x) /= dims)) deallocate (x)
+         end if
+         if (dims(1) >= 0 .and. .not. allocated(x)) allocate (x(1:dims(1), 1:dims(2)))
+      end if
+      if (dims(1) >= 0) call comm_bcast(comm, x, product(dims))
+   end subroutine send_r2
+
+   subroutine send_l2(comm, x)
+      type(comm_t), intent(in) :: comm
+      logical, allocatable, intent(inout) :: x(:, :)
+      integer :: dims(1:2)
+
+      call send_shape(comm, allocated(x), shape(x), dims)
+      if (comm%rank /= 0) then
+         if (allocated(x)) then
+            if (dims(1) < 0 .or. any(shape(x) /= dims)) deallocate (x)
+         end if
+         if (dims(1) >= 0 .and. .not. allocated(x)) allocate (x(1:dims(1), 1:dims(2)))
+      end if
+      if (dims(1) >= 0) call comm_bcast(comm, x, product(dims))
+   end subroutine send_l2
+
+   subroutine send_r1(comm, x)
+      type(comm_t), intent(in) :: comm
+      real(dp), allocatable, intent(inout) :: x(:)
+      integer :: dims(1:2)
+
+      call send_shape(comm, allocated(x), [size(x), 1], dims)
+      if (comm%rank /= 0) then
+         if (allocated(x)) then
+            if (dims(1) < 0 .or. size(x) /= dims(1)) deallocate (x)
+         end if
+         if (dims(1) >= 0 .and. .not. allocated(x)) allocate (x(1:dims(1)))
+      end if
+      if (dims(1) >= 0) call comm_bcast(comm, x, dims(1))
+   end subroutine send_r1
+
+   subroutine send_i1(comm, x)
+      type(comm_t), intent(in) :: comm
+      integer, allocatable, intent(inout) :: x(:)
+      integer :: dims(1:2)
+
+      call send_shape(comm, allocated(x), [size(x), 1], dims)
+      if (comm%rank /= 0) then
+         if (allocated(x)) then
+            if (dims(1) < 0 .or. size(x) /= dims(1)) deallocate (x)
+         end if
+         if (dims(1) >= 0 .and. .not. allocated(x)) allocate (x(1:dims(1)))
+      end if
+      if (dims(1) >= 0) call comm_bcast(comm, x, dims(1))
+   end subroutine send_i1
+
+   subroutine send_c1(comm, x)
+      type(comm_t), intent(in) :: comm
+      character*8, allocatable, intent(inout) :: x(:)
+      integer :: dims(1:2)
+
+      call send_shape(comm, allocated(x), [size(x), 1], dims)
+      if (comm%rank /= 0) then
+         if (allocated(x)) then
+            if (dims(1) < 0 .or. size(x) /= dims(1)) deallocate (x)
+         end if
+         if (dims(1) >= 0 .and. .not. allocated(x)) allocate (x(1:dims(1)))
+      end if
+      if (dims(1) >= 0) call comm_bcast(comm, x, 8*dims(1))
+   end subroutine send_c1
+
+!  After the integrator. Replicated data: rank 0 moved the atoms, so what it
+!  changed, and whether the neighbour list went stale, go to every rank.
    subroutine domain_sync_after_md(dom, comm, state, nl, params, time)
       type(domain_t), intent(inout) :: dom
       type(comm_t), intent(in) :: comm
@@ -337,7 +442,6 @@ contains
       type(neighbors_t), intent(inout) :: nl
       type(input_parameters), intent(in) :: params
       type(times_t), intent(inout) :: time
-      integer :: n_pos
 
 !     Legacy: whether to rebuild, decided by rank 0's skin test as in the
 !     replicated mode. The positions go out in domain_build.
@@ -346,13 +450,7 @@ contains
          return
       end if
       call comm_bcast(comm, nl%rebuild_neighbors_list)
-      if (params%do_md) then
-         call time_start(time%mpi_positions)
-         n_pos = size(state%positions, 2)
-         call comm_bcast(comm, state%positions, 3*n_pos)
-         call comm_bcast(comm, state%velocities, 3*n_pos)
-         call time_end(time%mpi_positions)
-      end if
+      if (params%do_md) call domain_sync_state(dom, comm, state, params, time)
    end subroutine domain_sync_after_md
 
 !  After an i-PI exchange: rank 0 holds i-PI's next configuration, or the
@@ -442,7 +540,9 @@ contains
       type(loop_t), intent(inout) :: loop
       character(len=*), intent(in) :: mc_file
       type(times_t), intent(inout) :: time
-      integer :: i
+      integer :: r
+      integer :: r_beg
+      integer :: r_end
 
       if (dom%dd_type == DD_LEGACY) then
          call legacy_build(dom, nl, comm, state, params, model, loop, time)
@@ -492,18 +592,7 @@ contains
 
       !   Overlapping domain decomposition with subcommunicators goes here <------------------- TO DO
 
-      !   This is some trivial MPI parallelization to make sure the code works fine
-      if (comm%rank < mod(state%n_sites, comm%size)) then
-         dom%i_beg = 1 + comm%rank*(state%n_sites/comm%size + 1)
-      else
-         dom%i_beg = 1 + mod(state%n_sites, comm%size)*(state%n_sites/comm%size + 1) + (comm%rank - mod(state%n_sites, &
-                                                                                               comm%size))*(state%n_sites/comm%size)
-      end if
-      if (comm%rank < mod(state%n_sites, comm%size)) then
-         dom%i_end = (comm%rank + 1)*(state%n_sites/comm%size + 1)
-      else
-         dom%i_end = dom%i_beg + state%n_sites/comm%size - 1
-      end if
+      call block_range(state%n_sites, comm%size, comm%rank, dom%i_beg, dom%i_end)
 
       dom%do_list = .false.
       dom%do_list(dom%i_beg:dom%i_end) = .true.
@@ -521,29 +610,21 @@ contains
 
          !     Get number of neighbors
          if (.not. allocated(nl%n_neigh)) allocate (nl%n_neigh(1:state%n_sites))
-         call comm_sum_to_root(comm, nl%n_neigh_local, nl%n_neigh, state%n_sites)
-         call comm_bcast(comm, nl%n_neigh, state%n_sites)
+         nl%n_neigh(1:state%n_sites) = nl%n_neigh_local(1:state%n_sites)
+         call comm_sum_all(comm, nl%n_neigh, state%n_sites)
 
          dom%j_beg = 1
          dom%j_end = dom%n_atom_pairs_by_rank(comm%rank + 1)
       end if
-!   Store by which rank each site is being handled
+!   Store by which rank each site is being handled: the same blocks, on every rank.
       if (allocated(dom%site_in_rank)) then
-         if (size(dom%site_in_rank) /= state%n_sites) then
-            deallocate (dom%site_in_rank, dom%this_site_in_rank)
-         end if
+         if (size(dom%site_in_rank) /= state%n_sites) deallocate (dom%site_in_rank)
       end if
-      if (.not. allocated(dom%site_in_rank)) then
-         allocate (dom%site_in_rank(1:state%n_sites))
-         allocate (dom%this_site_in_rank(1:state%n_sites))
-      end if
-      dom%site_in_rank = 0
-      dom%this_site_in_rank = 0
-      do i = dom%i_beg, dom%i_end
-         dom%this_site_in_rank(i) = comm%rank
+      if (.not. allocated(dom%site_in_rank)) allocate (dom%site_in_rank(1:state%n_sites))
+      do r = 0, comm%size - 1
+         call block_range(state%n_sites, comm%size, r, r_beg, r_end)
+         dom%site_in_rank(r_beg:r_end) = r
       end do
-      call comm_sum_to_root(comm, dom%this_site_in_rank, dom%site_in_rank, state%n_sites)
-      call comm_bcast(comm, dom%site_in_rank, state%n_sites)
       call time_end(time%neigh)
    end subroutine domain_build
 
@@ -681,17 +762,15 @@ contains
       nl%n_atom_pairs_total = sum(pairs)
       nl%n_atom_pairs = nl%n_atom_pairs_total
       allocate (nl%n_neigh(1:state%n_sites))
-      call comm_sum_to_root(dom%legacy%local, nl%n_neigh_local, nl%n_neigh, state%n_sites)
-      call comm_bcast(dom%legacy%local, nl%n_neigh, state%n_sites)
+      nl%n_neigh(1:state%n_sites) = nl%n_neigh_local(1:state%n_sites)
+      call comm_sum_all(dom%legacy%local, nl%n_neigh, state%n_sites)
       dom%j_beg = 1
       dom%j_end = pairs(r + 1)
 
-!     Only van der Waals reads these, and it is refused.
-      if (allocated(dom%site_in_rank)) deallocate (dom%site_in_rank, dom%this_site_in_rank)
+!     Only the Hirshfeld transfer reads this, and it is skipped on the domains.
+      if (allocated(dom%site_in_rank)) deallocate (dom%site_in_rank)
       allocate (dom%site_in_rank(1:state%n_sites))
-      allocate (dom%this_site_in_rank(1:state%n_sites))
       dom%site_in_rank = 0
-      dom%this_site_in_rank = 0
    end subroutine legacy_lists
 
 !  dd_integrate = domain, first build: every local site gets its velocity, mass
@@ -899,6 +978,24 @@ contains
                                 nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
                                 state%n_sites, state%indices, .false., dom%do_list, comm%rank)
    end subroutine legacy_reuse
+
+!  The contiguous block of n sites that rank r of n_ranks handles; the first
+!  mod(n, n_ranks) ranks take one more.
+   subroutine block_range(n, n_ranks, r, i_beg, i_end)
+      integer, intent(in) :: n
+      integer, intent(in) :: n_ranks
+      integer, intent(in) :: r
+      integer, intent(out) :: i_beg
+      integer, intent(out) :: i_end
+
+      if (r < mod(n, n_ranks)) then
+         i_beg = 1 + r*(n/n_ranks + 1)
+         i_end = (r + 1)*(n/n_ranks + 1)
+      else
+         i_beg = 1 + mod(n, n_ranks)*(n/n_ranks + 1) + (r - mod(n, n_ranks))*(n/n_ranks)
+         i_end = i_beg + n/n_ranks - 1
+      end if
+   end subroutine block_range
 
 !  Make every rank's copy of the per-site properties whole. Replicated data:
 !  each rank computed its own sites and left zeros elsewhere, so a sum is the
