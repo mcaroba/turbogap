@@ -331,15 +331,52 @@ commented out). One node, domain mode, s/step: 384x1 1.65, 96x4 2.05, 48x8
 equal to the thread count changes nothing. Until SOAP is threaded, pure MPI is
 the CPU layout, and the decomposition is what lets it scale.
 
+## After the broadcast fix and SOAP threading
+
+Both items the Roihu study raised are merged here (`perf/replicated-bcast`,
+`perf/soap-openmp`). Same machine, input and per-step method as above.
+
+Replicated mode now sends only the arrays that changed (fingerprinted per
+rank). Traffic halves; the broadcasts fall 4-5x, and what is left is the
+per-family energy and force reduce to rank 0. 308k atoms, 384 ranks per
+node, before / after:
+
+| | traffic, GB/step | MB per rank | s/step |
+| --- | --- | --- | --- |
+| 1 node | 46.5 / 23.7 | 121 / 62 | 2.95 / 3.02 |
+| 6 nodes | 279 / 142 | 121 / 62 | 2.08 / 2.42 |
+| 6 nodes, 1.85M atoms | 1676 / 855 | 727 / 371 | 20.4 / 15.6 |
+
+Strong scaling does not move (single runs; the 6-node difference is within
+what a different node set gives): there the step waits on the reduce and on
+rank 0's integration, not on the broadcasts. Large structures gain 23%.
+
+SOAP and the GAP prediction are now OpenMP-threaded on the CPU, byte-identical
+at any thread count. Domain integration, 308k atoms, s/step, before / after:
+
+| layout | 1 node | 6 nodes |
+| --- | --- | --- |
+| 24x16 | 7.02 / 2.85 | |
+| 48x8 | 3.57 / 2.11 | 0.670 / 0.403 |
+| 96x4 | 2.05 / 1.82 | 0.339 |
+| 384x1 | 1.65 / 1.63 | 0.29 |
+
+Threads now help, 2.5x at 16 per rank, but pure MPI is still fastest:
+16 threads reach 58% of 16 ranks' GAP rate. Giving BLAS the threads as well
+changes nothing. What stays serial inside a rank: the 2b and 3b terms, the
+radial expansion, allocating and clearing soap_cart_der per batch, and the
+ordered sum of the pair forces.
+
 ## Not yet done
 
 - MBD on the domains: a halo as wide as its cluster radius, a forward exchange
   of the SCS polarisabilities, and the volume-derivative transfer moved onto
   the domain map.
-- The replicated mode re-broadcasts the whole structure about five times per
-  step; one broadcast of positions and velocities after the integrator would
-  do.
-- OpenMP in SOAP and the GAP prediction on the CPU build.
+- The replicated mode's per-family energy and force reduce to rank 0, now
+  most of its traffic: summing the families before the reduce would cut it by
+  their number.
+- OpenMP in the 2b and 3b terms and the radial expansion, and a persistent
+  soap_cart_der, so threads per rank catch up with ranks.
 - `dd_integrate = domain` for the thermostats and features it does not cover
   yet: GLE and Langevin (whose per-atom bath state would migrate with the
   atom), the barostat (its box change moves the cuts), and the optimisers.
