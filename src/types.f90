@@ -627,6 +627,11 @@ module types
       logical :: max_Gbytes_set = .false.
       real(dp) :: mem_fraction = 0.25d0
 
+!     DOMAIN DECOMPOSITION
+      character*16 :: dd_type = "none"
+      integer :: dd_grid(1:3) = [1, 1, 1]
+      character*16 :: dd_grid_affinity = "block"
+
 !     MOLECULAR DYNAMICS
       integer :: md_nsteps = 1
       real(dp) :: md_step = 1.d0

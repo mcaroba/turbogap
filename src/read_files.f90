@@ -1564,6 +1564,7 @@ contains
       logical, intent(inout) :: masses_in_input_file
 
       character*64 :: cjunk
+      integer :: nw
 
       !> @kw atoms_file, input_file
       !> Path to the extended-XYZ file holding the atomic configuration, or the trajectory of
@@ -2309,6 +2310,38 @@ contains
 !       We convert the masses in amu to eV*fs^2/A^2
          params%masses_types = params%masses_types*103.6426965268d0
          masses_in_input_file = .true.
+         !> @kw dd_type
+         !> How the atoms are split over MPI ranks. "none" gives every rank the whole structure and
+         !> splits the atoms in index order. "legacy" cuts the cell into the dd_grid of spatial
+         !> domains, each holding its own atoms and a halo rcut_max wide; it supports SOAP, 2b, 3b
+         !> and core_pot only, and refuses anything else at start-up. See docs/LEGACY_DD.md.
+         !> @see dd_grid, dd_grid_affinity
+      else if (keyword == 'dd_type') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%dd_type
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("dd_type", params%dd_type)
+         !> @kw dd_grid
+         !> Number of domains along each cell vector, for dd_type legacy. Their product may not
+         !> exceed the number of MPI ranks, and each domain must be at least rcut_max across.
+         !> @needs dd_type
+         !> @see dd_grid_affinity
+      else if (keyword == 'dd_grid') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, (params%dd_grid(nw), nw=1, 3)
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameters("dd_grid", params%dd_grid)
+         !> @kw dd_grid_affinity
+         !> How ranks are assigned to domains when there are more ranks than domains: "block" puts
+         !> consecutive ranks in one domain and needs the ranks to divide evenly, "cyclic" deals
+         !> them out in turn.
+         !> @needs dd_type
+         !> @see dd_grid
+      else if (keyword == 'dd_grid_affinity') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%dd_grid_affinity
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("dd_grid_affinity", params%dd_grid_affinity)
          !> @kw max_gbytes_per_process
          !> Memory an MPI rank may use for the SOAP descriptor and its derivatives; the rank splits
          !> its atoms into as many batches as it takes to stay under this. Naming it in the input file

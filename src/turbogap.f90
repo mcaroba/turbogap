@@ -41,7 +41,7 @@ program turbogap
                               print_nothing_to_do, print_timing_report, print_end
    use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, loop_sync, loop_end_step
    use turbogap_structure, only: state_t, structure_acquire, structure_update_volume, structure_free
-   use turbogap_domain, only: domain_t, neighbors_t, domain_init, domain_sync_state, domain_build, &
+   use turbogap_domain, only: domain_t, neighbors_t, domain_init, domain_configure, domain_sync_state, domain_build, &
                               domain_sync_after_md, domain_sync_after_ipi, domain_end_step, domain_free
    use turbogap_results, only: results_t, results_free
    use turbogap_evaluate, only: evaluate
@@ -122,6 +122,8 @@ program turbogap
    call exp_decide(perform, params, model)
 
    call ir_init(ir, params, comm)
+
+   call domain_configure(dom, comm, params, model, perform, mode)
 
    call time_end(time%setup)
 

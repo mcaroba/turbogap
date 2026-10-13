@@ -70,6 +70,33 @@ contains
          write (*, '(A)') '      Required.'
          write (*, '(A)') ''
       end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  dd_grid                              [integer(1:3), default [1, 1, 1]]'
+         write (*, '(A)') '      Number of domains along each cell vector, for dd_type legacy. Their'
+         write (*, '(A)') '      product may not exceed the number of MPI ranks, and each domain must'
+         write (*, '(A)') '      be at least rcut_max across.'
+         write (*, '(A)') '      -> needs dd_type; see dd_grid_affinity'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  dd_grid_affinity                     [string, default block]'
+         write (*, '(A)') '      How ranks are assigned to domains when there are more ranks than'
+         write (*, '(A)') '      domains: "block" puts consecutive ranks in one domain and needs the'
+         write (*, '(A)') '      ranks to divide evenly, "cyclic" deals them out in turn.'
+         write (*, '(A)') '      -> needs dd_type; see dd_grid'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  dd_type                              [string, default none]'
+         write (*, '(A)') '      How the atoms are split over MPI ranks. "none" gives every rank the'
+         write (*, '(A)') '      whole structure and splits the atoms in index order. "legacy" cuts'
+         write (*, '(A)') '      the cell into the dd_grid of spatial domains, each holding its own'
+         write (*, '(A)') '      atoms and a halo rcut_max wide; it supports SOAP, 2b, 3b and'
+         write (*, '(A)') '      core_pot only, and refuses anything else at start-up. See'
+         write (*, '(A)') '      docs/LEGACY_DD.md.'
+         write (*, '(A)') '      -> see dd_grid, dd_grid_affinity'
+         write (*, '(A)') ''
+      end if
       if (every .or. (mode == 'md')) then
          write (*, '(A)') '  do_ir                                [logical, default false]'
          write (*, '(A)') '      Predict an IR spectrum from the trajectory. The total dipole is'

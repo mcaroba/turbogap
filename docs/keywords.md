@@ -6,9 +6,9 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 
 ## Contents
 
-**The input file** &mdash; 297 keywords
+**The input file** &mdash; 300 keywords
 
-- [General](#general) (55)
+- [General](#general) (58)
 - [Run control](#run-control) (19)
 - [Molecular dynamics](#molecular-dynamics) (23)
 - [Nested sampling](#nested-sampling) (6)
@@ -40,6 +40,9 @@ The atoms, the species and how chatty the run is.
 | Keyword | Type | Default | Units | Modes | Description | Depends on |
 | --- | --- | --- | --- | --- | --- | --- |
 | `atoms_file`<br>`input_file` | string |  |  | all | Path to the extended-XYZ file holding the atomic configuration, or the trajectory of configurations to loop over in predict mode. Required. |  |
+| `dd_grid` | integer(1:3) | `[1, 1, 1]` |  | all | Number of domains along each cell vector, for dd_type legacy. Their product may not exceed the number of MPI ranks, and each domain must be at least rcut_max across. | needs `dd_type`; see `dd_grid_affinity` |
+| `dd_grid_affinity` | string | `block` |  | all | How ranks are assigned to domains when there are more ranks than domains: "block" puts consecutive ranks in one domain and needs the ranks to divide evenly, "cyclic" deals them out in turn. | needs `dd_type`; see `dd_grid` |
+| `dd_type` | string | `none` |  | all | How the atoms are split over MPI ranks. "none" gives every rank the whole structure and splits the atoms in index order. "legacy" cuts the cell into the dd_grid of spatial domains, each holding its own atoms and a halo rcut_max wide; it supports SOAP, 2b, 3b and core_pot only, and refuses anything else at start-up. See docs/LEGACY_DD.md. | see `dd_grid`; see `dd_grid_affinity` |
 | `do_ir` | logical | `false` |  | md | Predict an IR spectrum from the trajectory. The total dipole is accumulated over the whole run and transformed into ir_spectrum.dat, whose header records the sampling interval, the Nyquist limit, the resolution and hence the band over which the result can be read. Needs a dipole model in the potential file, but no experimental spectrum and no exp_* keywords: nothing is fitted and no force is added. Implies write_ir, so ir_prediction.dat carries the same spectrum over the whole trajectory. The ensemble is the entire run rather than a rolling window, so the resolution follows from md_nsteps unless ir_resolution asks for one the run is long enough to give. Naming "ir" in exp_labels instead is the other thing -- that biases the trajectory towards an experiment. | see `ir_stride`; see `ir_resolution`; see `ir_nu_min`; see `ir_nu_max`; see `ir_lag_factor`; see `ir_n_samples`; see `exp_labels` |
 | `e0` | real list |  | eV | all | Constant energy offset per species, added to every atom of that species. One value per entry in species, in the same order. The GAP predicts energies relative to these, so they set the zero of the energy scale. |  |
 | `gpu_batch_gbytes` | real | `0.5` |  | all | Batch size the device SOAP loop aims for, in GB per rank. gpu_mem_fraction sets the ceiling, which is about what fits on the card; this sets the target under it, which is about what is fast. Bigger batches are not faster: on an RTX A2000 a 125k-atom single point ran ~8% slower with batches sized to the whole card than with 0.5 GB ones, and the curve is flat below that. Raise it on a card with more memory; 0 turns the cap off. | see `gpu_mem_fraction`; see `max_gbytes_per_process` |

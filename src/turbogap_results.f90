@@ -45,6 +45,7 @@ module turbogap_results
    private
    public :: results_free
    public :: results_prepare
+   public :: results_resize_sites
 
    type, public :: results_t
       real(dp) :: energy
@@ -377,6 +378,106 @@ contains
          end if
       end if
    end subroutine results_prepare
+
+!  Resize every per-site result to n sites, zeroed, leaving unallocated ones
+!  alone. The legacy decomposition calls it on rank 0 once the domains'
+!  results are gathered.
+   subroutine results_resize_sites(res, n)
+      type(results_t), target, intent(inout) :: res
+      integer, intent(in) :: n
+
+      call resize_sites_1(res%energies, n)
+      call resize_sites_1(res%this_energies, n)
+      call resize_sites_1(res%energies_exp, n)
+      call resize_sites_1(res%energies_soap, n)
+      call resize_sites_1(res%energies_2b, n)
+      call resize_sites_1(res%energies_3b, n)
+      call resize_sites_1(res%energies_core_pot, n)
+      call resize_sites_1(res%energies_vdw, n)
+      call resize_sites_1(res%this_energies_vdw, n)
+      call resize_sites_1(res%energies_estat, n)
+      call resize_sites_1(res%this_energies_estat, n)
+      call resize_sites_1(res%energies_lp, n)
+      call resize_sites_1(res%this_energies_lp, n)
+      call resize_sites_1(res%energies_pdf, n)
+      call resize_sites_1(res%this_energies_pdf, n)
+      call resize_sites_1(res%energies_sf, n)
+      call resize_sites_1(res%this_energies_sf, n)
+      call resize_sites_1(res%energies_xrd, n)
+      call resize_sites_1(res%this_energies_xrd, n)
+      call resize_sites_1(res%energies_nd, n)
+      call resize_sites_1(res%this_energies_nd, n)
+      call resize_sites_1(res%mbd_ts_scaling, n)
+      call resize_sites_1(res%this_mbd_ts_scaling, n)
+      call resize_sites_1(res%energies_vdw_corr, n)
+      call resize_sites_1(res%energies_dipole, n)
+      call resize_sites_1(res%this_energies_dipole, n)
+      call resize_sites_2(res%forces, n)
+      call resize_sites_2(res%this_forces, n)
+      call resize_sites_2(res%forces_soap, n)
+      call resize_sites_2(res%forces_2b, n)
+      call resize_sites_2(res%forces_3b, n)
+      call resize_sites_2(res%forces_core_pot, n)
+      call resize_sites_2(res%forces_vdw, n)
+      call resize_sites_2(res%this_forces_vdw, n)
+      call resize_sites_2(res%forces_estat, n)
+      call resize_sites_2(res%this_forces_estat, n)
+      call resize_sites_2(res%forces_lp, n)
+      call resize_sites_2(res%this_forces_lp, n)
+      call resize_sites_2(res%forces_pdf, n)
+      call resize_sites_2(res%this_forces_pdf, n)
+      call resize_sites_2(res%forces_sf, n)
+      call resize_sites_2(res%this_forces_sf, n)
+      call resize_sites_2(res%forces_xrd, n)
+      call resize_sites_2(res%this_forces_xrd, n)
+      call resize_sites_2(res%forces_nd, n)
+      call resize_sites_2(res%this_forces_nd, n)
+      call resize_sites_2(res%local_virial_vdw_diag, n)
+      call resize_sites_2(res%local_virial_vdw_diag_corr, n)
+      call resize_sites_2(res%this_local_virial_vdw_diag, n)
+      call resize_sites_2(res%forces_vdw_corr, n)
+      call resize_sites_2(res%local_dipoles, n)
+      call resize_sites_2(res%this_local_dipoles, n)
+      call resize_sites_lead(res%local_properties, n)
+      call resize_sites_lead(res%this_local_properties, n)
+      if (allocated(res%this_local_properties)) res%this_local_properties_pt => res%this_local_properties
+   end subroutine results_resize_sites
+
+   subroutine resize_sites_1(x, n)
+      real(dp), allocatable, intent(inout) :: x(:)
+      integer, intent(in) :: n
+
+      if (.not. allocated(x)) return
+      deallocate (x)
+      allocate (x(1:n))
+      x = 0.d0
+   end subroutine resize_sites_1
+
+!  Sites on the second index: (3, n).
+   subroutine resize_sites_2(x, n)
+      real(dp), allocatable, intent(inout) :: x(:, :)
+      integer, intent(in) :: n
+      integer :: m
+
+      if (.not. allocated(x)) return
+      m = size(x, 1)
+      deallocate (x)
+      allocate (x(1:m, 1:n))
+      x = 0.d0
+   end subroutine resize_sites_2
+
+!  Sites on the first index: (n, properties).
+   subroutine resize_sites_lead(x, n)
+      real(dp), allocatable, intent(inout) :: x(:, :)
+      integer, intent(in) :: n
+      integer :: m
+
+      if (.not. allocated(x)) return
+      m = size(x, 2)
+      deallocate (x)
+      allocate (x(1:n, 1:m))
+      x = 0.d0
+   end subroutine resize_sites_lead
 
    subroutine results_free(res)
       type(results_t), intent(inout) :: res

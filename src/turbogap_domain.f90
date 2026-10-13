@@ -32,13 +32,16 @@
 module turbogap_domain
 
    use kinds, only: dp
-   use turbogap_comm, only: comm_t, comm_bcast, comm_allgather, comm_sum_to_root
-   use types, only: input_parameters, any_has_local_properties, contribution_ref
+   use turbogap_comm, only: comm_t, comm_bcast, comm_allgather, comm_sum_to_root, comm_with_mpi
+   use types, only: input_parameters, any_has_local_properties, contribution_ref, perform_t
    use timing, only: times_t, time_start, time_end
    use turbogap_structure, only: state_t
    use turbogap_setup, only: model_t
    use turbogap_loop, only: loop_t
-   use turbogap_results, only: results_t
+   use turbogap_results, only: results_t, results_resize_sites
+   use domain_legacy, only: legacy_dd_t, legacy_init, legacy_free, legacy_check_widths, legacy_distribute, &
+                            legacy_reverse, legacy_gather
+   use error, only: turbogap_abort
    use read_files, only: read_xyz
    use neighbors, only: build_neighbors_list
 
@@ -46,6 +49,7 @@ module turbogap_domain
 
    private
    public :: domain_init
+   public :: domain_configure
    public :: domain_free
    public :: domain_sync_state
    public :: domain_sync_after_md
@@ -76,6 +80,10 @@ module turbogap_domain
    integer, parameter :: C_3B = 11
    integer, parameter :: N_CONTRIB = 11
 
+!   dd_type: everything on every rank, or the legacy spatial domains.
+   integer, parameter, public :: DD_NONE = 0
+   integer, parameter, public :: DD_LEGACY = 1
+
    type, public :: neighbors_t
       real(dp), allocatable :: rjs(:)
       real(dp), allocatable :: thetas(:)
@@ -100,6 +108,14 @@ module turbogap_domain
       integer, allocatable :: this_site_in_rank(:)
       integer, allocatable :: n_atom_pairs_by_rank(:)
       integer :: n_atom_pairs_by_rank_prev = 0
+      integer :: dd_type = DD_NONE
+      type(legacy_dd_t) :: legacy
+!     Legacy, rank 0: the whole structure, held here while state has the
+!     domain's for the evaluation.
+      integer :: g_n_sites = 0
+      real(dp), allocatable :: g_positions(:, :)
+      integer, allocatable :: g_species(:)
+      character*8, allocatable :: g_xyz_species(:)
    end type domain_t
 
 contains
@@ -111,6 +127,60 @@ contains
 
       allocate (dom%n_atom_pairs_by_rank(1:comm%size))
    end subroutine domain_init
+
+!  Choose the decomposition, once the input has been read.
+   subroutine domain_configure(dom, comm, params, model, perform, mode)
+      type(domain_t), intent(inout) :: dom
+      type(comm_t), intent(in) :: comm
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+      type(perform_t), intent(in) :: perform
+      character(len=*), intent(in) :: mode
+
+      select case (trim(params%dd_type))
+      case ("none")
+         dom%dd_type = DD_NONE
+      case ("legacy")
+         dom%dd_type = DD_LEGACY
+         call legacy_refuse(comm, params, model, perform, mode)
+         call legacy_init(dom%legacy, comm, params%dd_grid, params%dd_grid_affinity)
+      case default
+         if (comm%rank == 0) write (*, '(A,A,A)') 'ERROR: dd_type is "', trim(params%dd_type), &
+            '"; it must be none or legacy'
+         call turbogap_abort()
+      end select
+   end subroutine domain_configure
+
+!  What the legacy decomposition cannot compute correctly is refused, not run;
+!  docs/LEGACY_DD.md says why for each.
+   subroutine legacy_refuse(comm, params, model, perform, mode)
+      type(comm_t), intent(in) :: comm
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+      type(perform_t), intent(in) :: perform
+      character(len=*), intent(in) :: mode
+      character(len=64) :: why
+
+      why = ""
+#ifdef _GPU
+      why = "the device build"
+#endif
+      if (.not. comm_with_mpi) why = "a build without MPI"
+      if (.not. params%do_prediction) why = "a run without do_prediction"
+      if (params%write_soap .or. params%write_derivatives) why = "write_soap or write_derivatives"
+      if (params%do_mc) why = "mc"
+      if (params%do_nested_sampling) why = "nested sampling"
+      if (trim(mode) == "ipi") why = "i-PI"
+      if (trim(params%vdw_type) /= "none") why = "van der Waals"
+      if (model%valid_estat_charges .or. trim(params%estat_method) /= "none") why = "electrostatics"
+      if (params%do_exp .or. params%do_xps .or. model%valid_xps .or. perform%pdf .or. perform%sf .or. &
+          perform%xrd .or. perform%nd) why = "experimental observables"
+      if (params%do_dipole .or. params%valid_ir) why = "dipoles or MAD-IR"
+      if (why /= "") then
+         if (comm%rank == 0) write (*, '(A,A)') 'ERROR: dd_type legacy does not support ', trim(why)
+         call turbogap_abort()
+      end if
+   end subroutine legacy_refuse
 
 !  Give every rank the structure rank 0 holds. Replicated data: the whole of it,
 !  sized from rank 0's arrays. Sending only what an MC move changed was tried,
@@ -125,6 +195,8 @@ contains
       integer :: n_sp
       integer :: n_sp_sc
 
+!     Legacy: domain_build hands each rank its domain.
+      if (dom%dd_type == DD_LEGACY) return
       if (comm%rank == 0) then
          n_pos = size(state%positions, 2)
          n_sp = size(state%xyz_species, 1)
@@ -187,6 +259,11 @@ contains
       type(times_t), intent(inout) :: time
       integer :: n_pos
 
+!     Legacy: the halos move with the atoms, so every step rebuilds.
+      if (dom%dd_type == DD_LEGACY) then
+         nl%rebuild_neighbors_list = .true.
+         return
+      end if
       call comm_bcast(comm, nl%rebuild_neighbors_list)
       if (params%do_md) then
          call time_start(time%mpi_positions)
@@ -284,6 +361,10 @@ contains
       type(times_t), intent(inout) :: time
       integer :: i
 
+      if (dom%dd_type == DD_LEGACY) then
+         call legacy_build(dom, nl, comm, state, params, model, loop, time)
+         return
+      end if
       !   Now that all ranks know the size of n_sites, we allocate do_list
       if (.not. params%do_md .or. (params%do_md .and. loop%md_istep == 0) .or. &
           (params%do_mc)) then
@@ -378,6 +459,109 @@ contains
       call time_end(time%neigh)
    end subroutine domain_build
 
+!  Legacy: rank 0 keeps the whole structure aside and every rank gets its
+!  domain's, owned sites first, then halo. A domain's ranks split the owned
+!  sites as the replicated mode splits all of them.
+   subroutine legacy_build(dom, nl, comm, state, params, model, loop, time)
+      type(domain_t), intent(inout) :: dom
+      type(neighbors_t), intent(inout) :: nl
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      type(input_parameters), intent(inout) :: params
+      type(model_t), intent(in) :: model
+      type(loop_t), intent(inout) :: loop
+      type(times_t), intent(inout) :: time
+      integer, allocatable :: pairs(:)
+      integer :: n_global
+      integer :: n_owned
+      integer :: n_ranks
+      integer :: r
+
+      call time_start(time%neigh)
+      if (comm%rank == 0) then
+!        The replicated build's own supercell check, for a box that has shrunk.
+         call read_xyz(params%atoms_file, .true., params%all_atoms, params%do_timing, &
+                       model%n_species, params%species_types, loop%repeat_xyz, model%rcut_max, params%which_atom, &
+                       state%positions, params%do_md, state%velocities, params%masses_types, state%masses, state%xyz_species, &
+                       state%xyz_species_supercell, state%species, state%species_supercell, state%indices, state%a_box, &
+                       state%b_box, state%c_box, &
+                       state%n_sites, .true., state%fix_atom, params%t_beg, params%write_array_property(6), &
+                       .false., params%randomize_velocities)
+         n_global = state%n_sites
+      end if
+      call comm_bcast(comm, n_global)
+      call comm_bcast(comm, state%indices, 3)
+      call comm_bcast(comm, state%a_box, 3)
+      call comm_bcast(comm, state%b_box, 3)
+      call comm_bcast(comm, state%c_box, 3)
+      if (any(state%indices /= 1)) then
+         if (comm%rank == 0) write (*, '(A)') 'ERROR: dd_type legacy needs a cell at least 2 rcut_max across; '// &
+            'this one needs a supercell'
+         call turbogap_abort()
+      end if
+      call legacy_check_widths(dom%legacy, state%a_box, state%b_box, state%c_box, model%rcut_max, comm%rank)
+
+      if (comm%rank == 0) then
+         dom%g_n_sites = state%n_sites
+         call move_alloc(state%positions, dom%g_positions)
+         call move_alloc(state%species, dom%g_species)
+         call move_alloc(state%xyz_species, dom%g_xyz_species)
+      else if (.not. allocated(dom%g_positions)) then
+         allocate (dom%g_positions(1:3, 0), dom%g_species(0), dom%g_xyz_species(0))
+      end if
+      call legacy_distribute(dom%legacy, comm, n_global, dom%g_positions, dom%g_species, dom%g_xyz_species, &
+                             state%a_box, state%b_box, state%c_box, model%rcut_max, &
+                             state%positions, state%species, state%xyz_species)
+      state%n_sites = dom%legacy%n_local
+      state%species_supercell = state%species
+      state%xyz_species_supercell = state%xyz_species
+
+      n_owned = dom%legacy%n_owned
+      n_ranks = dom%legacy%local%size
+      r = dom%legacy%local%rank
+      if (r < mod(n_owned, n_ranks)) then
+         dom%i_beg = 1 + r*(n_owned/n_ranks + 1)
+         dom%i_end = dom%i_beg + n_owned/n_ranks
+      else
+         dom%i_beg = 1 + mod(n_owned, n_ranks)*(n_owned/n_ranks + 1) + (r - mod(n_owned, n_ranks))*(n_owned/n_ranks)
+         dom%i_end = dom%i_beg + n_owned/n_ranks - 1
+      end if
+      if (allocated(dom%do_list)) deallocate (dom%do_list)
+      allocate (dom%do_list(1:state%n_sites))
+      dom%do_list = .false.
+      dom%do_list(dom%i_beg:dom%i_end) = .true.
+
+      nl%rebuild_neighbors_list = .true.
+      if (allocated(nl%rjs)) deallocate (nl%rjs, nl%xyz, nl%thetas, nl%phis, nl%neighbor_species)
+      if (allocated(nl%neighbors_list)) deallocate (nl%neighbors_list)
+      if (allocated(nl%n_neigh)) deallocate (nl%n_neigh)
+      if (allocated(nl%n_neigh_local)) deallocate (nl%n_neigh_local)
+      call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
+                                state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
+                                nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
+                                state%n_sites, state%indices, .true., dom%do_list, comm%rank)
+
+      allocate (pairs(1:n_ranks))
+      call comm_allgather(dom%legacy%local, nl%n_atom_pairs, pairs)
+      dom%n_atom_pairs_by_rank = 0
+      dom%n_atom_pairs_by_rank(comm%rank + 1) = nl%n_atom_pairs
+      nl%n_atom_pairs_total = sum(pairs)
+      nl%n_atom_pairs = nl%n_atom_pairs_total
+      allocate (nl%n_neigh(1:state%n_sites))
+      call comm_sum_to_root(dom%legacy%local, nl%n_neigh_local, nl%n_neigh, state%n_sites)
+      call comm_bcast(dom%legacy%local, nl%n_neigh, state%n_sites)
+      dom%j_beg = 1
+      dom%j_end = pairs(r + 1)
+
+!     Only van der Waals reads these, and it is refused.
+      if (allocated(dom%site_in_rank)) deallocate (dom%site_in_rank, dom%this_site_in_rank)
+      allocate (dom%site_in_rank(1:state%n_sites))
+      allocate (dom%this_site_in_rank(1:state%n_sites))
+      dom%site_in_rank = 0
+      dom%this_site_in_rank = 0
+      call time_end(time%neigh)
+   end subroutine legacy_build
+
 !  Make every rank's copy of the per-site properties whole. Replicated data:
 !  each rank computed its own sites and left zeros elsewhere, so a sum is the
 !  whole reduction; rank 0 sums and broadcasts.
@@ -390,6 +574,17 @@ contains
       type(model_t), intent(in) :: model
       type(times_t), intent(inout) :: time
 
+!     Legacy: summed inside the domain only; rank 0 gets them in the gather.
+      if (dom%dd_type == DD_LEGACY) then
+         if (any_has_local_properties(model%soap_turbo_hypers)) then
+            call time_start(time%mpi)
+            call comm_sum_to_root(dom%legacy%local, res%local_properties, res%this_local_properties, &
+                                  state%n_sites*params%n_local_properties)
+            if (dom%legacy%local%rank == 0) res%local_properties = res%this_local_properties
+            call time_end(time%mpi)
+         end if
+         return
+      end if
       if (any_has_local_properties(model%soap_turbo_hypers)) then
          call time_start(time%mpi)
          call comm_sum_to_root(comm, res%local_properties, res%this_local_properties, state%n_sites*params%n_local_properties)
@@ -424,6 +619,12 @@ contains
       type(times_t), intent(inout) :: time
 
       call time_start(time%mpi_ef)
+      if (dom%dd_type == DD_LEGACY) then
+         call comm_sum_to_root(dom%legacy%local, res%energies, res%this_energies, state%n_sites)
+         if (dom%legacy%local%rank == 0) res%energies = res%this_energies
+         call time_end(time%mpi_ef)
+         return
+      end if
       call comm_sum_to_root(comm, res%energies, res%this_energies, state%n_sites)
       call time_end(time%mpi_ef)
       res%energies = res%this_energies
@@ -436,7 +637,7 @@ contains
       type(domain_t), intent(inout) :: dom
       type(comm_t), intent(in) :: comm
       type(results_t), target, intent(inout) :: res
-      type(state_t), intent(in) :: state
+      type(state_t), intent(inout) :: state
       type(input_parameters), intent(in) :: params
       type(model_t), intent(in) :: model
       type(times_t), intent(inout) :: time
@@ -452,6 +653,10 @@ contains
       integer :: i_contrib
       integer :: counter2
 
+      if (dom%dd_type == DD_LEGACY) then
+         call legacy_complete(dom, comm, res, state, params, model, time)
+         return
+      end if
       call time_start(time%mpi_ef)
 !       One evaluation of the eleven predicates, and one list built from them.
 !       The pack and unpack walks below read only that list, so they cannot
@@ -691,11 +896,149 @@ contains
       call time_end(time%mpi_ef)
    end subroutine domain_complete_contributions
 
+!  Legacy: what landed on halo sites goes home, the owned sites' results come
+!  to rank 0 in global order, and rank 0 gets its whole structure back with
+!  result arrays to match. The four families are the only ones legacy_refuse
+!  lets through.
+   subroutine legacy_complete(dom, comm, res, state, params, model, time)
+      type(domain_t), intent(inout) :: dom
+      type(comm_t), intent(in) :: comm
+      type(results_t), intent(inout) :: res
+      type(state_t), intent(inout) :: state
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+      type(times_t), intent(inout) :: time
+      real(dp), allocatable :: part(:, :)
+      real(dp), allocatable :: total(:, :)
+      real(dp), allocatable :: owned(:, :)
+      real(dp), allocatable :: out(:, :)
+      real(dp) :: vir_part(1:9, 1:4)
+      real(dp) :: vir_dom(1:9, 1:4)
+      real(dp) :: vir_all(1:9, 1:4)
+      logical :: fam_on(1:4)
+      integer :: n_lp
+      integer :: per_fam
+      integer :: nv
+      integer :: n
+      integer :: k
+      integer :: col
+      integer :: i
+
+      call time_start(time%mpi_ef)
+      if (allocated(res%this_energies_vdw) .or. allocated(res%this_energies_estat) .or. &
+          allocated(res%this_energies_lp) .or. allocated(res%this_energies_pdf) .or. &
+          allocated(res%this_energies_sf) .or. allocated(res%this_energies_xrd) .or. &
+          allocated(res%this_energies_nd)) then
+         if (comm%rank == 0) write (*, '(A)') 'ERROR: dd_type legacy met a term it cannot reduce'
+         call turbogap_abort()
+      end if
+      fam_on = [model%n_soap_turbo > 0, model%n_distance_2b > 0, model%n_core_pot > 0, model%n_angle_3b > 0]
+      per_fam = 1
+      if (params%do_forces) per_fam = 4
+      nv = per_fam*4
+      n_lp = 0
+      if (any_has_local_properties(model%soap_turbo_hypers)) n_lp = params%n_local_properties
+      n = state%n_sites
+
+      allocate (part(1:nv, 1:max(n, 1)))
+      allocate (total(1:nv, 1:max(n, 1)))
+      part = 0.d0
+      total = 0.d0
+      vir_part = 0.d0
+      do k = 1, 4
+         if (.not. fam_on(k)) cycle
+         col = (k - 1)*per_fam + 1
+         select case (k)
+         case (1)
+            part(col, 1:n) = res%energies_soap(1:n)
+            if (params%do_forces) part(col + 1:col + 3, 1:n) = res%forces_soap(1:3, 1:n)
+            if (params%do_forces) vir_part(1:9, k) = reshape(res%virial_soap, [9])
+         case (2)
+            part(col, 1:n) = res%energies_2b(1:n)
+            if (params%do_forces) part(col + 1:col + 3, 1:n) = res%forces_2b(1:3, 1:n)
+            if (params%do_forces) vir_part(1:9, k) = reshape(res%virial_2b, [9])
+         case (3)
+            part(col, 1:n) = res%energies_core_pot(1:n)
+            if (params%do_forces) part(col + 1:col + 3, 1:n) = res%forces_core_pot(1:3, 1:n)
+            if (params%do_forces) vir_part(1:9, k) = reshape(res%virial_core_pot, [9])
+         case (4)
+            part(col, 1:n) = res%energies_3b(1:n)
+            if (params%do_forces) part(col + 1:col + 3, 1:n) = res%forces_3b(1:3, 1:n)
+            if (params%do_forces) vir_part(1:9, k) = reshape(res%virial_3b, [9])
+         end select
+      end do
+
+      call comm_sum_to_root(dom%legacy%local, part, total, nv*n)
+      call comm_sum_to_root(dom%legacy%local, vir_part, vir_dom, 36)
+
+      if (dom%legacy%local%rank == 0) then
+         call legacy_reverse(dom%legacy, total)
+         call comm_sum_to_root(dom%legacy%roots, vir_dom, vir_all, 36)
+         allocate (owned(1:1 + nv + n_lp, 1:max(dom%legacy%n_owned, 1)))
+         do i = 1, dom%legacy%n_owned
+            owned(1, i) = res%energies(i)
+            owned(2:nv + 1, i) = total(1:nv, i)
+            if (n_lp > 0) owned(nv + 2:nv + 1 + n_lp, i) = res%local_properties(i, 1:n_lp)
+         end do
+      else
+         allocate (owned(1:1 + nv + n_lp, 1))
+      end if
+
+      if (comm%rank == 0) then
+         allocate (out(1:1 + nv + n_lp, 1:dom%g_n_sites))
+      else
+         allocate (out(1:1 + nv + n_lp, 1))
+      end if
+      call legacy_gather(dom%legacy, comm, owned, out)
+
+      if (comm%rank == 0) then
+         state%n_sites = dom%g_n_sites
+         call move_alloc(dom%g_positions, state%positions)
+         call move_alloc(dom%g_species, state%species)
+         call move_alloc(dom%g_xyz_species, state%xyz_species)
+         state%species_supercell = state%species
+         state%xyz_species_supercell = state%xyz_species
+         n = state%n_sites
+         call results_resize_sites(res, n)
+         res%energies(1:n) = out(1, 1:n)
+         do k = 1, 4
+            if (.not. fam_on(k)) cycle
+            col = 1 + (k - 1)*per_fam + 1
+            select case (k)
+            case (1)
+               res%energies_soap(1:n) = out(col, 1:n)
+               if (params%do_forces) res%forces_soap(1:3, 1:n) = out(col + 1:col + 3, 1:n)
+               if (params%do_forces) res%virial_soap = reshape(vir_all(1:9, k), [3, 3])
+            case (2)
+               res%energies_2b(1:n) = out(col, 1:n)
+               if (params%do_forces) res%forces_2b(1:3, 1:n) = out(col + 1:col + 3, 1:n)
+               if (params%do_forces) res%virial_2b = reshape(vir_all(1:9, k), [3, 3])
+            case (3)
+               res%energies_core_pot(1:n) = out(col, 1:n)
+               if (params%do_forces) res%forces_core_pot(1:3, 1:n) = out(col + 1:col + 3, 1:n)
+               if (params%do_forces) res%virial_core_pot = reshape(vir_all(1:9, k), [3, 3])
+            case (4)
+               res%energies_3b(1:n) = out(col, 1:n)
+               if (params%do_forces) res%forces_3b(1:3, 1:n) = out(col + 1:col + 3, 1:n)
+               if (params%do_forces) res%virial_3b = reshape(vir_all(1:9, k), [3, 3])
+            end select
+         end do
+         if (n_lp > 0) then
+            do i = 1, n_lp
+               res%local_properties(1:n, i) = out(nv + 1 + i, 1:n)
+            end do
+         end if
+      end if
+      call time_end(time%mpi_ef)
+   end subroutine legacy_complete
+
    subroutine domain_free(dom)
       type(domain_t), intent(inout) :: dom
 
       deallocate (dom%n_atom_pairs_by_rank)
       if (allocated(dom%do_list)) deallocate (dom%do_list)
+      if (dom%dd_type == DD_LEGACY) call legacy_free(dom%legacy)
+      if (allocated(dom%g_positions)) deallocate (dom%g_positions, dom%g_species, dom%g_xyz_species)
    end subroutine domain_free
 
 end module turbogap_domain
