@@ -2356,6 +2356,20 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%dd_balance
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("dd_balance", params%dd_balance)
+         !> @kw dd_integrate
+         !> Where MD integrates under dd_type legacy. "rank0" keeps the whole structure on rank 0,
+         !> which integrates and writes it, and redistributes it to the domains each step. "domain"
+         !> integrates each domain's own atoms where they are and migrates atoms that cross a
+         !> border at each neighbour rebuild; rank 0 gathers the structure only to write it.
+         !> "domain" covers velocity Verlet with no, Berendsen or Bussi thermostat; anything else
+         !> integrates on rank 0, with a note.
+         !> @modes md
+         !> @needs dd_type
+      else if (keyword == 'dd_integrate') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%dd_integrate
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("dd_integrate", params%dd_integrate)
          !> @kw max_gbytes_per_process
          !> Memory an MPI rank may use for the SOAP descriptor and its derivatives; the rank splits
          !> its atoms into as many batches as it takes to stay under this. Naming it in the input file

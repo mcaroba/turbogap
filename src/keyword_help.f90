@@ -97,6 +97,18 @@ contains
          write (*, '(A)') '      -> needs dd_type; see dd_grid'
          write (*, '(A)') ''
       end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  dd_integrate                         [string, default rank0]'
+         write (*, '(A)') '      Where MD integrates under dd_type legacy. "rank0" keeps the whole'
+         write (*, '(A)') '      structure on rank 0, which integrates and writes it, and'
+         write (*, '(A)') '      redistributes it to the domains each step. "domain" integrates each'
+         write (*, '(A)') '      domain''s own atoms where they are and migrates atoms that cross a'
+         write (*, '(A)') '      border at each neighbour rebuild; rank 0 gathers the structure only'
+         write (*, '(A)') '      to write it. "domain" covers velocity Verlet with no, Berendsen or'
+         write (*, '(A)') '      Bussi thermostat; anything else integrates on rank 0, with a note.'
+         write (*, '(A)') '      -> needs dd_type'
+         write (*, '(A)') ''
+      end if
       if (every .or. .not. gap_only) then
          write (*, '(A)') '  dd_type                              [string, default none]'
          write (*, '(A)') '      How the atoms are split over MPI ranks. "none" gives every rank the'

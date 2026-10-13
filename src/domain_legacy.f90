@@ -48,7 +48,7 @@ module domain_legacy
    use kinds, only: dp
    use turbogap_comm, only: comm_t, comm_split, comm_free, comm_cart_create, comm_cart_shift, &
                             comm_cart_coords, comm_cart_rank, comm_sendrecv, comm_scatterv, comm_gatherv, &
-                            comm_gather, comm_bcast
+                            comm_gather, comm_bcast, comm_sum_all
    use error, only: turbogap_abort
    use timing, only: time_start, time_end
 
@@ -61,6 +61,8 @@ module domain_legacy
    public :: legacy_free
    public :: legacy_refresh
    public :: legacy_forward
+   public :: legacy_rebuild_owned
+   public :: legacy_migrate
    public :: legacy_check_widths
    public :: legacy_distribute
    public :: legacy_reverse
@@ -69,6 +71,11 @@ module domain_legacy
    public :: legacy_cell
 
    integer, parameter :: REC_ATOM = 6
+!   An atom that migrates carries, after the REC_ATOM fields: velocity (3),
+!   mass, fix_atom (3, as 0 or 1), previous position (3), previous force (3)
+!   and the displacement since the last neighbour build (3).
+   integer, parameter, public :: REC_DYN = 22
+   integer, parameter :: BINS_PER_SLAB = 256
    integer, parameter :: DOWN = 1
    integer, parameter :: UP = 2
 
@@ -93,6 +100,8 @@ module domain_legacy
       real(dp), allocatable :: cuts(:, :)
       integer :: n_builds = 0
       integer :: n_refreshes = 0
+!     Atoms this root sent to a neighbour in legacy_migrate, over the run.
+      integer :: n_migrated = 0
 !     The ranks of this domain, and one root per domain ranked by domain.
 !     roots has size 0 on every rank that is not a root.
       type(comm_t) :: local
@@ -341,48 +350,72 @@ contains
       integer, intent(in) :: n_global
       real(dp), intent(in) :: recip(1:3, 1:3)
       real(dp), intent(in) :: rcut
-      integer, parameter :: BINS_PER_SLAB = 256
-      real(dp), allocatable :: s(:, :)
-      integer, allocatable :: hist(:)
+      real(dp), allocatable :: hist(:, :)
+
+      if (.not. ld%balance_count) return
+      call coordinate_histograms(ld, positions, n_global, recip, hist)
+      call cuts_from_histograms(ld, hist, recip, rcut)
+   end subroutine balance_cuts
+
+!  How many of the given atoms fall in each bin of fractional coordinate along
+!  each axis: BINS_PER_SLAB bins per slab, hist(:, axis).
+   subroutine coordinate_histograms(ld, positions, n, recip, hist)
+      type(legacy_dd_t), intent(in) :: ld
+      real(dp), intent(in) :: positions(:, :)
+      integer, intent(in) :: n
+      real(dp), intent(in) :: recip(1:3, 1:3)
+      real(dp), allocatable, intent(out) :: hist(:, :)
+      real(dp) :: s(1:3)
+      integer :: axis
+      integer :: b
+      integer :: i
+
+      allocate (hist(1:BINS_PER_SLAB*maxval(ld%grid), 1:3))
+      hist = 0.d0
+      do i = 1, n
+         s = legacy_frac(recip, positions(1:3, i))
+         do axis = 1, 3
+            b = min(BINS_PER_SLAB*ld%grid(axis), 1 + int(s(axis)*dble(BINS_PER_SLAB*ld%grid(axis))))
+            hist(b, axis) = hist(b, axis) + 1.d0
+         end do
+      end do
+   end subroutine coordinate_histograms
+
+!  Cuts at the atom-count quantiles of the histograms, then pushed apart until
+!  every slab is at least rcut wide.
+   subroutine cuts_from_histograms(ld, hist, recip, rcut)
+      type(legacy_dd_t), intent(inout) :: ld
+      real(dp), intent(in) :: hist(:, :)
+      real(dp), intent(in) :: recip(1:3, 1:3)
+      real(dp), intent(in) :: rcut
       real(dp) :: w_min
       real(dp) :: target
+      real(dp) :: below
+      real(dp) :: total
       integer :: n_bins
       integer :: axis
       integer :: g
       integer :: b
       integer :: k
-      integer :: below
-      integer :: i
 
-      if (.not. ld%balance_count) return
-      allocate (s(1:3, 1:max(n_global, 1)))
-      do i = 1, n_global
-         s(1:3, i) = legacy_frac(recip, positions(1:3, i))
-      end do
       do axis = 1, 3
          g = ld%grid(axis)
          if (g == 1) cycle
          n_bins = BINS_PER_SLAB*g
-         allocate (hist(1:n_bins))
-         hist = 0
-         do i = 1, n_global
-            b = min(n_bins, 1 + int(s(axis, i)*dble(n_bins)))
-            hist(b) = hist(b) + 1
-         end do
-         below = 0
+         total = sum(hist(1:n_bins, axis))
+         below = 0.d0
          b = 0
          do k = 1, g - 1
-            target = dble(k)*dble(n_global)/dble(g)
-            do while (b < n_bins .and. dble(below + hist(min(b + 1, n_bins))) <= target)
+            target = dble(k)*total/dble(g)
+            do while (b < n_bins .and. below + hist(min(b + 1, n_bins), axis) <= target)
                b = b + 1
-               below = below + hist(b)
+               below = below + hist(b, axis)
             end do
             ld%cuts(k, axis) = dble(b)/dble(n_bins)
-            if (b < n_bins .and. hist(b + 1) > 0) then
-               ld%cuts(k, axis) = ld%cuts(k, axis) + (target - dble(below))/dble(hist(b + 1))/dble(n_bins)
+            if (b < n_bins .and. hist(b + 1, axis) > 0.d0) then
+               ld%cuts(k, axis) = ld%cuts(k, axis) + (target - below)/hist(b + 1, axis)/dble(n_bins)
             end if
          end do
-         deallocate (hist)
          w_min = rcut*norm2(recip(axis, 1:3))
          do k = 1, g - 1
             ld%cuts(k, axis) = max(ld%cuts(k, axis), ld%cuts(k - 1, axis) + w_min)
@@ -391,7 +424,7 @@ contains
             ld%cuts(k, axis) = min(ld%cuts(k, axis), ld%cuts(k + 1, axis) - w_min)
          end do
       end do
-   end subroutine balance_cuts
+   end subroutine cuts_from_histograms
 
 !  A halo comes from the adjacent domain only if every domain is at least rcut
 !  across, measured perpendicular to its faces.
@@ -437,8 +470,6 @@ contains
       real(dp), intent(inout) :: t_share(3)
       real(dp), allocatable :: rec(:, :)
       real(dp) :: recip(1:3, 1:3)
-      integer :: sizes(1:2)
-      integer :: i
 
       ld%n_global = n_global
       call reciprocal_rows(a_box, b_box, c_box, recip)
@@ -446,8 +477,58 @@ contains
       if (ld%local%rank == 0) then
          call time_start(t_scatter, "dd_scatter")
          call scatter_owned(ld, world, n_global, positions, species, xyz_species, recip, rcut, rec)
-         call build_slots(ld, rec)
          call time_end(t_scatter, "dd_scatter")
+      end if
+      call finish_build(ld, recip, rcut, rec, pos_l, species_l, xyz_species_l, t_halo, t_share)
+      call time_start(t_scatter, "dd_scatter")
+      call collect_ids(ld, world)
+      call time_end(t_scatter, "dd_scatter")
+   end subroutine legacy_distribute
+
+!  Domain integration, at a rebuild: the roots already hold their owned atoms,
+!  as migrated records (REC_ATOM fields first); halos and the share follow.
+   subroutine legacy_rebuild_owned(ld, dyn, a_box, b_box, c_box, rcut, pos_l, species_l, xyz_species_l, &
+                                   t_halo, t_share)
+      type(legacy_dd_t), intent(inout) :: ld
+      real(dp), intent(in) :: dyn(:, :)
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      real(dp), intent(in) :: rcut
+      real(dp), allocatable, intent(inout) :: pos_l(:, :)
+      integer, allocatable, intent(inout) :: species_l(:)
+      character*8, allocatable, intent(inout) :: xyz_species_l(:)
+      real(dp), intent(inout) :: t_halo(3)
+      real(dp), intent(inout) :: t_share(3)
+      real(dp), allocatable :: rec(:, :)
+      real(dp) :: recip(1:3, 1:3)
+
+      call reciprocal_rows(a_box, b_box, c_box, recip)
+      if (ld%local%rank == 0) then
+         allocate (rec(1:REC_ATOM, 1:max(2*ld%n_owned, 16)))
+         rec(:, 1:ld%n_owned) = dyn(1:REC_ATOM, 1:ld%n_owned)
+         ld%n_local = ld%n_owned
+      end if
+      call finish_build(ld, recip, rcut, rec, pos_l, species_l, xyz_species_l, t_halo, t_share)
+   end subroutine legacy_rebuild_owned
+
+!  From the roots' owned records: the id map, the halos, and every rank of the
+!  domain given the same local arrays.
+   subroutine finish_build(ld, recip, rcut, rec, pos_l, species_l, xyz_species_l, t_halo, t_share)
+      type(legacy_dd_t), intent(inout) :: ld
+      real(dp), intent(in) :: recip(1:3, 1:3)
+      real(dp), intent(in) :: rcut
+      real(dp), allocatable, intent(inout) :: rec(:, :)
+      real(dp), allocatable, intent(inout) :: pos_l(:, :)
+      integer, allocatable, intent(inout) :: species_l(:)
+      character*8, allocatable, intent(inout) :: xyz_species_l(:)
+      real(dp), intent(inout) :: t_halo(3)
+      real(dp), intent(inout) :: t_share(3)
+      integer :: sizes(1:2)
+      integer :: i
+
+      if (ld%local%rank == 0) then
+         call build_slots(ld, rec)
          call time_start(t_halo, "dd_halo")
          call exchange_halos(ld, recip, rcut, rec)
          call time_end(t_halo, "dd_halo")
@@ -476,11 +557,8 @@ contains
          call unpack_atom(rec(1:REC_ATOM, i), ld%ids(i), species_l(i), pos_l(1:3, i), xyz_species_l(i))
       end do
       call time_end(t_share, "dd_share")
-      call time_start(t_scatter, "dd_scatter")
-      call collect_ids(ld, world)
-      call time_end(t_scatter, "dd_scatter")
       ld%n_builds = ld%n_builds + 1
-   end subroutine legacy_distribute
+   end subroutine finish_build
 
 !  Rank 0 learns which atoms every domain holds, owned and halo, in local
 !  order, so that legacy_refresh can send them their positions.
@@ -744,6 +822,124 @@ contains
          end do
       end do
    end subroutine exchange_halos
+
+!  Domain integration, at a rebuild, on the roots: the cuts are re-balanced
+!  from a histogram summed over all domains, then every owned atom whose slab
+!  changed moves to the neighbour on the way, one axis at a time, until none
+!  is left to move. An atom more than one domain away moves one hop per pass.
+!  dyn(:, i) is owned atom i, REC_DYN fields; on return it holds this domain's
+!  new owned atoms and ld%n_owned their number.
+   subroutine legacy_migrate(ld, dyn, a_box, b_box, c_box, rcut)
+      type(legacy_dd_t), intent(inout) :: ld
+      real(dp), allocatable, intent(inout) :: dyn(:, :)
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      real(dp), intent(in) :: rcut
+      real(dp), allocatable :: hist(:, :)
+      real(dp), allocatable :: send(:, :)
+      real(dp), allocatable :: keep(:, :)
+      real(dp), allocatable :: recv(:)
+      real(dp) :: recip(1:3, 1:3)
+      real(dp) :: moved
+      integer :: c(1:3)
+      integer :: n_send(1:2)
+      integer :: n_recv
+      integer :: n_keep
+      integer :: axis
+      integer :: dir
+      integer :: hop
+      integer :: g
+      integer :: i
+      integer :: k
+
+      call reciprocal_rows(a_box, b_box, c_box, recip)
+      if (ld%balance_count) then
+         call coordinate_histograms(ld, dyn(3:5, :), ld%n_owned, recip, hist)
+         call comm_sum_all(ld%roots, hist, size(hist))
+         call cuts_from_histograms(ld, hist, recip, rcut)
+      end if
+
+      do axis = 1, 3
+         g = ld%grid(axis)
+         if (g == 1) cycle
+         do
+            allocate (keep(1:REC_DYN, 1:max(ld%n_owned, 1)))
+            allocate (send(1:REC_DYN, 1:max(ld%n_owned, 1)))
+            n_keep = 0
+            moved = 0.d0
+            do dir = DOWN, UP
+               n_send(dir) = 0
+            end do
+!           DOWN-bound atoms first, then UP-bound, so each run is contiguous.
+            do dir = DOWN, UP
+               do i = 1, ld%n_owned
+                  c = legacy_cell(legacy_frac(recip, dyn(3:5, i)), ld%grid, ld%cuts)
+                  hop = modulo(c(axis) - ld%coords(axis), g)
+                  if (hop == 0) then
+                     if (dir == DOWN) then
+                        n_keep = n_keep + 1
+                        keep(:, n_keep) = dyn(:, i)
+                     end if
+                  else if ((hop > g/2 .and. dir == DOWN) .or. (hop <= g/2 .and. dir == UP)) then
+                     n_send(dir) = n_send(dir) + 1
+                     send(:, n_send(1) + merge(n_send(2), 0, dir == UP)) = dyn(:, i)
+                  end if
+               end do
+            end do
+            moved = dble(n_send(1) + n_send(2))
+            ld%n_migrated = ld%n_migrated + n_send(1) + n_send(2)
+            call comm_sum_all(ld%roots, moved)
+            if (moved == 0.d0) then
+               deallocate (keep, send)
+               exit
+            end if
+            do dir = DOWN, UP
+               call send_atoms(ld, axis, dir, send, merge(0, n_send(1), dir == DOWN), n_send(dir), recv, n_recv)
+               if (n_keep + n_recv > size(keep, 2)) call grow(keep, n_keep + n_recv)
+               do k = 1, n_recv
+                  keep(:, n_keep + k) = recv((k - 1)*REC_DYN + 1:k*REC_DYN)
+               end do
+               n_keep = n_keep + n_recv
+               deallocate (recv)
+            end do
+            ld%n_owned = n_keep
+            if (allocated(dyn)) deallocate (dyn)
+            allocate (dyn(1:REC_DYN, 1:max(n_keep, 1)))
+            dyn(:, 1:n_keep) = keep(:, 1:n_keep)
+            deallocate (keep, send)
+         end do
+      end do
+   end subroutine legacy_migrate
+
+!  Send n records from send(:, first+1:first+n) to the neighbour in direction
+!  dir along axis, and receive what the other neighbour sends this way.
+   subroutine send_atoms(ld, axis, dir, send, first, n, recv, n_recv)
+      type(legacy_dd_t), intent(in) :: ld
+      integer, intent(in) :: axis
+      integer, intent(in) :: dir
+      real(dp), intent(in) :: send(:, :)
+      integer, intent(in) :: first
+      integer, intent(in) :: n
+      real(dp), allocatable, intent(out) :: recv(:)
+      integer, intent(out) :: n_recv
+      real(dp), allocatable :: buf(:)
+      integer :: dest
+      integer :: source
+
+      if (dir == DOWN) then
+         dest = ld%nbr(DOWN, axis)
+         source = ld%nbr(UP, axis)
+      else
+         dest = ld%nbr(UP, axis)
+         source = ld%nbr(DOWN, axis)
+      end if
+      allocate (buf(1:REC_DYN*max(n, 1)))
+      if (n > 0) buf(1:REC_DYN*n) = reshape(send(:, first + 1:first + n), [REC_DYN*n])
+      call comm_sendrecv(ld%roots, n, dest, n_recv, source)
+      allocate (recv(1:REC_DYN*max(n_recv, 1)))
+      call comm_sendrecv(ld%roots, buf, REC_DYN*n, dest, recv, REC_DYN*n_recv, source)
+   end subroutine send_atoms
 
 !  Make room for column n, doubling.
    subroutine grow(x, n)

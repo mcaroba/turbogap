@@ -36,12 +36,13 @@
 module turbogap_md
 
    use kinds
-   use turbogap_comm, only: comm_t
+   use turbogap_comm, only: comm_t, comm_sum_all, comm_bcast, comm_gather
    use turbogap_structure, only: state_t
    use turbogap_loop, only: loop_t
    use turbogap_setup, only: model_t
    use turbogap_results, only: results_t
-   use turbogap_domain, only: neighbors_t
+   use turbogap_domain, only: neighbors_t, domain_t, domain_integrating
+   use domain_legacy, only: legacy_gather
    use types
    use md
    use bussi
@@ -55,7 +56,7 @@ module turbogap_md
    use eph_beta
    use eph_fdm
    use eph_electronic_stopping
-   use neighbors_skin, only: skin_accumulate, skin_needs_rebuild
+   use neighbors_skin, only: skin_accumulate, skin_needs_rebuild, skin_two_largest
 #ifdef _MPIF90
    use mpi
 #endif
@@ -384,101 +385,9 @@ contains
                     &*dfloat(n_sites - 1)*instant_temp)/v_uc*eVperA3tobar
             end do
 
-            !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
-            if ((md_istep == 0 .and. .not. params%do_nested_sampling) .or. &
-                (md_istep == 0 .and. i_nested == 1)) then
-               open (unit=10, file="thermo.log", status="unknown")
-!              THE HEADER IS BUILT FROM THE SAME CONDITIONS AS THE COLUMNS.
-!              It used to be a fixed string while the columns were already
-!              conditional, so a do_exp run wrote an E_exp column the header did
-!              not name and every column after it was misread by one. Assembling
-!              both from the same `if`s is the only arrangement in which they
-!              cannot drift apart again.
-               thermo_hdr = "#     Step             Time      Temperature"// &
-                            "                E_kin                E_pot"
-               if (thermo_has_exp) thermo_hdr = trim(thermo_hdr)//"                E_exp"
-               thermo_hdr = trim(thermo_hdr)//"             Pressure"
-!              The nine lattice columns have never been named in the header.
-!              They are named here ONLY when something follows them, because
-!              then the alternative is a header whose trailing names sit nine
-!              columns left of the data they describe -- worse than no name at
-!              all. When nothing follows, the long-standing output is left
-!              exactly as it was: naming them would be a cosmetic improvement
-!              that changes thermo.log for every existing write_lv deck, and
-!              the regression suite compares that file byte for byte.
-               if (params%write_lv .and. (thermo_has_exp .or. thermo_has_gle)) &
-                  thermo_hdr = trim(thermo_hdr)// &
-                               "                   ax                  ay                  az"// &
-                               "                  bx                  by                  bz"// &
-                               "                  cx                  cy                  cz"
-!              Appended last, after the lattice block, so that no existing
-!              column moves under any combination of flags. A script reading
-!              column 3 for the temperature keeps working whatever is switched
-!              on.
-               if (thermo_has_exp) thermo_hdr = trim(thermo_hdr)// &
-                                                "         Dissimilarity             Rel_error"
-!              21 characters each, right-justified, which is what 1X,F20.8
-!              gives the values below them.
-               if (thermo_has_md) thermo_hdr = trim(thermo_hdr)// &
-                                               "             E_thermo              E_cmrem               E_cons"
-               write (10, "(A)") trim(thermo_hdr)
-            else
-               open (unit=10, file="thermo.log", status="old", position="append")
-            end if
-            if (.not. params%do_mc .and. (md_istep == 0 .or. md_istep == params%md_nsteps &
-                                          .or. modulo(md_istep, params%write_thermo) == 0)) then
-               !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
-               !       There should also be a header preceded by # specifying what gets printed
-               if (thermo_has_exp) then
-                  write (10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
-                     md_istep, md_time, instant_temp, E_kinetic, sum(energies), sum(energies_exp), instant_pressure
-               else
-                  write (10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
-                     md_istep, md_time, instant_temp, E_kinetic, sum(energies), instant_pressure
-               end if
-
-               if (params%write_lv) then
-                  write (10, "(1X, 9F20.8)", advance="no") a_box(1:3)/dfloat(indices(1)), &
-                     b_box(1:3)/dfloat(indices(2)), &
-                     c_box(1:3)/dfloat(indices(3))
-               end if
-!              HOW FAR THE PREDICTION IS FROM THE EXPERIMENT, which the energy
-!              alone does not say. exp_energy_scales is ramped through a MAD
-!              run, so E_exp mixes the size of the mismatch with the price
-!              currently charged for it and can fall while the agreement gets
-!              worse. Dissimilarity is sum (y_pred - y_exp)^2 over every
-!              observable with no scale on it; Rel_error is its square root
-!              relative to the experiment's own norm, which is dimensionless and
-!              so comparable between observables and between runs.
-               if (thermo_has_exp) then
-                  if (exp_dissim_ref > 0.d0) then
-                     thermo_relerr = dsqrt(exp_dissimilarity/exp_dissim_ref)
-                  else
-                     thermo_relerr = 0.d0
-                  end if
-                  write (10, "(1X, ES21.8, 1X, ES21.8)", advance="no") &
-                     exp_dissimilarity, thermo_relerr
-               end if
-!              THE THERMOSTAT'S ENERGY LEDGER. A generalized Langevin run does
-!              not conserve E_pot + E_kin and is not meant to; what it conserves
-!              is that minus the work the bath has done. E_thermo is the running
-!              total the thermostat has put in (positive) or taken out, and
-!              E_cons is the combination that should be flat. A drift in E_cons
-!              is an integration problem; a drift in E_pot + E_kin alone is just
-!              the thermostat doing its job, and without this column the two are
-!              indistinguishable.
-               if (thermo_has_md) then
-                  write (10, "(1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
-                     e_thermo_work, e_cm_removed, &
-                     sum(energies) + E_kinetic - e_thermo_work + e_cm_removed
-               end if
-               !       Further printouts should go here
-               !       <<HERE>>
-               !
-               !       This is to make the pointer advance
-               write (10, *)
-            end if
-            close (10)
+            call md_write_thermo(params, md_istep, i_nested, md_time, instant_temp, E_kinetic, sum(energies), &
+                                 sum(energies_exp), instant_pressure, a_box, b_box, c_box, indices, &
+                                 e_thermo_work, e_cm_removed)
             !     Check if we have converged a relaxation calculation
             !     Check if we have converged a relaxation calculation
             if (params%do_md .and. params%optimize == "gd" .and. md_istep > 0 .and. &
@@ -500,57 +409,12 @@ contains
                if (params%do_mc) exit_loop = .false.
             end if
 
-            !     We write out the trajectory file. We write positions_prev which is the one for which we have computed
-            !     the properties. positions_prev and velocities are synchronous
-            if ((md_istep == 0 .and. .not. params%do_nested_sampling) .or. &
-                (md_istep == params%md_nsteps .and. .not. params%do_nested_sampling) &
-                .or. (modulo(md_istep, params%write_xyz) == 0 .and. .not. params%do_nested_sampling) .or. &
-                exit_loop) then
-               call wrap_pbc(positions_prev(1:3, 1:n_sites), a_box&
-                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
-                    & c_box/dfloat(indices(3)))
-               call get_xyz_energy_string(energies_soap, energies_2b,&
-                    & energies_3b, energies_core_pot, energies_vdw, energies_exp&
-                    &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
-                    & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
-                    & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
-                    & params%do_dipole, dipole, energies_dipole)
-
-               call write_extxyz(n_sites, md_istep, md_time, time_step,&
-                    & instant_temp, instant_pressure, a_box&
-                    &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
-                    & c_box/dfloat(indices(3)), virial, xyz_species,&
-                    & positions_prev(1:3, 1:n_sites), velocities,&
-                    & forces, energies(1:n_sites), masses, params&
-                    &%write_property, params%write_array_property,&
-                    & params%write_local_properties,&
-                    & local_property_labels, local_properties,&
-                    & fix_atom(1:3, 1:n_sites), "trajectory_out.xyz", string, &
-                    & md_istep == 0, params%do_dipole, local_dipoles(1:3, 1:n_sites))
-            else if (md_istep == params%md_nsteps .and. params%do_nested_sampling) then
-               write (cjunk, '(I8)') i_image
-               write (filename, '(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
-               call wrap_pbc(positions_prev(1:3, 1:n_sites), &
-                             a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
-               call get_xyz_energy_string(energies_soap, energies_2b,&
-                    & energies_3b, energies_core_pot, energies_vdw, energies_exp&
-                    &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
-                    & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
-                    & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
-                    & params%do_dipole, dipole, energies_dipole)
-
-               call write_extxyz(n_sites, md_istep, md_time, time_step, instant_temp, instant_pressure, &
-                    a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
-                    virial, xyz_species, &
-                    positions_prev(1:3, 1:n_sites), velocities, &
-                    forces, energies(1:n_sites), masses, &
-                    params%write_property, params%write_array_property&
-                    &, params%write_local_properties,&
-                    & local_property_labels, local_properties,&
-                    & fix_atom(1:3, 1:n_sites), filename, string, .true.,&
-                    & params%do_dipole, local_dipoles(1:3, 1:n_sites))
-
-            end if
+            call md_write_frame(params, n_sites, md_istep, md_time, time_step, instant_temp, instant_pressure, &
+                                a_box, b_box, c_box, indices, virial, xyz_species, positions_prev, velocities, &
+                                forces, energies, masses, local_property_labels, local_properties, fix_atom, &
+                                energies_soap, energies_2b, energies_3b, energies_core_pot, energies_vdw, &
+                                energies_exp, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd, &
+                                dipole, local_dipoles, energies_dipole, exit_loop, i_image, filename, string)
             !     If there are pressure/box rescaling operations they happen here
             if (params%scale_box) then
                call box_scaling(positions(1:3, 1:n_sites), a_box(1:3), b_box(1:3), c_box(1:3), &
@@ -710,6 +574,234 @@ contains
 
    end subroutine compute_md
 
+!  One line of thermo.log, and its header on the first step. Shared by the
+!  rank-0 integrator and the domain one, so the two cannot write different
+!  files; the energies come in already summed over every atom.
+   subroutine md_write_thermo(params, md_istep, i_nested, md_time, instant_temp, E_kinetic, e_pot, &
+                              e_exp, instant_pressure, a_box, b_box, c_box, indices, e_thermo_work, e_cm_removed)
+      type(input_parameters), intent(in) :: params
+      integer, intent(in) :: md_istep
+      integer, intent(in) :: i_nested
+      real(dp), intent(in) :: md_time
+      real(dp), intent(in) :: instant_temp
+      real(dp), intent(in) :: E_kinetic
+      real(dp), intent(in) :: e_pot
+      real(dp), intent(in) :: e_exp
+      real(dp), intent(in) :: instant_pressure
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      integer, intent(in) :: indices(1:3)
+      real(dp), intent(in) :: e_thermo_work
+      real(dp), intent(in) :: e_cm_removed
+      character(len=1024) :: thermo_hdr
+      real(dp) :: thermo_relerr
+      logical :: thermo_has_gle
+      logical :: thermo_has_md
+      logical :: thermo_has_exp
+
+      thermo_has_gle = (params%thermostat == "gle" .or. params%thermostat == "langevin")
+      thermo_has_md = (params%optimize == "vv")
+      thermo_has_exp = (params%do_exp .or. params%valid_ir)
+      !     Here we write thermodynamic information -> THIS NEEDS CLEAN UP AND IMPROVEMENT
+      if ((md_istep == 0 .and. .not. params%do_nested_sampling) .or. &
+          (md_istep == 0 .and. i_nested == 1)) then
+         open (unit=10, file="thermo.log", status="unknown")
+!              THE HEADER IS BUILT FROM THE SAME CONDITIONS AS THE COLUMNS.
+!              It used to be a fixed string while the columns were already
+!              conditional, so a do_exp run wrote an E_exp column the header did
+!              not name and every column after it was misread by one. Assembling
+!              both from the same `if`s is the only arrangement in which they
+!              cannot drift apart again.
+         thermo_hdr = "#     Step             Time      Temperature"// &
+                      "                E_kin                E_pot"
+         if (thermo_has_exp) thermo_hdr = trim(thermo_hdr)//"                E_exp"
+         thermo_hdr = trim(thermo_hdr)//"             Pressure"
+!              The nine lattice columns have never been named in the header.
+!              They are named here ONLY when something follows them, because
+!              then the alternative is a header whose trailing names sit nine
+!              columns left of the data they describe -- worse than no name at
+!              all. When nothing follows, the long-standing output is left
+!              exactly as it was: naming them would be a cosmetic improvement
+!              that changes thermo.log for every existing write_lv deck, and
+!              the regression suite compares that file byte for byte.
+         if (params%write_lv .and. (thermo_has_exp .or. thermo_has_gle)) &
+            thermo_hdr = trim(thermo_hdr)// &
+                         "                   ax                  ay                  az"// &
+                         "                  bx                  by                  bz"// &
+                         "                  cx                  cy                  cz"
+!              Appended last, after the lattice block, so that no existing
+!              column moves under any combination of flags. A script reading
+!              column 3 for the temperature keeps working whatever is switched
+!              on.
+         if (thermo_has_exp) thermo_hdr = trim(thermo_hdr)// &
+                                          "         Dissimilarity             Rel_error"
+!              21 characters each, right-justified, which is what 1X,F20.8
+!              gives the values below them.
+         if (thermo_has_md) thermo_hdr = trim(thermo_hdr)// &
+                                         "             E_thermo              E_cmrem               E_cons"
+         write (10, "(A)") trim(thermo_hdr)
+      else
+         open (unit=10, file="thermo.log", status="old", position="append")
+      end if
+      if (.not. params%do_mc .and. (md_istep == 0 .or. md_istep == params%md_nsteps &
+                                    .or. modulo(md_istep, params%write_thermo) == 0)) then
+         !       Organize this better so that the user can have more freedom about what gets printed to thermo.log
+         !       There should also be a header preceded by # specifying what gets printed
+         if (thermo_has_exp) then
+            write (10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
+               md_istep, md_time, instant_temp, E_kinetic, e_pot, e_exp, instant_pressure
+         else
+            write (10, "(I10, 1X, F16.4, 1X, F16.4, 1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
+               md_istep, md_time, instant_temp, E_kinetic, e_pot, instant_pressure
+         end if
+
+         if (params%write_lv) then
+            write (10, "(1X, 9F20.8)", advance="no") a_box(1:3)/dfloat(indices(1)), &
+               b_box(1:3)/dfloat(indices(2)), &
+               c_box(1:3)/dfloat(indices(3))
+         end if
+!              HOW FAR THE PREDICTION IS FROM THE EXPERIMENT, which the energy
+!              alone does not say. exp_energy_scales is ramped through a MAD
+!              run, so E_exp mixes the size of the mismatch with the price
+!              currently charged for it and can fall while the agreement gets
+!              worse. Dissimilarity is sum (y_pred - y_exp)^2 over every
+!              observable with no scale on it; Rel_error is its square root
+!              relative to the experiment's own norm, which is dimensionless and
+!              so comparable between observables and between runs.
+         if (thermo_has_exp) then
+            if (exp_dissim_ref > 0.d0) then
+               thermo_relerr = dsqrt(exp_dissimilarity/exp_dissim_ref)
+            else
+               thermo_relerr = 0.d0
+            end if
+            write (10, "(1X, ES21.8, 1X, ES21.8)", advance="no") &
+               exp_dissimilarity, thermo_relerr
+         end if
+!              THE THERMOSTAT'S ENERGY LEDGER. A generalized Langevin run does
+!              not conserve E_pot + E_kin and is not meant to; what it conserves
+!              is that minus the work the bath has done. E_thermo is the running
+!              total the thermostat has put in (positive) or taken out, and
+!              E_cons is the combination that should be flat. A drift in E_cons
+!              is an integration problem; a drift in E_pot + E_kin alone is just
+!              the thermostat doing its job, and without this column the two are
+!              indistinguishable.
+         if (thermo_has_md) then
+            write (10, "(1X, F20.8, 1X, F20.8, 1X, F20.8)", advance="no") &
+               e_thermo_work, e_cm_removed, &
+               e_pot + E_kinetic - e_thermo_work + e_cm_removed
+         end if
+         !       Further printouts should go here
+         !       <<HERE>>
+         !
+         !       This is to make the pointer advance
+         write (10, *)
+      end if
+      close (10)
+   end subroutine md_write_thermo
+
+!  A frame of trajectory_out.xyz, or of a nested-sampling walker, on the steps
+!  that write one. Shared by both integrators; the arrays are whole-system.
+   subroutine md_write_frame(params, n_sites, md_istep, md_time, time_step, instant_temp, instant_pressure, &
+                             a_box, b_box, c_box, indices, virial, xyz_species, positions_prev, velocities, &
+                             forces, energies, masses, local_property_labels, local_properties, fix_atom, &
+                             energies_soap, energies_2b, energies_3b, energies_core_pot, energies_vdw, &
+                             energies_exp, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd, &
+                             dipole, local_dipoles, energies_dipole, exit_loop, i_image, filename, string)
+      type(input_parameters), intent(in) :: params
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: md_istep
+      real(dp), intent(in) :: md_time
+      real(dp), intent(in) :: time_step
+      real(dp), intent(in) :: instant_temp
+      real(dp), intent(in) :: instant_pressure
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      integer, intent(in) :: indices(1:3)
+      real(dp), intent(in) :: virial(1:3, 1:3)
+      character*8, allocatable, intent(in) :: xyz_species(:)
+      real(dp), allocatable, intent(inout) :: positions_prev(:, :)
+      real(dp), allocatable, intent(in) :: velocities(:, :)
+      real(dp), allocatable, intent(in) :: forces(:, :)
+      real(dp), allocatable, intent(in) :: energies(:)
+      real(dp), allocatable, intent(in) :: masses(:)
+      character*1024, allocatable, intent(in) :: local_property_labels(:)
+      real(dp), allocatable, intent(in) :: local_properties(:, :)
+      logical, allocatable, intent(in) :: fix_atom(:, :)
+      real(dp), allocatable, intent(in) :: energies_soap(:)
+      real(dp), allocatable, intent(in) :: energies_2b(:)
+      real(dp), allocatable, intent(in) :: energies_3b(:)
+      real(dp), allocatable, intent(in) :: energies_core_pot(:)
+      real(dp), allocatable, intent(in) :: energies_vdw(:)
+      real(dp), allocatable, intent(in) :: energies_exp(:)
+      real(dp), allocatable, intent(in) :: energies_lp(:)
+      real(dp), allocatable, intent(in) :: energies_pdf(:)
+      real(dp), allocatable, intent(in) :: energies_sf(:)
+      real(dp), allocatable, intent(in) :: energies_xrd(:)
+      real(dp), allocatable, intent(in) :: energies_nd(:)
+      real(dp), intent(in) :: dipole(1:3)
+      real(dp), allocatable, intent(in) :: local_dipoles(:, :)
+      real(dp), allocatable, intent(in) :: energies_dipole(:)
+      logical, intent(in) :: exit_loop
+      integer, intent(in) :: i_image
+      character*1024, intent(inout) :: filename
+      character*1024, intent(inout) :: string
+      character*64 :: cjunk
+
+      !     We write out the trajectory file. We write positions_prev which is the one for which we have computed
+      !     the properties. positions_prev and velocities are synchronous
+      if ((md_istep == 0 .and. .not. params%do_nested_sampling) .or. &
+          (md_istep == params%md_nsteps .and. .not. params%do_nested_sampling) &
+          .or. (modulo(md_istep, params%write_xyz) == 0 .and. .not. params%do_nested_sampling) .or. &
+          exit_loop) then
+         call wrap_pbc(positions_prev(1:3, 1:n_sites), a_box&
+              &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
+              & c_box/dfloat(indices(3)))
+         call get_xyz_energy_string(energies_soap, energies_2b,&
+              & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+              &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+              & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+              & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
+              & params%do_dipole, dipole, energies_dipole)
+
+         call write_extxyz(n_sites, md_istep, md_time, time_step,&
+              & instant_temp, instant_pressure, a_box&
+              &/dfloat(indices(1)), b_box/dfloat(indices(2)),&
+              & c_box/dfloat(indices(3)), virial, xyz_species,&
+              & positions_prev(1:3, 1:n_sites), velocities,&
+              & forces, energies(1:n_sites), masses, params&
+              &%write_property, params%write_array_property,&
+              & params%write_local_properties,&
+              & local_property_labels, local_properties,&
+              & fix_atom(1:3, 1:n_sites), "trajectory_out.xyz", string, &
+              & md_istep == 0, params%do_dipole, local_dipoles(1:3, 1:n_sites))
+      else if (md_istep == params%md_nsteps .and. params%do_nested_sampling) then
+         write (cjunk, '(I8)') i_image
+         write (filename, '(A,A,A)') "walkers/", trim(adjustl(cjunk)), ".xyz"
+         call wrap_pbc(positions_prev(1:3, 1:n_sites), &
+                       a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)))
+         call get_xyz_energy_string(energies_soap, energies_2b,&
+              & energies_3b, energies_core_pot, energies_vdw, energies_exp&
+              &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
+              & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
+              & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
+              & params%do_dipole, dipole, energies_dipole)
+
+         call write_extxyz(n_sites, md_istep, md_time, time_step, instant_temp, instant_pressure, &
+              a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
+              virial, xyz_species, &
+              positions_prev(1:3, 1:n_sites), velocities, &
+              forces, energies(1:n_sites), masses, &
+              params%write_property, params%write_array_property&
+              &, params%write_local_properties,&
+              & local_property_labels, local_properties,&
+              & fix_atom(1:3, 1:n_sites), filename, string, .true.,&
+              & params%do_dipole, local_dipoles(1:3, 1:n_sites))
+
+      end if
+   end subroutine md_write_frame
+
 !  Rank 0 draws the starting velocities on the first MD step, if asked to.
    subroutine md_prepare_velocities(dyn, state, params, loop, comm)
       type(dynamics_t), intent(inout) :: dyn
@@ -729,7 +821,7 @@ contains
 
 !  One step of the integrator on rank 0. Nested sampling drives it too, which
 !  is why the walker indices come in.
-   subroutine md_step(dyn, state, res, nl, model, params, loop, i_image, i_nested, comm, time)
+   subroutine md_step(dyn, state, res, nl, model, params, loop, i_image, i_nested, comm, time, dom)
       type(dynamics_t), intent(inout) :: dyn
       type(state_t), intent(inout) :: state
       type(results_t), intent(inout) :: res
@@ -741,11 +833,16 @@ contains
       integer, intent(inout) :: i_nested
       type(comm_t), intent(in) :: comm
       type(times_t), intent(inout) :: time
+      type(domain_t), intent(in) :: dom
       character*1024 :: filename
       character*1024 :: string
       integer :: ierr
       integer :: n_pos
 
+      if (domain_integrating(dom)) then
+         call md_step_domain(dyn, state, res, nl, model, params, loop, comm, dom, time)
+         return
+      end if
       call compute_md(params, comm%rank, ierr, state%n_sites, model%n_species, loop%md_istep, dyn%md_time, dyn%time_step, &
                       state%positions, state%positions_prev, state%positions_diff, state%velocities, res%forces, &
                       state%forces_prev, state%masses, &
@@ -761,5 +858,275 @@ contains
                       dyn%cum_eel, dyn%gd_istep, &
                       dyn%target_temp, dyn%time_step_prev, res%dipole, res%local_dipoles, res%energies_dipole)
    end subroutine md_step
+
+!  dd_integrate = domain: one velocity-Verlet step on each domain's owned
+!  atoms, run on the domain roots. Every sum over atoms is taken over all
+!  domains. thermo.log and the trajectory frames are written by rank 0 through
+!  the same routines as the rank-0 integrator, the frames from arrays gathered
+!  for the purpose; the random draw of the Bussi thermostat is made once, on
+!  rank 0, as it is there. domain_configure lets only what this supports
+!  through: velocity Verlet with no, Berendsen or Bussi thermostat.
+   subroutine md_step_domain(dyn, state, res, nl, model, params, loop, comm, dom, time)
+      type(dynamics_t), intent(inout) :: dyn
+      type(state_t), intent(inout) :: state
+      type(results_t), intent(inout) :: res
+      type(neighbors_t), intent(inout) :: nl
+      type(model_t), intent(in) :: model
+      type(input_parameters), intent(inout) :: params
+      type(loop_t), intent(inout) :: loop
+      type(comm_t), intent(in) :: comm
+      type(domain_t), intent(in) :: dom
+      type(times_t), intent(inout) :: time
+!     The ledgers of compute_md, kept the same way across steps.
+      real(dp), save :: e_cm_removed = 0.d0
+      real(dp), save :: e_thermo_work = 0.d0
+      real(dp) :: a(1:3)
+      real(dp) :: b(1:3)
+      real(dp) :: c(1:3)
+      real(dp) :: momentum(1:3)
+      real(dp) :: total_mass
+      real(dp) :: ek_pre
+      real(dp) :: e_pot
+      real(dp) :: e_exp
+      real(dp) :: f
+      real(dp) :: d(1:2)
+      real(dp), allocatable :: all_d(:)
+      real(dp) :: d1
+      real(dp) :: d2
+      logical :: rebuild
+      logical :: write_frame
+      integer :: n
+      integer :: n_total
+      integer :: i
+      integer :: k
+
+      n = 0
+      if (dom%legacy%local%rank == 0) n = dom%legacy%n_owned
+      n_total = dom%legacy%n_global
+      a = state%a_box/dfloat(state%indices(1))
+      b = state%b_box/dfloat(state%indices(2))
+      c = state%c_box/dfloat(state%indices(3))
+
+      call time_start(time%md)
+      if (loop%md_istep > 0) then
+         dyn%md_time = dyn%md_time + dyn%time_step
+      else
+         dyn%md_time = 0.d0
+         dyn%time_step = params%md_step
+      end if
+      call wrap_pbc(state%positions(1:3, 1:n), a, b, c)
+
+!     The centre-of-mass drift, over the whole system.
+      if (loop%md_istep == 0) e_cm_removed = 0.d0
+      ek_pre = kinetic_energy(comm, state, n)
+      momentum = 0.d0
+      total_mass = 0.d0
+      do i = 1, n
+         momentum = momentum + state%masses(i)*state%velocities(1:3, i)
+         total_mass = total_mass + state%masses(i)
+      end do
+      do k = 1, 3
+         call comm_sum_all(comm, momentum(k))
+      end do
+      call comm_sum_all(comm, total_mass)
+      do i = 1, n
+         state%velocities(1:3, i) = state%velocities(1:3, i) - momentum/total_mass
+      end do
+      e_cm_removed = e_cm_removed - kinetic_energy(comm, state, n) + ek_pre
+
+      call velocity_verlet(state%positions(1:3, 1:n), state%positions_prev(1:3, 1:n), state%velocities(1:3, 1:n), &
+                           res%forces(1:3, 1:n), state%forces_prev(1:3, 1:n), state%masses(1:n), dyn%time_step, &
+                           dyn%time_step_prev, loop%md_istep == 0, a, b, c, state%fix_atom(1:3, 1:n))
+
+      dyn%E_kinetic = kinetic_energy(comm, state, n)
+      dyn%instant_temp = 2.d0/3.d0/dfloat(n_total - 1)/dyn%kB*dyn%E_kinetic
+      dyn%instant_pressure = (dyn%kB*dfloat(n_total - 1)*dyn%instant_temp &
+                              + (res%virial(1, 1) + res%virial(2, 2) + res%virial(3, 3))/3.d0)/state%v_uc*dyn%eVperA3tobar
+
+      e_pot = sum(res%energies(1:n))
+      e_exp = sum(res%energies_exp(1:n))
+      call comm_sum_all(comm, e_pot)
+      call comm_sum_all(comm, e_exp)
+      if (comm%rank == 0) then
+         call md_write_thermo(params, loop%md_istep, 0, dyn%md_time, dyn%instant_temp, dyn%E_kinetic, e_pot, &
+                              e_exp, dyn%instant_pressure, state%a_box, state%b_box, state%c_box, state%indices, &
+                              e_thermo_work, e_cm_removed)
+      end if
+
+      write_frame = loop%md_istep == 0 .or. loop%md_istep == params%md_nsteps .or. &
+                    modulo(loop%md_istep, params%write_xyz) == 0 .or. loop%exit_loop
+      if (write_frame) call write_frame_gathered(dyn, state, res, model, params, loop, comm, dom)
+
+!     Thermostat, bracketed for the energy ledger as compute_md does.
+      if (loop%md_istep == 0) e_thermo_work = 0.d0
+      ek_pre = kinetic_energy(comm, state, n)
+      if (params%thermostat == "berendsen") then
+         call get_target_temp(params%t_beg, params%t_end, loop%md_istep, params%md_nsteps, params%n_t_hold, &
+                              params%t_hold, dyn%target_temp)
+         call berendsen_thermostat(state%velocities(1:3, 1:n), dyn%target_temp, dyn%instant_temp, params%tau_t, &
+                                   dyn%time_step)
+      else if (params%thermostat == "bussi") then
+         call get_target_temp(params%t_beg, params%t_end, loop%md_istep, params%md_nsteps, params%n_t_hold, &
+                              params%t_hold, dyn%target_temp)
+         f = 0.d0
+         if (comm%rank == 0 .and. dyn%E_kinetic > 0.d0) then
+            f = dsqrt(resamplekin(dyn%E_kinetic, dyn%target_temp, 3*n_total - 3, params%tau_t, dyn%time_step) &
+                      /dyn%E_kinetic)
+         end if
+         call comm_bcast(comm, f)
+         state%velocities(1:3, 1:n) = state%velocities(1:3, 1:n)*f
+      end if
+      e_thermo_work = e_thermo_work + kinetic_energy(comm, state, n) - ek_pre
+
+!     The skin test, over every atom: the two largest displacements anywhere.
+      call skin_accumulate(state%positions(1:3, 1:n), state%positions_prev(1:3, 1:n), reshape([a, b, c], [3, 3]), &
+                           state%positions_diff(1:3, 1:n))
+      call skin_two_largest(state%positions_diff(1:3, 1:n), d(1), d(2))
+      allocate (all_d(1:2*comm%size))
+      call comm_gather(comm, d, 2, all_d)
+      if (comm%rank == 0) then
+         d1 = 0.d0
+         d2 = 0.d0
+         do i = 1, size(all_d)
+            if (all_d(i) > d1) then
+               d2 = d1
+               d1 = all_d(i)
+            else if (all_d(i) > d2) then
+               d2 = all_d(i)
+            end if
+         end do
+         rebuild = (params%neighbors_buffer <= 0.d0) .or. (d1 + d2 >= params%neighbors_buffer)
+      end if
+      call comm_bcast(comm, rebuild)
+      if (rebuild) state%positions_diff(1:3, 1:n) = 0.d0
+      nl%rebuild_neighbors_list = rebuild
+      call time_end(time%md)
+   end subroutine md_step_domain
+
+!  Kinetic energy of the whole system, from each root's owned atoms.
+   function kinetic_energy(comm, state, n) result(ek)
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(in) :: state
+      integer, intent(in) :: n
+      real(dp) :: ek
+      integer :: i
+
+      ek = 0.d0
+      do i = 1, n
+         ek = ek + 0.5d0*state%masses(i)*dot_product(state%velocities(1:3, i), state%velocities(1:3, i))
+      end do
+      call comm_sum_all(comm, ek)
+   end function kinetic_energy
+
+!  A trajectory frame from the domains: the owned sites' data in global
+!  order on rank 0, written there by md_write_frame as the rank-0 integrator
+!  writes it.
+   subroutine write_frame_gathered(dyn, state, res, model, params, loop, comm, dom)
+      type(dynamics_t), intent(in) :: dyn
+      type(state_t), intent(in) :: state
+      type(results_t), intent(in) :: res
+      type(model_t), intent(in) :: model
+      type(input_parameters), intent(in) :: params
+      type(loop_t), intent(in) :: loop
+      type(comm_t), intent(in) :: comm
+      type(domain_t), intent(in) :: dom
+      integer, parameter :: N_FIXED = 26
+      real(dp), allocatable :: owned(:, :)
+      real(dp), allocatable :: out(:, :)
+      real(dp), allocatable :: pos(:, :)
+      real(dp), allocatable :: vel(:, :)
+      real(dp), allocatable :: frc(:, :)
+      real(dp), allocatable :: ene(:)
+      real(dp), allocatable :: mass(:)
+      real(dp), allocatable :: lp(:, :)
+      real(dp), allocatable :: dip(:, :)
+      real(dp), allocatable :: edip(:)
+      real(dp), allocatable :: fam(:, :)
+      real(dp), allocatable :: e_soap(:)
+      real(dp), allocatable :: e_2b(:)
+      real(dp), allocatable :: e_3b(:)
+      real(dp), allocatable :: e_cp(:)
+      real(dp), allocatable :: e_vdw(:)
+      real(dp), allocatable :: e_exp(:)
+      real(dp), allocatable :: e_lp(:)
+      real(dp), allocatable :: e_pdf(:)
+      real(dp), allocatable :: e_sf(:)
+      real(dp), allocatable :: e_xrd(:)
+      real(dp), allocatable :: e_nd(:)
+      character*8, allocatable :: xyz_species(:)
+      logical, allocatable :: fix(:, :)
+      character*1024 :: filename
+      character*1024 :: string
+      integer :: n
+      integer :: n_total
+      integer :: n_lp
+      integer :: nv
+      integer :: i
+
+      n = dom%legacy%n_owned
+      n_total = dom%legacy%n_global
+      n_lp = 0
+      if (allocated(res%local_properties)) n_lp = size(res%local_properties, 2)
+      nv = N_FIXED + n_lp
+      allocate (owned(1:nv, 1:max(n, 1)))
+      if (dom%legacy%local%rank == 0) then
+         do i = 1, n
+            owned(1:3, i) = state%positions_prev(1:3, i)
+            owned(4:6, i) = state%velocities(1:3, i)
+            owned(7:9, i) = res%forces(1:3, i)
+            owned(10, i) = res%energies(i)
+            owned(11, i) = state%masses(i)
+            owned(12:14, i) = merge(1.d0, 0.d0, state%fix_atom(1:3, i))
+            owned(15, i) = transfer(state%xyz_species(i), 0.d0)
+            owned(16, i) = res%energies_soap(i)
+            owned(17, i) = res%energies_2b(i)
+            owned(18, i) = res%energies_3b(i)
+            owned(19, i) = res%energies_core_pot(i)
+            owned(20, i) = res%energies_vdw(i)
+            owned(21, i) = res%energies_exp(i)
+            owned(22, i) = res%energies_lp(i)
+            owned(23:25, i) = res%local_dipoles(1:3, i)
+            owned(26, i) = res%energies_dipole(i)
+            if (n_lp > 0) owned(N_FIXED + 1:nv, i) = res%local_properties(i, 1:n_lp)
+         end do
+      end if
+      if (comm%rank == 0) then
+         allocate (out(1:nv, 1:n_total))
+      else
+         allocate (out(1:nv, 1))
+      end if
+      call legacy_gather(dom%legacy, comm, owned, out)
+      if (comm%rank /= 0) return
+
+      pos = out(1:3, :)
+      vel = out(4:6, :)
+      frc = out(7:9, :)
+      ene = out(10, :)
+      mass = out(11, :)
+      fix = out(12:14, :) > 0.5d0
+      allocate (xyz_species(1:n_total))
+      do i = 1, n_total
+         xyz_species(i) = transfer(out(15, i), xyz_species(i))
+      end do
+      fam = out(16:22, :)
+      e_soap = fam(1, :)
+      e_2b = fam(2, :)
+      e_3b = fam(3, :)
+      e_cp = fam(4, :)
+      e_vdw = fam(5, :)
+      e_exp = fam(6, :)
+      e_lp = fam(7, :)
+      dip = out(23:25, :)
+      edip = out(26, :)
+      allocate (lp(1:n_total, 1:max(n_lp, 1)))
+      do i = 1, n_lp
+         lp(:, i) = out(N_FIXED + i, :)
+      end do
+      call md_write_frame(params, n_total, loop%md_istep, dyn%md_time, dyn%time_step, dyn%instant_temp, &
+                          dyn%instant_pressure, state%a_box, state%b_box, state%c_box, state%indices, res%virial, &
+                          xyz_species, pos, vel, frc, ene, mass, model%local_property_labels, lp, fix, &
+                          e_soap, e_2b, e_3b, e_cp, e_vdw, e_exp, e_lp, e_pdf, e_sf, e_xrd, e_nd, &
+                          res%dipole, dip, edip, loop%exit_loop, 0, filename, string)
+   end subroutine write_frame_gathered
 
 end module turbogap_md

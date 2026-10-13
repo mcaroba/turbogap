@@ -240,11 +240,11 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">360 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">361 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
-<a href="#general"><span>General</span><span class="n">59</span></a>
+<a href="#general"><span>General</span><span class="n">60</span></a>
 <a href="#run-control"><span>Run control</span><span class="n">19</span></a>
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">23</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
@@ -316,6 +316,15 @@ footer {
 <td class="mo">all</td>
 <td class="de">How ranks are assigned to domains when there are more ranks than domains: &quot;block&quot; puts consecutive ranks in one domain and needs the ranks to divide evenly, &quot;cyclic&quot; deals them out in turn.</td>
 <td class="dp"><span class="dep">needs <code>dd_type</code></span><span class="dep">see <code>dd_grid</code></span></td>
+</tr>
+<tr data-h="dd_integrate where md integrates under dd_type legacy. &quot;rank0&quot; keeps the whole structure on rank 0, which integrates and writes it, and redistributes it to the domains each step. &quot;domain&quot; integrates each domain&#x27;s own atoms where they are and migrates atoms that cross a border at each neighbour rebuild; rank 0 gathers the structure only to write it. &quot;domain&quot; covers velocity verlet with no, berendsen or bussi thermostat; anything else integrates on rank 0, with a note." data-m="md">
+<td class="kw"><code>dd_integrate</code></td>
+<td class="ty">string</td>
+<td class="df"><code>rank0</code></td>
+<td class="un"></td>
+<td class="mo">md</td>
+<td class="de">Where MD integrates under dd_type legacy. &quot;rank0&quot; keeps the whole structure on rank 0, which integrates and writes it, and redistributes it to the domains each step. &quot;domain&quot; integrates each domain&#x27;s own atoms where they are and migrates atoms that cross a border at each neighbour rebuild; rank 0 gathers the structure only to write it. &quot;domain&quot; covers velocity Verlet with no, Berendsen or Bussi thermostat; anything else integrates on rank 0, with a note.</td>
+<td class="dp"><span class="dep">needs <code>dd_type</code></span></td>
 </tr>
 <tr data-h="dd_type how the atoms are split over mpi ranks. &quot;none&quot; gives every rank the whole structure and splits the atoms in index order. &quot;legacy&quot; cuts the cell into the dd_grid of spatial domains, each holding its own atoms and a halo rcut_max wide; it supports soap, 2b, 3b and core_pot only, and refuses anything else at start-up. see docs/legacy_dd.md." data-m="predict md mc soap ipi">
 <td class="kw"><code>dd_type</code></td>

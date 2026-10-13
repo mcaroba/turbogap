@@ -21,6 +21,9 @@
 #     into equal slabs, two of which hold no atom at all, owned or halo;
 #   - MD: five steps; twenty, which reuse the domains between rebuilds; and
 #     twenty with a tiny skin, which rebuild nearly every step;
+#   - dd_integrate = domain: Berendsen, Bussi and NVE, a tiny skin (atoms
+#     migrate at every step), empty domains, and a thermostat it does not
+#     cover, which must integrate on rank 0 instead and say so;
 #   - TS van der Waals, which reads its neighbours' Hirshfeld volumes, so the
 #     halo copies have to carry them;
 #   - electrostatics, whose neutralising mean charge is a sum over all atoms
@@ -143,8 +146,9 @@ run_one() {
 }
 
 # leg <name> <atoms file> <md steps> <ranks> <dd_grid, or auto> [affinity] [extra lines for both runs]
+#     [extra lines for the decomposed run only]
 leg() {
-  local name=$1 atoms=$2 steps=$3 ranks=$4 grid=$5 affinity=${6:-block} extra=${7:-}
+  local name=$1 atoms=$2 steps=$3 ranks=$4 grid=$5 affinity=${6:-block} extra=${7:-} dd_extra=${8:-}
   local mode=predict grid_line=""
   [ "$steps" -gt 0 ] && mode=md
   [ "$grid" != auto ] && grid_line="dd_grid = $grid"
@@ -160,7 +164,8 @@ leg() {
   write_input "$WORK/$name/dd" "$steps" "$extra
 dd_type = legacy
 $grid_line
-dd_grid_affinity = $affinity"
+dd_grid_affinity = $affinity
+$dd_extra"
 
   run_one "$WORK/$name/ref" "$mode" "$ranks" || ok=0
   run_one "$WORK/$name/dd" "$mode" "$ranks" || ok=0
@@ -329,6 +334,24 @@ XRD_DEBYE="$XRD_COMMON
 xrd_debye = .true.
 xrd_rcut = 6.0"
 
+# integ <name> <atoms> <md steps> <ranks> <extra lines> [rank0]: MD with
+# dd_integrate = domain against the replicated run. The last argument says
+# the run should have integrated on rank 0 instead, with its note.
+integ() {
+  local name=$1 atoms=$2 steps=$3 ranks=$4 extra=$5 expect=${6:-domain}
+  leg "$name" "$atoms" "$steps" "$ranks" auto block "$extra" "dd_integrate = domain"
+  local log=$WORK/$name/dd/out.log
+  if [ "$expect" = domain ] && ! grep -q 'integrated on the domains' "$log"; then
+    printf '    FAIL: did not integrate on the domains\n'
+    pass=$((pass - 1))
+    fail=$((fail + 1))
+  elif [ "$expect" = rank0 ] && ! grep -q 'is integrated on rank 0' "$log"; then
+    printf '    FAIL: no note that it integrated on rank 0\n'
+    pass=$((pass - 1))
+    fail=$((fail + 1))
+  fi
+}
+
 # fallback <name> <ranks> <dd lines>: a decomposition the cell cannot take
 # must say so, run replicated, and match the replicated run.
 fallback() {
@@ -373,6 +396,16 @@ run_leg() {
   md8) leg md8 "$DATA/atoms_7176_vel.xyz" 5 8 "2 2 2" ;;
   md20) leg md20 "$DATA/atoms_7176_vel.xyz" 20 8 auto ;;
   md20_skin) leg md20_skin "$DATA/atoms_7176_vel.xyz" 20 8 auto block "neighbors_buffer = 0.01" ;;
+  integ8) integ integ8 "$DATA/atoms_7176_vel.xyz" 30 8 "" ;;
+  integ_bussi) integ integ_bussi "$DATA/atoms_7176_vel.xyz" 20 4 "thermostat = bussi
+t_beg = 600
+t_end = 600" ;;
+  integ_nve) integ integ_nve "$DATA/atoms_7176_vel.xyz" 20 6 "thermostat = none" ;;
+  integ_skin) integ integ_skin "$DATA/atoms_7176_vel.xyz" 20 8 "neighbors_buffer = 0.01" ;;
+  integ_empty) make_slab "$WORK/slab3i.xyz" 3 && integ integ_empty "$WORK/slab3i.xyz" 10 6 "dd_grid = 1 1 6
+dd_balance = volume" ;;
+  integ_gle) integ integ_gle "$DATA/atoms_7176_vel.xyz" 5 4 "thermostat = langevin
+tau_t = 100." rank0 ;;
   narrow) fallback narrow 4 "dd_grid = 4 1 1" ;;
   estat) full_leg estat predict 2 "$DATA_ROOT/C/atoms_24219.xyz" "$DATA_ROOT/CLi/gap_files" - "$ESTAT_INPUT" ;;
   xrd_view) full_leg xrd_view md 4 "$DATA_ROOT/C/atoms_7176.xyz" "$DATA_ROOT/xrd_mad/gap_files" \
@@ -399,7 +432,7 @@ fi
 
 pass=0
 fail=0
-legs=${*:-x2 x3 xy4 xyz8 one3 block4 cyclic6 sheared auto8 volume4 slab4 md8 md20 md20_skin empty6 vdw_ts estat xrd_view xrd_debye_view dipole mad_ir narrow}
+legs=${*:-x2 x3 xy4 xyz8 one3 block4 cyclic6 sheared auto8 volume4 slab4 md8 md20 md20_skin integ8 integ_bussi integ_nve integ_skin integ_empty integ_gle empty6 vdw_ts estat xrd_view xrd_debye_view dipole mad_ir narrow}
 for l in $legs; do
   run_leg "$l"
 done

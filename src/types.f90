@@ -633,6 +633,7 @@ module types
       integer :: dd_grid(1:3) = [0, 0, 0]
       character*16 :: dd_grid_affinity = "block"
       character*16 :: dd_balance = "count"
+      character*16 :: dd_integrate = "rank0"
 
 !     MOLECULAR DYNAMICS
       integer :: md_nsteps = 1

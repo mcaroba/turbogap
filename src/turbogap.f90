@@ -157,7 +157,7 @@ program turbogap
                                   res%forces, res%energy, res%virial, loop%exit_loop, nl%rebuild_neighbors_list)
          call domain_sync_after_ipi(dom, comm, state, nl, loop)
       else
-         call md_step(dyn, state, res, nl, model, params, loop, smp%i_image, smp%i_nested, comm, time)
+         call md_step(dyn, state, res, nl, model, params, loop, smp%i_image, smp%i_nested, comm, time, dom)
          call domain_sync_after_md(dom, comm, state, nl, params, time)
       end if
 

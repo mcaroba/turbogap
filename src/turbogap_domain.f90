@@ -41,7 +41,7 @@ module turbogap_domain
    use turbogap_results, only: results_t, results_resize_sites, results_bcast_sites
    use domain_legacy, only: legacy_dd_t, legacy_init, legacy_free, legacy_check_widths, legacy_distribute, &
                             legacy_reverse, legacy_gather, legacy_refresh, legacy_auto_grid, legacy_make_grid, &
-                            legacy_forward
+                            legacy_forward, legacy_migrate, legacy_rebuild_owned, REC_DYN
    use error, only: turbogap_abort
    use printing, only: print_parameters
    use read_files, only: read_xyz
@@ -60,6 +60,7 @@ module turbogap_domain
    public :: domain_exp_view
    public :: domain_localize
    public :: domain_globalize
+   public :: domain_integrating
 
    interface domain_globalize
       module procedure globalize_r2
@@ -155,6 +156,10 @@ module turbogap_domain
 !     evaluation, for the code that runs on every rank afterwards and expects
 !     them (MAD-IR, nested sampling).
       logical :: replicate_after = .false.
+!     dd_integrate = domain: each domain integrates its own atoms, which
+!     migrate between domains at rebuilds; rank 0 holds the structure only
+!     long enough to write it out.
+      logical :: integrate = .false.
    end type domain_t
 
 contains
@@ -187,6 +192,19 @@ contains
          end if
          dom%dd_type = DD_LEGACY
          dom%replicate_after = params%valid_ir .or. params%do_ir .or. params%do_nested_sampling
+         if (trim(params%dd_integrate) == "domain") then
+            why = domain_integration_unsupported(params)
+            if (why == "") then
+               dom%integrate = .true.
+            else if (comm%rank == 0) then
+               write (*, '(A,A,A)') ' dd_integrate domain: ', trim(why), &
+                  ' is integrated on rank 0; the evaluation stays on the domains'
+            end if
+         else if (trim(params%dd_integrate) /= "rank0") then
+            if (comm%rank == 0) write (*, '(A,A,A)') 'ERROR: dd_integrate is "', trim(params%dd_integrate), &
+               '"; it must be rank0 or domain'
+            call turbogap_abort()
+         end if
          call legacy_init(dom%legacy, comm, params%dd_grid, params%dd_grid_affinity, params%dd_balance)
       case default
          if (comm%rank == 0) write (*, '(A,A,A)') 'ERROR: dd_type is "', trim(params%dd_type), &
@@ -206,6 +224,33 @@ contains
       if (.not. params%do_prediction) why = "a run without do_prediction"
       if (trim(params%vdw_type) == "mbd" .or. trim(params%vdw_type) == "ts+mbd") why = "MBD van der Waals"
    end function legacy_unsupported
+
+!  The first part of the run that the domain integrator does not do yet, or
+!  blank. Such a run integrates on rank 0, which is always correct.
+   function domain_integration_unsupported(params) result(why)
+      type(input_parameters), intent(in) :: params
+      character(len=64) :: why
+
+      why = ""
+      if (.not. params%do_md) why = "a run without MD"
+      if (params%optimize /= "vv") why = "optimize = "//trim(params%optimize)
+      if (params%thermostat /= "none" .and. params%thermostat /= "berendsen" .and. params%thermostat /= "bussi") &
+         why = "thermostat = "//trim(params%thermostat)
+      if (params%barostat /= "none" .or. params%scale_box) why = "a barostat or box scaling"
+      if (params%variable_time_step .or. params%adaptive_time) why = "a variable time step"
+      if (params%electronic_stopping .or. params%nonadiabatic_processes) why = "electronic stopping"
+      if (params%do_mc .or. params%do_nested_sampling) why = "MC or nested sampling"
+      if (params%valid_ir .or. params%do_ir) why = "MAD-IR"
+      if (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd .or. params%do_nd) &
+         why = "a whole-structure observable"
+   end function domain_integration_unsupported
+
+!  Is this run integrating on the domains?
+   pure logical function domain_integrating(dom) result(yes)
+      type(domain_t), intent(in) :: dom
+
+      yes = (dom%dd_type == DD_LEGACY .and. dom%integrate)
+   end function domain_integrating
 
 !  Give every rank the structure rank 0 holds. Replicated data: the whole of it,
 !  sized from rank 0's arrays. Sending only what an MC move changed was tried,
@@ -514,16 +559,17 @@ contains
       type(model_t), intent(in) :: model
       type(loop_t), intent(inout) :: loop
       type(times_t), intent(inout) :: time
-      integer, allocatable :: pairs(:)
       integer :: grid(1:3)
       integer :: n_global
-      integer :: n_owned
-      integer :: n_ranks
-      integer :: r
 
       call time_start(time%neigh)
       dom%view%active = .false.
       call comm_bcast(comm, nl%rebuild_neighbors_list)
+      if (dom%integrate .and. dom%legacy%n_builds > 0) then
+         call legacy_domain_build(dom, nl, comm, state, params, model, time)
+         call time_end(time%neigh)
+         return
+      end if
       if (params%do_md .and. dom%legacy%n_builds > 0 .and. .not. nl%rebuild_neighbors_list) then
          call legacy_reuse(dom, nl, comm, state, params, model, time)
          call time_end(time%neigh)
@@ -584,6 +630,25 @@ contains
       dom%l_species = state%species
       dom%l_xyz_species = state%xyz_species
 
+      if (dom%integrate) call legacy_first_dynamics(dom, comm, state)
+      call legacy_lists(dom, nl, comm, state, params, model)
+      call time_end(time%neigh)
+   end subroutine legacy_build
+
+!  The owned sites split over the domain's ranks, and their neighbour lists
+!  built from scratch.
+   subroutine legacy_lists(dom, nl, comm, state, params, model)
+      type(domain_t), intent(inout) :: dom
+      type(neighbors_t), intent(inout) :: nl
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+      integer, allocatable :: pairs(:)
+      integer :: n_owned
+      integer :: n_ranks
+      integer :: r
+
       n_owned = dom%legacy%n_owned
       n_ranks = dom%legacy%local%size
       r = dom%legacy%local%rank
@@ -627,8 +692,160 @@ contains
       allocate (dom%this_site_in_rank(1:state%n_sites))
       dom%site_in_rank = 0
       dom%this_site_in_rank = 0
-      call time_end(time%neigh)
-   end subroutine legacy_build
+   end subroutine legacy_lists
+
+!  dd_integrate = domain, first build: every local site gets its velocity, mass
+!  and fixed coordinates from rank 0's whole structure, by global id. The
+!  previous positions and forces are set by the first velocity-Verlet step.
+!  Rank 0 keeps nothing aside after this; the domains hold the structure.
+   subroutine legacy_first_dynamics(dom, comm, state)
+      type(domain_t), intent(inout) :: dom
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      real(dp), allocatable :: vel(:, :)
+      real(dp), allocatable :: mass(:)
+      logical, allocatable :: fix(:, :)
+      integer :: n
+      integer :: n_local
+
+      n = dom%legacy%n_global
+      n_local = dom%legacy%n_local
+      allocate (vel(1:3, 1:n), mass(1:n), fix(1:3, 1:n))
+      if (comm%rank == 0) then
+         vel = state%velocities(1:3, 1:n)
+         mass = state%masses(1:n)
+         fix = state%fix_atom(1:3, 1:n)
+      end if
+      call comm_bcast(comm, vel, 3*n)
+      call comm_bcast(comm, mass, n)
+      call comm_bcast(comm, fix, 3*n)
+      call set_local_dynamics(state, n_local)
+      state%velocities(1:3, 1:n_local) = vel(1:3, dom%legacy%ids)
+      state%masses(1:n_local) = mass(dom%legacy%ids)
+      state%fix_atom(1:3, 1:n_local) = fix(1:3, dom%legacy%ids)
+      state%positions_prev(1:3, 1:n_local) = state%positions(1:3, 1:n_local)
+      state%forces_prev = 0.d0
+      state%positions_diff = 0.d0
+      if (allocated(dom%g_positions)) deallocate (dom%g_positions, dom%g_species, dom%g_xyz_species)
+   end subroutine legacy_first_dynamics
+
+!  The per-site dynamic arrays sized for n local sites.
+   subroutine set_local_dynamics(state, n)
+      type(state_t), intent(inout) :: state
+      integer, intent(in) :: n
+
+      if (allocated(state%velocities)) deallocate (state%velocities)
+      if (allocated(state%masses)) deallocate (state%masses)
+      if (allocated(state%fix_atom)) deallocate (state%fix_atom)
+      if (allocated(state%positions_prev)) deallocate (state%positions_prev)
+      if (allocated(state%forces_prev)) deallocate (state%forces_prev)
+      if (allocated(state%positions_diff)) deallocate (state%positions_diff)
+      allocate (state%velocities(1:3, 1:max(n, 1)), state%masses(1:max(n, 1)), state%fix_atom(1:3, 1:max(n, 1)))
+      allocate (state%positions_prev(1:3, 1:max(n, 1)), state%forces_prev(1:3, 1:max(n, 1)))
+      allocate (state%positions_diff(1:3, 1:max(n, 1)))
+      state%velocities = 0.d0
+      state%masses = 0.d0
+      state%fix_atom = .false.
+      state%positions_prev = 0.d0
+      state%forces_prev = 0.d0
+      state%positions_diff = 0.d0
+   end subroutine set_local_dynamics
+
+!  dd_integrate = domain, after the first build. Between rebuilds the owned
+!  positions, moved by the domain's own integrator, are copied to their halo
+!  copies and the lists re-measured. At a rebuild the owned atoms migrate,
+!  with everything the integrator keeps for them, the halos are rebuilt and
+!  the lists built afresh.
+   subroutine legacy_domain_build(dom, nl, comm, state, params, model, time)
+      type(domain_t), intent(inout) :: dom
+      type(neighbors_t), intent(inout) :: nl
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+      type(times_t), intent(inout) :: time
+      real(dp), allocatable :: t(:, :)
+      real(dp), allocatable :: dyn(:, :)
+      integer :: n_owned
+      integer :: n_local
+
+      n_local = dom%legacy%n_local
+      if (.not. nl%rebuild_neighbors_list) then
+         allocate (t(1:3, 1:max(n_local, 1)))
+         t = 0.d0
+         t(1:3, 1:n_local) = state%positions(1:3, 1:n_local)
+         if (dom%legacy%local%rank == 0) then
+            call time_start(time%dd_halo, "dd_halo")
+            call legacy_forward(dom%legacy, t)
+            call time_end(time%dd_halo, "dd_halo")
+         end if
+         call comm_bcast(dom%legacy%local, t, 3*n_local)
+         state%positions(1:3, 1:n_local) = t(1:3, 1:n_local)
+         dom%legacy%n_refreshes = dom%legacy%n_refreshes + 1
+         call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
+                                   state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
+                                   nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
+                                   state%n_sites, state%indices, .false., dom%do_list, comm%rank)
+         return
+      end if
+
+      n_owned = dom%legacy%n_owned
+      allocate (dyn(1:REC_DYN, 1:max(n_owned, 1)))
+      if (dom%legacy%local%rank == 0) then
+         call pack_dynamics(dom, state, dyn)
+         call time_start(time%dd_scatter, "dd_scatter")
+         call legacy_migrate(dom%legacy, dyn, state%a_box, state%b_box, state%c_box, model%rcut_max)
+         call time_end(time%dd_scatter, "dd_scatter")
+      end if
+      call legacy_rebuild_owned(dom%legacy, dyn, state%a_box, state%b_box, state%c_box, model%rcut_max, &
+                                state%positions, state%species, state%xyz_species, time%dd_halo, time%dd_share)
+      state%n_sites = dom%legacy%n_local
+      state%species_supercell = state%species
+      state%xyz_species_supercell = state%xyz_species
+      dom%l_species = state%species
+      dom%l_xyz_species = state%xyz_species
+      call set_local_dynamics(state, dom%legacy%n_local)
+      if (dom%legacy%local%rank == 0) call unpack_dynamics(dom, dyn, state)
+      call legacy_lists(dom, nl, comm, state, params, model)
+   end subroutine legacy_domain_build
+
+!  Owned atom i as a migration record: the REC_ATOM fields, then what the
+!  integrator keeps for it.
+   subroutine pack_dynamics(dom, state, dyn)
+      type(domain_t), intent(in) :: dom
+      type(state_t), intent(in) :: state
+      real(dp), intent(inout) :: dyn(:, :)
+      integer :: i
+
+      do i = 1, dom%legacy%n_owned
+         dyn(1, i) = dble(dom%legacy%ids(i))
+         dyn(2, i) = dble(state%species(i))
+         dyn(3:5, i) = state%positions(1:3, i)
+         dyn(6, i) = transfer(state%xyz_species(i), 0.d0)
+         dyn(7:9, i) = state%velocities(1:3, i)
+         dyn(10, i) = state%masses(i)
+         dyn(11:13, i) = merge(1.d0, 0.d0, state%fix_atom(1:3, i))
+         dyn(14:16, i) = state%positions_prev(1:3, i)
+         dyn(17:19, i) = state%forces_prev(1:3, i)
+         dyn(20:22, i) = state%positions_diff(1:3, i)
+      end do
+   end subroutine pack_dynamics
+
+   subroutine unpack_dynamics(dom, dyn, state)
+      type(domain_t), intent(in) :: dom
+      real(dp), intent(in) :: dyn(:, :)
+      type(state_t), intent(inout) :: state
+      integer :: i
+
+      do i = 1, dom%legacy%n_owned
+         state%velocities(1:3, i) = dyn(7:9, i)
+         state%masses(i) = dyn(10, i)
+         state%fix_atom(1:3, i) = dyn(11:13, i) > 0.5d0
+         state%positions_prev(1:3, i) = dyn(14:16, i)
+         state%forces_prev(1:3, i) = dyn(17:19, i)
+         state%positions_diff(1:3, i) = dyn(20:22, i)
+      end do
+   end subroutine unpack_dynamics
 
 !  The cell cannot be split as asked: say why, and evaluate replicated from
 !  here on. Rank 0 still holds the whole structure, so nothing is lost.
@@ -640,6 +857,7 @@ contains
 
       if (comm%rank == 0) write (*, '(A,A,A)') ' dd_type legacy: ', why, '; evaluating replicated from here on'
       dom%dd_type = DD_NONE
+      dom%integrate = .false.
       nl%rebuild_neighbors_list = .true.
       if (allocated(nl%rjs)) deallocate (nl%rjs, nl%xyz, nl%thetas, nl%phis, nl%neighbor_species)
       if (allocated(nl%neighbors_list)) deallocate (nl%neighbors_list)
@@ -1398,6 +1616,27 @@ contains
          allocate (owned(1:n_out, 1))
       end if
 
+!     dd_integrate = domain: the results stay where the atoms are. The owned
+!     sites get their completed sums for the domain's own integrator, and
+!     everyone the whole virial; nothing is gathered.
+      if (dom%integrate) then
+         call comm_bcast(comm, vir_all, 9*N_CONTRIB)
+         if (dom%legacy%local%rank == 0) then
+            n = dom%legacy%n_owned
+            do k = 1, n_active
+               col = (k - 1)*per_fam + 1
+               contrib(k)%e_dst(1:n) = total(col, 1:n)
+               if (contrib(k)%forces) then
+                  contrib(k)%f_dst(1:3, 1:n) = total(col + 1:col + 3, 1:n)
+                  contrib(k)%v_dst = reshape(vir_all(1:9, k), [3, 3])
+               end if
+            end do
+         end if
+         call contributions_release(res, params, contrib_on)
+         call time_end(time%mpi_ef)
+         return
+      end if
+
       if (comm%rank == 0) then
          allocate (out(1:n_out, 1:dom%g_n_sites))
       else
@@ -1456,7 +1695,7 @@ contains
       type(domain_t), intent(in) :: dom
       type(comm_t), intent(in) :: comm
       type(times_t), intent(in) :: time
-      integer, parameter :: N_COL = 12
+      integer, parameter :: N_COL = 13
       real(dp) :: mine(1:N_COL)
       real(dp), allocatable :: all(:)
       integer :: r
@@ -1465,12 +1704,16 @@ contains
       if (dom%dd_type /= DD_LEGACY) return
       mine = [dble(dom%legacy%local%rank), dble(dom%legacy%n_owned), dble(dom%legacy%n_local), &
               dble(dom%i_end - dom%i_beg + 1), dble(dom%j_end - dom%j_beg + 1), time%gap(3), time%neigh(3), &
-              time%dd_scatter(3), time%dd_halo(3), time%dd_share(3), time%dd_reverse(3), time%dd_gather(3)]
+              time%dd_scatter(3), time%dd_halo(3), time%dd_share(3), time%dd_reverse(3), time%dd_gather(3), &
+              dble(dom%legacy%n_migrated)]
       allocate (all(1:N_COL*comm%size))
       call comm_gather(comm, mine, N_COL, all)
       if (comm%rank /= 0) return
-      write (*, '(A,I0,A,I0,A)') ' dd_type legacy: ', dom%legacy%n_builds, ' rebuilds, ', dom%legacy%n_refreshes, &
-         ' steps reusing the domains'
+      write (*, '(A,I0,A,I0,A,A)') ' dd_type legacy: ', dom%legacy%n_builds, ' rebuilds, ', dom%legacy%n_refreshes, &
+         ' steps reusing the domains', trim(merge(', integrated on the domains', '                           ', &
+                                                  dom%integrate))
+      if (dom%integrate) write (*, '(A,I0)') ' dd_type legacy: atoms migrated between domains: ', &
+         nint(sum(all(13::N_COL)))
       write (*, '(A)') ' dd_type legacy, per rank (seconds over the run; sites and pairs of the last step):'
       write (*, '(A)') '  rank  dom.rank  owned   local  slice     pairs      gap    neigh  scatter     halo    share'// &
          '  reverse   gather'

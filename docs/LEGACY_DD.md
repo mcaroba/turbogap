@@ -61,13 +61,48 @@ means nothing outside `turbogap_domain` learns about domains:
   global structure.
 
 The legacy branch also integrated MD on each domain and migrated atoms across
-faces (`migrate` in its `decompose.f90`). That is not ported; the refresh and
-the rebalancing rebuilds take its place. It means every MD feature (thermostats, GLE,
+faces (`migrate` in its `decompose.f90`). That is `dd_integrate = domain`,
+below; the default, `rank0`, is what this section describes. It means every MD feature (thermostats, GLE,
 barostats, electronic stopping, the optimisers, output) has to learn about
 domains, and that is the scope of the other decomposition. Here the
 per-step cost is one scatter and one gather of O(N) on rank 0. The replicated
 mode pays a broadcast of O(N) to every rank and a reduction of
 O(N × families) every step, so this is never worse on communication.
+
+## Integrating on the domains: `dd_integrate = domain`
+
+With `dd_integrate = domain` rank 0 hands the structure out once, at the first
+build, and the domains keep it:
+
+- each domain root runs velocity Verlet on its owned atoms (`md_step_domain`
+  in `turbogap_md`). Every sum over atoms (kinetic energy, the
+  centre-of-mass drift, the potential energy, the virial, the two largest
+  skin displacements) is taken over all domains. The Bussi draw is made once,
+  on rank 0, so the random stream is the replicated run's;
+- between rebuilds the owned positions go to their halo copies by replaying
+  the halo sweeps (`legacy_forward`), and the lists are re-measured;
+- at a rebuild the cuts are re-balanced from a histogram summed over all
+  domains, and every atom whose slab changed migrates to the neighbour on the
+  way (`legacy_migrate`), axis by axis and one hop per pass until none is
+  left, carrying its velocity, mass, fixed coordinates, previous position and
+  force, and skin displacement;
+- `thermo.log` and the trajectory are written by rank 0 through the same
+  routines as the rank-0 integrator (`md_write_thermo`, `md_write_frame`,
+  taken out of `compute_md` for this), the frames from arrays gathered only
+  on the steps that write one.
+
+It covers velocity Verlet with no, Berendsen or Bussi thermostat. Anything
+else integrates on rank 0, with a line saying so: another optimiser or
+thermostat, a barostat or box scaling, a variable time step, electronic
+stopping, MC, nested sampling, MAD-IR, and the whole-structure observables.
+The end-of-run report says which ran and how many atoms migrated.
+
+This is the legacy branch's `migrate`, rewritten: six face neighbours instead
+of 26, sweeps instead of one exchange, the re-balancing it lacked, every
+per-atom array the integrator needs, and global reductions for the
+quantities that branch computed per domain (its variable time step and
+electronic stopping took per-domain maxima; here they are not ported and
+integrate on rank 0 instead).
 
 ## What runs how
 
@@ -127,19 +162,22 @@ A domain may be empty, owned and halo alike; it waits.
 `tests/legacy_dd/run.sh` runs each input decomposed and replicated and
 compares `trajectory_out.xyz` number by number (rtol = atol = 1e-7, since
 summation order differs). A leg passes only if its run stayed decomposed to
-the end. The 22 legs cover:
+the end. The 28 legs cover:
 - grids of 2, 3, 4, 6 and 8 domains, more than one rank per domain, both
   affinities, a sheared cell, the automatic grid, count and volume cuts, a
   slab with vacuum and two empty domains;
 - MD that reuses the domains between rebuilds, and that rebuilds every step;
+- `dd_integrate = domain` with Berendsen (128 atoms migrate in 30 steps on 8
+  ranks), Bussi, NVE, a rebuild every step, empty domains, and an unsupported
+  thermostat that must integrate on rank 0 and say so;
 - TS vdW, electrostatics, both XRD routes on the whole-structure view,
   dipoles, and 40 MD steps of the MAD-IR bias;
 - a grid too fine for the cell, which must fall back and still match.
 
-It passes with `TURBOGAP_BIN=bin-gpu/turbogap` at the same tolerance. Three
-mutations are caught by it: the reverse exchange in forward order, the
-Hirshfeld volumes not forwarded to halos, and the mean charge summed over
-local sites.
+It passes with `TURBOGAP_BIN=bin-gpu/turbogap` at the same tolerance. Five
+mutations are caught by it: the reverse exchange skipped, or run in forward
+order; the Hirshfeld volumes not forwarded to halos; the mean charge summed
+over local sites; and a migrating atom losing its velocity.
 
 The regression suite also runs decomposed: `TURBOGAP_INPUT_EXTRA="dd_type =
 legacy"` appends that line to the input under test only, and
@@ -230,5 +268,6 @@ What the numbers say:
 - MBD on the domains: a halo as wide as its cluster radius, a forward exchange
   of the SCS polarisabilities, and the volume-derivative transfer moved onto
   the domain map.
-- `dd_integrate = domain`: integrating on the domains, so that rank 0 no
-  longer holds the structure between output steps.
+- `dd_integrate = domain` for the thermostats and features it does not cover
+  yet: GLE and Langevin (whose per-atom bath state would migrate with the
+  atom), the barostat (its box change moves the cuts), and the optimisers.
