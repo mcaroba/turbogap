@@ -23,6 +23,7 @@
 #   TURBOGAP_DATA_ROOT  directory holding the test systems (see ../data_root.sh)
 #   TURBOGAP_PYTHON     interpreter for the comparison
 #   TURBOGAP_KEEP       keep the staging directory for inspection
+#   TURBOGAP_RTOL, TURBOGAP_ATOL   comparison tolerances (default 1e-7 each)
 #
 # Usage: run.sh [leg ...]      (no argument runs all of them)
 
@@ -42,9 +43,10 @@ WORK=${TMPDIR:-/tmp}/turbogap_legacy_dd.$$
 COMPARE=$repo/tests/regression/compare_tol.py
 
 # Per-atom values are written to 8-10 significant digits; a reordered sum moves
-# the last of them.
-RTOL=1e-7
-ATOL=1e-7
+# the last of them. A device binary does not reproduce itself even replicated,
+# so it needs its own, looser, tolerance.
+RTOL=${TURBOGAP_RTOL:-1e-7}
+ATOL=${TURBOGAP_ATOL:-1e-7}
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2

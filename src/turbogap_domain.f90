@@ -32,7 +32,7 @@
 module turbogap_domain
 
    use kinds, only: dp
-   use turbogap_comm, only: comm_t, comm_bcast, comm_allgather, comm_sum_to_root, comm_with_mpi
+   use turbogap_comm, only: comm_t, comm_bcast, comm_allgather, comm_sum_to_root, comm_with_mpi, comm_gather
    use types, only: input_parameters, any_has_local_properties, contribution_ref, perform_t
    use timing, only: times_t, time_start, time_end
    use turbogap_structure, only: state_t
@@ -50,6 +50,7 @@ module turbogap_domain
    private
    public :: domain_init
    public :: domain_configure
+   public :: domain_report
    public :: domain_free
    public :: domain_sync_state
    public :: domain_sync_after_md
@@ -162,9 +163,6 @@ contains
       character(len=64) :: why
 
       why = ""
-#ifdef _GPU
-      why = "the device build"
-#endif
       if (.not. comm_with_mpi) why = "a build without MPI"
       if (.not. params%do_prediction) why = "a run without do_prediction"
       if (params%write_soap .or. params%write_derivatives) why = "write_soap or write_derivatives"
@@ -511,7 +509,8 @@ contains
       end if
       call legacy_distribute(dom%legacy, comm, n_global, dom%g_positions, dom%g_species, dom%g_xyz_species, &
                              state%a_box, state%b_box, state%c_box, model%rcut_max, &
-                             state%positions, state%species, state%xyz_species)
+                             state%positions, state%species, state%xyz_species, &
+                             time%dd_scatter, time%dd_halo, time%dd_share)
       state%n_sites = dom%legacy%n_local
       state%species_supercell = state%species
       state%xyz_species_supercell = state%xyz_species
@@ -972,7 +971,9 @@ contains
       call comm_sum_to_root(dom%legacy%local, vir_part, vir_dom, 36)
 
       if (dom%legacy%local%rank == 0) then
+         call time_start(time%dd_reverse, "dd_reverse")
          call legacy_reverse(dom%legacy, total)
+         call time_end(time%dd_reverse, "dd_reverse")
          call comm_sum_to_root(dom%legacy%roots, vir_dom, vir_all, 36)
          allocate (owned(1:1 + nv + n_lp, 1:max(dom%legacy%n_owned, 1)))
          do i = 1, dom%legacy%n_owned
@@ -989,7 +990,9 @@ contains
       else
          allocate (out(1:1 + nv + n_lp, 1))
       end if
+      call time_start(time%dd_gather, "dd_gather")
       call legacy_gather(dom%legacy, comm, owned, out)
+      call time_end(time%dd_gather, "dd_gather")
 
       if (comm%rank == 0) then
          state%n_sites = dom%g_n_sites
@@ -1031,6 +1034,35 @@ contains
       end if
       call time_end(time%mpi_ef)
    end subroutine legacy_complete
+
+!  Legacy: one line per rank at the end of the run, for load balance. Times
+!  are this rank's totals; atoms and pairs are from the last step.
+   subroutine domain_report(dom, comm, time)
+      type(domain_t), intent(in) :: dom
+      type(comm_t), intent(in) :: comm
+      type(times_t), intent(in) :: time
+      integer, parameter :: N_COL = 12
+      real(dp) :: mine(1:N_COL)
+      real(dp), allocatable :: all(:)
+      integer :: r
+      integer :: k
+
+      if (dom%dd_type /= DD_LEGACY) return
+      mine = [dble(dom%legacy%local%rank), dble(dom%legacy%n_owned), dble(dom%legacy%n_local), &
+              dble(dom%i_end - dom%i_beg + 1), dble(dom%j_end - dom%j_beg + 1), time%gap(3), time%neigh(3), &
+              time%dd_scatter(3), time%dd_halo(3), time%dd_share(3), time%dd_reverse(3), time%dd_gather(3)]
+      allocate (all(1:N_COL*comm%size))
+      call comm_gather(comm, mine, N_COL, all)
+      if (comm%rank /= 0) return
+      write (*, '(A)') ' dd_type legacy, per rank (seconds over the run; sites and pairs of the last step):'
+      write (*, '(A)') '  rank  dom.rank  owned   local  slice     pairs      gap    neigh  scatter     halo    share'// &
+         '  reverse   gather'
+      do r = 0, comm%size - 1
+         k = r*N_COL
+         write (*, '(I6,I10,I7,I8,I7,I10,7F9.3)') r, nint(all(k + 1)), nint(all(k + 2)), nint(all(k + 3)), &
+            nint(all(k + 4)), nint(all(k + 5)), all(k + 6:k + 12)
+      end do
+   end subroutine domain_report
 
    subroutine domain_free(dom)
       type(domain_t), intent(inout) :: dom

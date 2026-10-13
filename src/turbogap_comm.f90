@@ -101,6 +101,11 @@ module turbogap_comm
       module procedure allgather_i0
    end interface comm_allgather
 
+   interface comm_gather
+      module procedure gather_i0
+      module procedure gather_r1
+   end interface comm_gather
+
    interface comm_sendrecv
       module procedure sendrecv_i0
       module procedure sendrecv_r1
@@ -480,7 +485,7 @@ contains
 #endif
    end subroutine comm_gatherv
 
-   subroutine comm_gather(comm, x, all)
+   subroutine gather_i0(comm, x, all)
       type(comm_t), intent(in) :: comm
       integer, intent(in) :: x
       integer, contiguous, intent(inout) :: all(:)
@@ -491,7 +496,22 @@ contains
       ierr = 0
       all(1) = x
 #endif
-   end subroutine comm_gather
+   end subroutine gather_i0
+
+!  n values from every rank, stored rank after rank on the root.
+   subroutine gather_r1(comm, x, n, all)
+      type(comm_t), intent(in) :: comm
+      real(dp), contiguous, intent(in) :: x(:)
+      integer, intent(in) :: n
+      real(dp), contiguous, intent(inout) :: all(:)
+      integer :: ierr
+#ifdef _MPIF90
+      call mpi_gather(x, n, MPI_DOUBLE_PRECISION, all, n, MPI_DOUBLE_PRECISION, 0, comm%handle, ierr)
+#else
+      ierr = 0
+      call copy_r(x, all, n)
+#endif
+   end subroutine gather_r1
 
 !  Element-sequence copies for the serial stubs, whatever the rank.
    subroutine copy_i(send, recv, n)

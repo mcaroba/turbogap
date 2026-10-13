@@ -45,6 +45,7 @@ module domain_legacy
                             comm_cart_coords, comm_cart_rank, comm_sendrecv, comm_scatterv, comm_gatherv, &
                             comm_gather, comm_bcast
    use error, only: turbogap_abort
+   use timing, only: time_start, time_end
 
    implicit none
 
@@ -239,9 +240,11 @@ contains
 
 !  Give every rank its domain's atoms, owned then halo. positions, species and
 !  xyz_species are read on rank 0 only. On return every rank of a domain holds
-!  the same local arrays and ld%ids, ld%n_owned and ld%n_local.
+!  the same local arrays and ld%ids, ld%n_owned and ld%n_local. The three
+!  buckets time the scatter from rank 0, the halo sweeps and the broadcast
+!  inside the domain.
    subroutine legacy_distribute(ld, world, n_global, positions, species, xyz_species, a_box, b_box, c_box, rcut, &
-                                pos_l, species_l, xyz_species_l)
+                                pos_l, species_l, xyz_species_l, t_scatter, t_halo, t_share)
       type(legacy_dd_t), intent(inout) :: ld
       type(comm_t), intent(in) :: world
       integer, intent(in) :: n_global
@@ -255,6 +258,9 @@ contains
       real(dp), allocatable, intent(inout) :: pos_l(:, :)
       integer, allocatable, intent(inout) :: species_l(:)
       character*8, allocatable, intent(inout) :: xyz_species_l(:)
+      real(dp), intent(inout) :: t_scatter(3)
+      real(dp), intent(inout) :: t_halo(3)
+      real(dp), intent(inout) :: t_share(3)
       real(dp), allocatable :: rec(:, :)
       real(dp) :: recip(1:3, 1:3)
       integer :: sizes(1:2)
@@ -264,12 +270,17 @@ contains
       call reciprocal_rows(a_box, b_box, c_box, recip)
 
       if (ld%local%rank == 0) then
+         call time_start(t_scatter, "dd_scatter")
          call scatter_owned(ld, world, n_global, positions, species, xyz_species, recip, rec)
          call build_slots(ld, rec)
+         call time_end(t_scatter, "dd_scatter")
+         call time_start(t_halo, "dd_halo")
          call exchange_halos(ld, recip, rcut, rec)
+         call time_end(t_halo, "dd_halo")
          sizes = [ld%n_owned, ld%n_local]
       end if
 
+      call time_start(t_share, "dd_share")
       call comm_bcast(ld%local, sizes, 2)
       ld%n_owned = sizes(1)
       ld%n_local = sizes(2)
@@ -290,6 +301,7 @@ contains
       do i = 1, ld%n_local
          call unpack_atom(rec(1:REC_ATOM, i), ld%ids(i), species_l(i), pos_l(1:3, i), xyz_species_l(i))
       end do
+      call time_end(t_share, "dd_share")
    end subroutine legacy_distribute
 
    pure subroutine pack_atom(id, species, r, xyz_species, rec)

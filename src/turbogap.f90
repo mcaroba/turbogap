@@ -41,8 +41,8 @@ program turbogap
                               print_nothing_to_do, print_timing_report, print_end
    use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, loop_sync, loop_end_step
    use turbogap_structure, only: state_t, structure_acquire, structure_update_volume, structure_free
-   use turbogap_domain, only: domain_t, neighbors_t, domain_init, domain_configure, domain_sync_state, domain_build, &
-                              domain_sync_after_md, domain_sync_after_ipi, domain_end_step, domain_free
+   use turbogap_domain, only: domain_t, neighbors_t, domain_init, domain_configure, domain_report, domain_sync_state, &
+                              domain_build, domain_sync_after_md, domain_sync_after_ipi, domain_end_step, domain_free
    use turbogap_results, only: results_t, results_free
    use turbogap_evaluate, only: evaluate
    use turbogap_md, only: dynamics_t, md_prepare_velocities, md_step
@@ -183,6 +183,7 @@ program turbogap
    call ir_finish(ir, params, comm, time)
 
    call print_timing_report(comm, params, model, loop, ir, do_electrostatics, time3, time)
+   call domain_report(dom, comm, time)
 
    call vdw_write_ts_scaling(res, state, params, comm)
 

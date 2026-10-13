@@ -120,6 +120,15 @@ module timing
       real(dp) :: soap_solo(3) = 0.0_dp       ! GPU branch, "lolo__soap"
       real(dp) :: soap_lin(3) = 0.0_dp        ! GPU branch, "lin__turbo"
 
+      !----- dd_type legacy: reported, never summed ------------------------
+      !! scatter, halo and share are inside neigh; reverse and gather are
+      !! inside mpi_ef.
+      real(dp) :: dd_scatter(3) = 0.0_dp
+      real(dp) :: dd_halo(3) = 0.0_dp
+      real(dp) :: dd_share(3) = 0.0_dp
+      real(dp) :: dd_reverse(3) = 0.0_dp
+      real(dp) :: dd_gather(3) = 0.0_dp
+
       !----- children of ir: reported, never summed ------------------------
       !! predict is the autocorrelation, the cosine transform, the loss and
       !! lambda -- mad_ir_evaluate. forces is the 9*n_atoms contraction of
