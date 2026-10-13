@@ -270,11 +270,76 @@ What the numbers say:
    reported first was trajectory output at the first and last steps; the
    integration itself is about 0.2 µs per atom per step, 65 ms at 308k atoms.
 
+## Measured on Roihu: communication and scaling to 2304 cores
+
+Roihu CPU nodes (2 x EPYC 9965, 384 cores, no SMT), gfortran 15.2, Open MPI
+5.0.10. CO GAP, MD. Every figure is per MD step: the difference between a
+22-step and a 2-step run, which removes start-up (MPI_Init alone takes ~40 s
+at 384 ranks per node). Energies agree across modes to 1e-12 relative.
+
+MPI traffic was counted outside TurboGAP, by an LD_PRELOAD shim on Open MPI's
+Fortran bindings: calls, payload bytes and time per routine per rank, with a
+barrier timed before each collective so `wait` is load imbalance and `op` the
+operation itself.
+
+Strong scaling, 308k atoms, 384 ranks per node, s/step
+(replicated / legacy, rank 0 integrates / legacy, `dd_integrate = domain`):
+
+| nodes | cores | replicated | legacy | domain | traffic, GB (rep / dom) | MPI op+wait, s (rep / dom) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 384 | 2.95 | 1.74 | 1.65 | 46.5 / 0.37 | 0.66 / 0.07 |
+| 2 | 768 | 1.67 | 0.96 | 0.83 | 93.1 / 0.52 | 0.30 / 0.03 |
+| 4 | 1536 | 2.25 | 0.56 | 0.45 | 186 / 0.76 | 1.30 / 0.04 |
+| 6 | 2304 | 2.08 | 0.42 | 0.29 | 279 / 0.93 | 1.32 / 0.02 |
+
+From 1 to 6 nodes the domain-integrated run speeds up 5.7x (95% efficient);
+the replicated run 1.4x, and it is slower at 4 and 6 nodes than at 2.
+
+Weak scaling, 308k atoms per node (tiled to 1.85M at 6 nodes), s/step:
+
+| nodes | atoms | replicated | legacy | domain |
+| --- | --- | --- | --- | --- |
+| 1 | 308k | 2.95 | 1.74 | 1.65 |
+| 2 | 615k | 3.97 | 1.86 | 1.66 |
+| 4 | 1.23M | 11.86 | 2.05 | 1.67 |
+| 6 | 1.85M | 20.39 | 2.34 | 1.71 |
+
+What the counts say:
+
+- **Replicated traffic grows with ranks x atoms.** Every rank receives the
+  whole structure and sends a full-size force array every step: 121 MB per
+  rank per step at 308k atoms, whatever the rank count. At 6 nodes and 1.85M
+  atoms that is 1.7 TB per step, and 14 of the 20 s are MPI.
+- **About 5x of that is redundant.** Each step `replicate_state` runs twice
+  (start and end of the step) and `domain_sync_after_md` broadcasts positions
+  and velocities again: ~240 bytes per atom per rank, where positions and
+  velocities alone are 48. This is the replicated path as on master.
+- **Legacy with rank-0 integration** cuts traffic ~50x but keeps rank 0 on
+  the path: 75-445 MB per step through rank 0 (scatter and gather of the whole
+  structure), and the others wait for it (`wait` 0.1-0.6 s). At 6 nodes the
+  scatter alone is 72 ms per step.
+- **Domain integration** leaves 0.4-1 MB per rank per step, nearly all halo
+  `sendrecv`; MPI is 0.02-0.08 s per step at every scale measured. What is
+  left of the step is GAP.
+- GAP is faster decomposed even on one node (1.55 against 2.04 s at 384
+  ranks): a domain's atoms are contiguous in memory.
+
+Threads. On the CPU build only the neighbour build is OpenMP-threaded; SOAP
+and the GAP prediction have no active directives (the one in `gap.f90` is
+commented out). One node, domain mode, s/step: 384x1 1.65, 96x4 2.05, 48x8
+3.57, 24x16 7.02 -- GAP time follows the rank count, and `OPENBLAS_NUM_THREADS`
+equal to the thread count changes nothing. Until SOAP is threaded, pure MPI is
+the CPU layout, and the decomposition is what lets it scale.
+
 ## Not yet done
 
 - MBD on the domains: a halo as wide as its cluster radius, a forward exchange
   of the SCS polarisabilities, and the volume-derivative transfer moved onto
   the domain map.
+- The replicated mode re-broadcasts the whole structure about five times per
+  step; one broadcast of positions and velocities after the integrator would
+  do.
+- OpenMP in SOAP and the GAP prediction on the CPU build.
 - `dd_integrate = domain` for the thermostats and features it does not cover
   yet: GLE and Langevin (whose per-atom bath state would migrate with the
   atom), the barostat (its box change moves the cuts), and the optimisers.
