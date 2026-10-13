@@ -207,7 +207,8 @@ contains
          if (allocated(hirshfeld_v_cart_der_ji)) deallocate (hirshfeld_v_cart_der_ji)
          allocate (hirshfeld_v_cart_der_ji(1:3, 1:n_atom_pairs_by_rank(rank + 1)))
          hirshfeld_v_cart_der_ji = 0.d0
-         if (params%do_forces .and. params%vdw_hirsh_grad) then
+!        Only MBD reads the transferred gradients; TS uses each pair's own.
+         if (params%do_forces .and. params%vdw_hirsh_grad .and. params%vdw_type /= "ts") then
             allocate (hirshfeld_transfer(1:ntasks, 1:ntasks))
             allocate (this_hirshfeld_transfer(1:ntasks))
             this_hirshfeld_transfer = 0

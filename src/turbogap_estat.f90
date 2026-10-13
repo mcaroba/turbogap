@@ -51,7 +51,7 @@ contains
                             n_sites, n_neigh, neighbors_list, species, neighbor_species, rjs, xyz, &
                             local_properties, local_properties_cart_der, &
                             i_beg, i_end, j_beg, j_end, comm, n_omp, &
-                            energies_estat, forces_estat, virial_estat, time)
+                            energies_estat, forces_estat, virial_estat, time, n_total, decomposed)
       implicit none
 
       type(input_parameters), intent(in) :: params
@@ -69,6 +69,10 @@ contains
       integer, intent(in) :: i_beg, i_end, j_beg, j_end
       type(comm_t), intent(in) :: comm
       integer, intent(in) :: n_omp
+!     The number of atoms in the whole system, and whether this rank holds
+!     only its domain's (owned i_beg:i_end, then halo) rather than all of them.
+      integer, intent(in) :: n_total
+      logical, intent(in) :: decomposed
 
 !     In/out variables
       real(dp), intent(inout) :: local_properties(:, :)
@@ -128,10 +132,17 @@ contains
             ! is not possible
 
             charge_sum = 0.0_dp
-            do k = 1, n_sites
-               charge_sum = charge_sum + local_properties(k, charge_lp_index)
-            end do
-            charge_sum = charge_sum/real(n_sites, dp)
+            if (decomposed) then
+               do k = i_beg, i_end
+                  charge_sum = charge_sum + local_properties(k, charge_lp_index)
+               end do
+               call comm_sum_all(comm, charge_sum)
+            else
+               do k = 1, n_sites
+                  charge_sum = charge_sum + local_properties(k, charge_lp_index)
+               end do
+            end if
+            charge_sum = charge_sum/real(n_total, dp)
 
             do k = 1, n_sites
                local_properties(k, charge_lp_index) = local_properties(k, charge_lp_index) - charge_sum
@@ -282,7 +293,7 @@ contains
             end if
             if (params%do_forces) then
                call comm_sum_all(comm, phi_sum)
-               call add_neutral_charge_gradients(phi_sum/real(n_sites, dp), &
+               call add_neutral_charge_gradients(phi_sum/real(n_total, dp), &
                                                  local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
                                                  neighbors_list(j_beg:j_end), xyz(1:3, j_beg:j_end), &
                                                  forces_estat, virial_estat)
@@ -304,7 +315,7 @@ contains
          end if
          if (params%do_forces) then
             call comm_sum_all(comm, phi_sum)
-            call add_neutral_charge_gradients(phi_sum/real(n_sites, dp), &
+            call add_neutral_charge_gradients(phi_sum/real(n_total, dp), &
                                               local_properties_cart_der(1:3, j_beg:j_end, charge_lp_index), &
                                               neighbors_list(j_beg:j_end), xyz(1:3, j_beg:j_end), &
                                               forces_estat, virial_estat)

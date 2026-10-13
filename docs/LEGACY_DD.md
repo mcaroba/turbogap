@@ -9,11 +9,13 @@ two are meant to coexist under `dd_type`.
 
 ## What it does
 
-Rank 0 stays the owner of the structure, as in the replicated default. Every
-step, the decomposition:
+Rank 0 stays the owner of the structure, as in the replicated default. At
+every neighbour-list rebuild, the decomposition:
 
 1. bins the atoms on rank 0 into a `dd_grid` of domains along the three cell
-   vectors, by fractional coordinate;
+   vectors, by fractional coordinate, with the cuts placed so every slab holds
+   the same number of atoms (`dd_balance = count`, the default) or the same
+   volume (`volume`);
 2. sends each domain's atoms to that domain's root rank;
 3. exchanges halos between neighbouring domains: the atoms within `rcut_max`
    of each face. This is the legacy branch's six-sweep exchange. Atoms received
@@ -25,8 +27,19 @@ step, the decomposition:
    in reverse sweep order;
 6. gathers the owned results to rank 0 in the original atom order.
 
+Steps 4–6 happen every step. Between rebuilds, which rank 0's skin test
+decides exactly as in the replicated mode, steps 1–3 are replaced by a
+refresh: each domain keeps its atoms and receives their new positions, and the
+neighbour lists are only re-measured. The halo is `rcut_max` wide, which
+includes `neighbors_buffer`, so it stays complete for as long as the lists do.
+
 From then on rank 0 has whole arrays again, and MD, the optimisers and the
 output run unchanged.
+
+`dd_grid` left at its default `0 0 0` gives one domain per rank, laid out at
+the first build as the factorisation with the smallest halo for the cell. An
+axis that is not cut has no halo, so 8 domains of a cubic cell become `2 4 1`,
+not `2 2 2`.
 
 Ranks are grouped into domains by `dd_grid_affinity`: `block` puts consecutive
 ranks in one domain, `cyclic` deals them out round-robin. With more ranks than
@@ -48,32 +61,36 @@ means nothing outside `turbogap_domain` learns about domains:
   global structure.
 
 The legacy branch also integrated MD on each domain and migrated atoms across
-faces. That is not ported. It means every MD feature (thermostats, GLE,
+faces (`migrate` in its `decompose.f90`). That is not ported; the refresh and
+the rebalancing rebuilds take its place. It means every MD feature (thermostats, GLE,
 barostats, electronic stopping, the optimisers, output) has to learn about
 domains, and that is the scope of the other decomposition. Here the
 per-step cost is one scatter and one gather of O(N) on rank 0. The replicated
 mode pays a broadcast of O(N) to every rank and a reduction of
 O(N × families) every step, so this is never worse on communication.
 
-## Supported, and refused
+## What runs how
 
-Supported: SOAP GAP with `distance_2b`, `angle_3b` and `core_pot`;
-energies, forces and the virial; local properties as output; static
-prediction, multi-frame prediction, MD and the optimisers. It needs an MPI
-build, host or device.
+Nothing is refused. Each feature either runs on the domains, runs on a
+whole-structure view while the potential stays on the domains, or makes the
+run evaluate replicated, with a line in the output saying which and why.
 
-Each of these is refused at start-up with a message, not computed wrongly:
-
-| refused | why |
+| feature | how |
 | --- | --- |
-| van der Waals (TS, MBD) | the energy of a halo atom's pair needs that atom's Hirshfeld volume, which comes from its own neighbourhood; that needs a second halo layer or a forward exchange |
-| electrostatics, `exp_*`, XPS, pair distribution / structure factor / XRD / ND | global sums, not local ones |
-| dipoles, MAD-IR | the dipole is reduced in `evaluate` before the gather |
-| MC, nested sampling | `n_sites` changes on rank 0; this probably works but is untested |
-| i-PI | untested |
-| `write_soap`, `write_derivatives` | per-atom files written by rank 0 from its local slice |
-| a cell that needs a supercell (`indices > 1`) | halos would need images |
-| a domain narrower than `rcut_max` | a halo would need atoms from beyond the adjacent domain |
+| SOAP, `distance_2b`, `angle_3b`, `core_pot`, local properties | domains |
+| TS van der Waals | domains; Hirshfeld volumes are copied from owners to halo copies (`legacy_forward`) |
+| electrostatics | domains; charges copied to halos, and the neutralising mean charge and `phi_sum` taken over all atoms |
+| XPS | domains for the forces; the spectrum from every atom's binding energy, gathered |
+| dipoles | domains; the total dipole summed over owned atoms |
+| MAD-IR (ACF, aux, XL) | domains; dmu/dr and the XL force are returned from halos and gathered into global order, the XL weights reordered into local order, and after the evaluation every rank is given the whole structure and results (`replicate_after`), as the IR code expects |
+| pair distribution, structure factor, XRD, ND, Debye XRD | the whole-structure view: the structure on every rank with a replicated neighbour list, as the replicated mode does. They are global by nature, so only the potential is decomposed |
+| MC, nested sampling, i-PI | domains; the moves and the exchange run on rank 0, which keeps the whole structure. Nested sampling uses `replicate_after` |
+| `write_soap`, `write_derivatives` | domains; serial-only in every mode, as before |
+| MBD, `ts+mbd` | replicated: its clusters reach beyond `rcut_max` and need polarisabilities and volume derivatives that other domains own |
+| a cell that needs a supercell, a grid too fine for the cell | replicated, from the step it is found on |
+| a build without MPI, a run without `do_prediction` | replicated |
+
+A domain may be empty, owned and halo alike; it waits.
 
 ## Defects fixed from the legacy branch
 
@@ -107,14 +124,33 @@ Each of these is refused at start-up with a message, not computed wrongly:
 
 ## Testing
 
-`tests/legacy_dd/run.sh` compares each decomposition with the replicated run of
-the same input, per atom: energies, forces and the virial for a single point,
-and the trajectory of a short MD run. It covers grids of 2, 3, 4 and 8
-domains, more than one rank per domain, both affinities and a triclinic cell.
-Summation order differs, so the check is a relative tolerance, not equality.
-Run it with `TURBOGAP_BIN=bin-gpu/turbogap` for the device build; it passes there
-at the same tolerance. The regression suite runs in the default
-`dd_type = none` and must not move.
+`tests/legacy_dd/run.sh` runs each input decomposed and replicated and
+compares `trajectory_out.xyz` number by number (rtol = atol = 1e-7, since
+summation order differs). A leg passes only if its run stayed decomposed to
+the end. The 22 legs cover:
+- grids of 2, 3, 4, 6 and 8 domains, more than one rank per domain, both
+  affinities, a sheared cell, the automatic grid, count and volume cuts, a
+  slab with vacuum and two empty domains;
+- MD that reuses the domains between rebuilds, and that rebuilds every step;
+- TS vdW, electrostatics, both XRD routes on the whole-structure view,
+  dipoles, and 40 MD steps of the MAD-IR bias;
+- a grid too fine for the cell, which must fall back and still match.
+
+It passes with `TURBOGAP_BIN=bin-gpu/turbogap` at the same tolerance. Three
+mutations are caught by it: the reverse exchange in forward order, the
+Hirshfeld volumes not forwarded to halos, and the mean charge summed over
+local sites.
+
+The regression suite also runs decomposed: `TURBOGAP_INPUT_EXTRA="dd_type =
+legacy"` appends that line to the input under test only, and
+`TURBOGAP_MIN_RANKS` raises every case's rank count, so `run.sh --gpu`, with a
+second copy of the host binary as the reference, compares decomposed against
+replicated within each case's tolerance. At 4 ranks, 43 of 44 pass; relax_gd
+amplifies the reordered sums to 3e-5, inside the 1e-4 its device tolerance and
+its own 1e-9 A position-shift control already need. Many of its cells are
+too small to split and fall back, which is why the legs above use larger
+ones. With the default `dd_type = none` the suite is bit-identical to
+`origin/master`.
 
 ## Profiling
 
@@ -164,34 +200,35 @@ What the numbers say:
   (`nsys`), and the GPU is busy less than half the wall time: runs are bound by
   host-side work. Legacy's deficit there is all neighbour building.
 
-## What to improve, in order of measured return
+## Improvements made after that study
 
-1. **Reuse neighbour lists across steps.** Legacy rebuilds every step;
-   the replicated mode rebuilds only when an atom has moved half the
-   `neighbors_buffer`. That is legacy's whole deficit on the device (+1.6 to
-   +3.3 s at 194k) and 2–2.5x the host neighbour time. Keep the domain and halo
-   membership between rebuilds, and send only the halo positions each step.
-2. **Balance the domains by work, not volume.** Equal-volume slabs are fine
-   for this homogeneous cell (owned counts within 1.3%) but cannot absorb
-   slower cores, and would be badly unbalanced for a slab with vacuum or a
-   cluster. Place the borders at atom-count quantiles, optionally weighted by
-   each rank's measured GAP time.
-3. **Choose the grid automatically.** The halo costs local/owned = 1.6–2.1 at
-   8–10 domains here; flatter grids (`5 2 1`) cost more than near-cubic ones.
-4. **Move host work off the device's critical path.** Not specific to the
-   decomposition: one GPU shared by 4 ranks reaches 1.6–1.8x in either mode.
-   This branch also still computes a pair distribution in a GAP-only device
-   run; `perf/gpu-host-overhead` removes it.
-5. **Rank 0's serial share.** Integration, binning and unpacking are O(N) on
-   rank 0 every step (about 1.2 s per step at 308k atoms), the same in both
-   modes. Small at 10 ranks; it caps scaling at a few hundred.
+1. **Neighbour lists reused across steps** (follows rank 0's skin test). The
+   device deficit is gone: 194k atoms, five MD steps, medians, replicated
+   against legacy, 99.5 / 98.9 s on 1 rank, 81.7 / 81.4 on 2, 76.9 / 78.2 on 4.
+   On the host, 308k atoms and ten MD steps, legacy is now 7.5% faster:
+   356.4 / 329.5 s on 8 ranks, 347.7 / 321.7 on 10, with half the neighbour
+   time (8.3 / 4.8 s and 7.1 / 3.9).
+2. **Cuts balanced by atom count** (`dd_balance = count`, the default). On
+   the 57k cell with half of it vacuum, 8 ranks along c, ten MD steps:
+   replicated 63.6 s, count 60.7, automatic grid 61.5. Equal volume crashed
+   there, on its four empty domains; that was a latent bug in
+   `results_prepare`, fixed, and empty domains now have a test leg.
+3. **Grid chosen automatically** (`dd_grid` left at `0 0 0`): the
+   factorisation with the smallest estimated halo; an uncut axis has none.
+4. **Host work on the device's critical path.** The two fixes from
+   `perf/gpu-host-overhead` are cherry-picked here: no pair distribution in a
+   GAP-only device run, and no zeroing of an unused host array. Giving the
+   idle cores to OpenMP (`OMP_NUM_THREADS` = cores / ranks) takes a 1-rank
+   device run from 99.5 to 90.7 s, mostly the neighbour build (8.7 to 1.3 s),
+   and matters little at 2 and 4 ranks.
+5. **Rank 0's serial share** turned out to be small. The 1.2 s per step
+   reported first was trajectory output at the first and last steps; the
+   integration itself is about 0.2 µs per atom per step, 65 ms at 308k atoms.
 
 ## Not yet done
 
-In rough order of value:
-
-- a forward exchange of per-site properties, which unlocks TS vdW (the two-layer
-  halo comes with it);
-- dipoles and MAD-IR: sum the owned dipoles over domains before `evaluate`
-  reads them;
-- MC and nested sampling: test, then allow.
+- MBD on the domains: a halo as wide as its cluster radius, a forward exchange
+  of the SCS polarisabilities, and the volume-derivative transfer moved onto
+  the domain map.
+- `dd_integrate = domain`: integrating on the domains, so that rank 0 no
+  longer holds the structure between output steps.

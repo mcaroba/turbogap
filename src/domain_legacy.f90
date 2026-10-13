@@ -60,6 +60,7 @@ module domain_legacy
    public :: legacy_auto_grid
    public :: legacy_free
    public :: legacy_refresh
+   public :: legacy_forward
    public :: legacy_check_widths
    public :: legacy_distribute
    public :: legacy_reverse
@@ -71,7 +72,17 @@ module domain_legacy
    integer, parameter :: DOWN = 1
    integer, parameter :: UP = 2
 
+!   One halo sweep as it happened: the local sites sent, and where each site
+!   received went (0 for a duplicate that was dropped). Replaying it moves any
+!   per-site value from owners to their halo copies.
+   type :: sweep_t
+      integer, allocatable :: sent(:)
+      integer, allocatable :: landed(:)
+   end type sweep_t
+
    type, public :: legacy_dd_t
+!     Set by legacy_init; legacy_free frees only what it made.
+      logical :: active = .false.
       integer :: grid(1:3) = 1
       integer :: n_domains = 1
 !     The grid is made once the cell is known when it is chosen automatically.
@@ -103,6 +114,7 @@ module domain_legacy
 !     The halo kept from each sweep, as a run of local sites.
       integer :: halo_beg(1:2, 1:3) = 1
       integer :: halo_n(1:2, 1:3) = 0
+      type(sweep_t) :: sweeps(1:2, 1:3)
 !     Rank 0 only: every domain's local ids, domain after domain, for refresh.
       integer, allocatable :: all_ids(:)
       integer, allocatable :: local_counts(:)
@@ -158,6 +170,7 @@ contains
       end if
 
       call comm_split(world, color, world%rank, ld%local)
+      ld%active = .true.
       if (ld%local%rank == 0) then
          call comm_split(world, 0, world%rank, ld%root_split)
       else
@@ -259,6 +272,7 @@ contains
    subroutine legacy_free(ld)
       type(legacy_dd_t), intent(inout) :: ld
 
+      if (.not. ld%active) return
       if (ld%grid_ready .and. ld%local%rank == 0) call comm_free(ld%roots)
       call comm_free(ld%root_split)
       call comm_free(ld%local)
@@ -381,28 +395,22 @@ contains
 
 !  A halo comes from the adjacent domain only if every domain is at least rcut
 !  across, measured perpendicular to its faces.
-   subroutine legacy_check_widths(ld, a_box, b_box, c_box, rcut, rank)
+   pure logical function legacy_check_widths(ld, a_box, b_box, c_box, rcut) result(ok)
       type(legacy_dd_t), intent(in) :: ld
       real(dp), intent(in) :: a_box(1:3)
       real(dp), intent(in) :: b_box(1:3)
       real(dp), intent(in) :: c_box(1:3)
       real(dp), intent(in) :: rcut
-      integer, intent(in) :: rank
       real(dp) :: recip(1:3, 1:3)
-      real(dp) :: width
       integer :: axis
 
       call reciprocal_rows(a_box, b_box, c_box, recip)
+      ok = .true.
       do axis = 1, 3
          if (ld%grid(axis) == 1) cycle
-         width = 1.d0/norm2(recip(axis, 1:3))/dble(ld%grid(axis))
-         if (width < rcut) then
-            if (rank == 0) write (*, '(A,I0,A,F0.3,A,F0.3,A)') 'ERROR: dd_grid makes domains ', ld%grid(axis), &
-               ' across axis ', width, ' A wide; each must be at least rcut_max = ', rcut, ' A'
-            call turbogap_abort()
-         end if
+         if (1.d0/norm2(recip(axis, 1:3))/dble(ld%grid(axis)) < rcut) ok = .false.
       end do
-   end subroutine legacy_check_widths
+   end function legacy_check_widths
 
 !  Give every rank its domain's atoms, owned then halo. positions, species and
 !  xyz_species are read on rank 0 only. On return every rank of a domain holds
@@ -659,6 +667,7 @@ contains
       real(dp), allocatable, intent(inout) :: rec(:, :)
       real(dp), allocatable :: send(:, :)
       real(dp), allocatable :: recv(:)
+      integer, allocatable :: sent(:)
       real(dp) :: width
       real(dp) :: lo
       real(dp) :: hi
@@ -676,7 +685,15 @@ contains
 
       ld%halo_beg = ld%n_local + 1
       ld%halo_n = 0
+      do axis = 1, 3
+         do dir = DOWN, UP
+            if (allocated(ld%sweeps(dir, axis)%sent)) deallocate (ld%sweeps(dir, axis)%sent)
+            if (allocated(ld%sweeps(dir, axis)%landed)) deallocate (ld%sweeps(dir, axis)%landed)
+            allocate (ld%sweeps(dir, axis)%sent(0), ld%sweeps(dir, axis)%landed(0))
+         end do
+      end do
       allocate (send(1:REC_ATOM, 1:16))
+      allocate (sent(1:16))
       do axis = 1, 3
          if (ld%grid(axis) == 1) cycle
          width = 1.d0/norm2(recip(axis, 1:3))
@@ -692,6 +709,8 @@ contains
                   n_send = n_send + 1
                   call grow(send, n_send)
                   send(1:REC_ATOM, n_send) = rec(1:REC_ATOM, i)
+                  if (n_send > size(sent)) sent = [sent, sent]
+                  sent(n_send) = i
                end if
             end do
             if (dir == DOWN) then
@@ -706,6 +725,10 @@ contains
             call comm_sendrecv(ld%roots, reshape(send(:, 1:max(n_send, 1)), [REC_ATOM*max(n_send, 1)]), &
                                REC_ATOM*n_send, dest, recv, REC_ATOM*n_recv, source)
             ld%halo_beg(dir, axis) = ld%n_local + 1
+            ld%sweeps(dir, axis)%sent = sent(1:n_send)
+            deallocate (ld%sweeps(dir, axis)%landed)
+            allocate (ld%sweeps(dir, axis)%landed(1:n_recv))
+            ld%sweeps(dir, axis)%landed = 0
             do i = 1, n_recv
                k = (i - 1)*REC_ATOM
                id = nint(recv(k + 1))
@@ -714,6 +737,7 @@ contains
                call grow(rec, ld%n_local)
                rec(1:REC_ATOM, ld%n_local) = recv(k + 1:k + REC_ATOM)
                ld%slot(id) = ld%n_local
+               ld%sweeps(dir, axis)%landed(i) = ld%n_local
             end do
             deallocate (recv)
             ld%halo_n(dir, axis) = ld%n_local + 1 - ld%halo_beg(dir, axis)
@@ -737,6 +761,53 @@ contains
       tmp(:, 1:size(x, 2)) = x
       call move_alloc(tmp, x)
    end subroutine grow
+
+!  Copy per-site values from owners to their halo copies, replaying the
+!  sweeps of the last build in order, so values reach edges and corners through
+!  the same forwards the atoms did. Called on the roots; values(:, i) belongs to
+!  local site i, and only its owned columns need be set on entry.
+   subroutine legacy_forward(ld, values)
+      type(legacy_dd_t), intent(in) :: ld
+      real(dp), intent(inout) :: values(:, :)
+      real(dp), allocatable :: send(:)
+      real(dp), allocatable :: recv(:)
+      integer :: nv
+      integer :: axis
+      integer :: dir
+      integer :: dest
+      integer :: source
+      integer :: n_send
+      integer :: n_recv
+      integer :: i
+      integer :: j
+
+      nv = size(values, 1)
+      do axis = 1, 3
+         if (ld%grid(axis) == 1) cycle
+         do dir = DOWN, UP
+            if (dir == DOWN) then
+               dest = ld%nbr(DOWN, axis)
+               source = ld%nbr(UP, axis)
+            else
+               dest = ld%nbr(UP, axis)
+               source = ld%nbr(DOWN, axis)
+            end if
+            n_send = size(ld%sweeps(dir, axis)%sent)
+            n_recv = size(ld%sweeps(dir, axis)%landed)
+            allocate (send(1:nv*max(n_send, 1)))
+            allocate (recv(1:nv*max(n_recv, 1)))
+            do i = 1, n_send
+               send((i - 1)*nv + 1:i*nv) = values(1:nv, ld%sweeps(dir, axis)%sent(i))
+            end do
+            call comm_sendrecv(ld%roots, send, nv*n_send, dest, recv, nv*n_recv, source)
+            do i = 1, n_recv
+               j = ld%sweeps(dir, axis)%landed(i)
+               if (j > 0) values(1:nv, j) = recv((i - 1)*nv + 1:i*nv)
+            end do
+            deallocate (send, recv)
+         end do
+      end do
+   end subroutine legacy_forward
 
 !  Send what landed on halo sites back to the domain each came from and add
 !  it there. Axes and directions run in reverse, so a corner site's share

@@ -32,11 +32,12 @@
 module turbogap_evaluate
 
    use kinds, only: dp
-   use types, only: input_parameters, perform_t, any_has_vdw
+   use types, only: input_parameters, perform_t, any_has_vdw, any_has_core_electron_be
    use timing, only: times_t, time_start, time_end
    use turbogap_comm, only: comm_t
    use turbogap_structure, only: state_t
-   use turbogap_domain, only: domain_t, neighbors_t, domain_complete_e0, domain_complete_sites, &
+   use turbogap_domain, only: domain_t, neighbors_t, domain_complete_e0, domain_complete_sites, domain_total_dipole, &
+                              domain_n_total, domain_decomposed, domain_site_values, domain_site_ids, domain_exp_view, &
                               domain_complete_contributions
    use turbogap_setup, only: model_t
    use turbogap_results, only: results_t, results_prepare
@@ -99,6 +100,8 @@ contains
       integer :: j
       character*1024 :: filename
       character*1024 :: temp_string
+      real(dp), allocatable :: be_all(:)
+      integer, allocatable :: site_ids(:)
 #ifdef _GPU
       integer :: omp_task
       integer :: n_pairs_temp
@@ -109,7 +112,7 @@ contains
       call results_prepare(res, state, params, model, perform, loop, &
                            dom%n_atom_pairs_by_rank(comm%rank + 1), dom%n_atom_pairs_by_rank_prev, resized)
       if (resized) call vdw_read_ts_scaling(res, state, params, loop, comm)
-      if (params%do_forces) call ir_before_evaluate(ir, params, state, res, loop, comm)
+      if (params%do_forces) call ir_before_evaluate(ir, params, state, res, loop, comm, dom)
 
       if (params%do_prediction) then
          !       Assign the e0 to each atom according to its species
@@ -128,11 +131,7 @@ contains
 
       call domain_complete_sites(dom, comm, res, state, params, model, time)
 
-      if (params%do_dipole) then
-         res%dipole(1) = sum(res%local_dipoles(1, 1:state%n_sites))
-         res%dipole(2) = sum(res%local_dipoles(2, 1:state%n_sites))
-         res%dipole(3) = sum(res%local_dipoles(3, 1:state%n_sites))
-      end if
+      if (params%do_dipole) call domain_total_dipole(dom, comm, res, state)
 
 !        IR PREDICTION FROM A TRAJECTORY. This frame's total dipole joins the
 !        ensemble, with the time its comment line claimed. Nothing is
@@ -161,7 +160,8 @@ contains
                          state%n_sites, nl%n_neigh, nl%neighbors_list, state%species, nl%neighbor_species, nl%rjs, nl%xyz, &
                          res%local_properties, res%local_properties_cart_der, &
                          dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, comm, n_omp, &
-                         res%this_energies_estat, res%this_forces_estat, res%this_virial_estat, time)
+                         res%this_energies_estat, res%this_forces_estat, res%this_virial_estat, time, &
+                         domain_n_total(dom, state), domain_decomposed(dom))
 
       call compute_vdw(params, any_has_vdw(model%soap_turbo_hypers), state%n_sites, &
                        nl%n_neigh, nl%neighbors_list, nl%neighbor_species, nl%rjs, nl%xyz, &
@@ -211,7 +211,7 @@ contains
 
                call preprocess_exp_data(params, params%exp_data(i)%x,&
                     & params%exp_data(i)%y, params%exp_data(i)%label,&
-                    & state%n_sites, dot_product(cross_product(state%a_box,&
+                    & domain_n_total(dom, state), dot_product(cross_product(state%a_box,&
                     & state%b_box), state%c_box)/(dfloat(state%indices(1)*state%indices(2) &
                     &*state%indices(3))), params%exp_data(i)%input, exp_output, .true.)
 
@@ -262,39 +262,33 @@ contains
       !     Compute core_electron_be energies and forces
       !
       ! Partial sums into the this_ arrays, as for electrostatics.
+      if (any_has_core_electron_be(model%soap_turbo_hypers) .and. params%do_prediction .and. &
+          (model%valid_xps .or. params%do_xps)) then
+         call domain_site_values(dom, comm, state, res%local_properties(:, model%core_be_lp_index), be_all)
+      else
+         allocate (be_all(0))
+      end if
+      call domain_site_ids(dom, state, site_ids)
       call compute_exp_xps(params, state%n_sites, loop%n_xyz, nl%xyz, nl%neighbors_list, nl%n_neigh, &
                            res%local_properties, res%local_properties_cart_der, model%soap_turbo_hypers, &
                            state%a_box, state%b_box, state%c_box, state%indices, dom%i_beg, dom%i_end, dom%j_beg, &
                            dom%j_end, comm%rank, &
                            loop%md_istep, loop%mc_istep, model%valid_xps, model%xps_idx, model%core_be_lp_index, &
                            write_condition, overwrite_condition, exp_output, &
-                           res%this_energies_lp, res%this_forces_lp, res%this_virial_lp, time)
+                           res%this_energies_lp, res%this_forces_lp, res%this_virial_lp, time, be_all, site_ids)
 
       !###---   (Partial) Pair distribution functions and XRD   ---###!
       !
       ! Partial sums into the this_ arrays; exp_interface allocates them.
-#ifdef _GPU
-      call compute_exp_spectra(params, state%n_sites, state%species, state%positions, nl%rjs, nl%xyz, nl%neighbors_list, &
-                               nl%n_neigh, nl%neighbor_species, state%indices, state%a_box, state%b_box, state%c_box, &
-                               dom%i_beg, dom%i_end, dom%j_beg, &
-                               dom%j_end, comm%rank, comm%size, ierr, loop%md_istep, loop%mc_istep, res%this_energies_pdf, &
-                               res%this_forces_pdf, res%this_virial_pdf, res%this_energies_sf, &
-                               res%this_forces_sf, res%this_virial_sf, res%this_energies_xrd, res%this_forces_xrd, &
-                               res%this_virial_xrd, res%this_energies_nd, res%this_forces_nd, res%this_virial_nd, time, &
-                               i_beg_list, i_end_list, j_beg_list, &
-                               j_end_list, n_omp, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, &
-                               n_sites_temp, n_pairs_temp, write_condition, overwrite_condition, &
-                               temp_string, species_types_actual, state%v_uc)
-#else
-      call compute_exp_spectra(params, state%n_sites, state%species, state%positions, nl%rjs, nl%xyz, nl%neighbors_list, &
-                               nl%n_neigh, nl%neighbor_species, state%indices, state%a_box, state%b_box, state%c_box, &
-                             dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, comm%rank, comm%size, ierr, loop%md_istep, loop%mc_istep, &
-                               res%this_energies_pdf, res%this_forces_pdf, res%this_virial_pdf, &
-                               res%this_energies_sf, res%this_forces_sf, res%this_virial_sf, &
-                               res%this_energies_xrd, res%this_forces_xrd, res%this_virial_xrd, &
-                               res%this_energies_nd, res%this_forces_nd, res%this_virial_nd, &
-                               time)
-#endif
+!     Under a domain decomposition these are computed on the whole structure,
+!     which they are a property of; the potential stays decomposed.
+      if (domain_decomposed(dom) .and. (params%do_pair_distribution .or. params%do_structure_factor .or. &
+                                        params%do_xrd .or. params%do_nd)) then
+         call domain_exp_view(dom, comm, state, params, model)
+         call exp_spectra(dom%view%state, dom%view%nl, dom%view%i_beg, dom%view%i_end, dom%view%j_beg, dom%view%j_end)
+      else
+         call exp_spectra(state, nl, dom%i_beg, dom%i_end, dom%j_beg, dom%j_end)
+      end if
 
       if (params%do_prediction) then
          !       Two-body, core-potential and three-body contributions, via the
@@ -366,7 +360,7 @@ contains
 !
 !           No virial: the bias is a function of the dipole, not of the cell,
 !           and a stress from it would be wrong rather than merely missing.
-         call ir_after_forces(ir, params, state, res, loop, comm, dyn%md_time, time3, write_condition, time)
+         call ir_after_forces(ir, params, state, res, loop, comm, dyn%md_time, time3, write_condition, time, dom)
 
          if (model%valid_estat_charges) res%forces = res%forces + res%forces_estat
          if (model%valid_estat_charges) res%virial = res%virial + res%virial_estat
@@ -393,6 +387,42 @@ contains
       if (params%do_prediction .and. .not. params%do_md .and. .not. params%do_mc) then
          call write_single_point(comm, res, state, dyn, params, model, loop)
       end if
+   contains
+
+!     The pair distribution, structure factor, XRD and ND, on the structure and
+!     neighbour list given: this rank's own, or the whole-structure view.
+      subroutine exp_spectra(es, enl, ib, ie, jb, je)
+         type(state_t), intent(inout) :: es
+         type(neighbors_t), intent(in) :: enl
+         integer, intent(in) :: ib
+         integer, intent(in) :: ie
+         integer, intent(in) :: jb
+         integer, intent(in) :: je
+
+#ifdef _GPU
+         call compute_exp_spectra(params, es%n_sites, es%species, es%positions, enl%rjs, enl%xyz, enl%neighbors_list, &
+                                  enl%n_neigh, enl%neighbor_species, es%indices, es%a_box, es%b_box, es%c_box, &
+                                  ib, ie, jb, &
+                                  je, comm%rank, comm%size, ierr, loop%md_istep, loop%mc_istep, res%this_energies_pdf, &
+                                  res%this_forces_pdf, res%this_virial_pdf, res%this_energies_sf, &
+                                  res%this_forces_sf, res%this_virial_sf, res%this_energies_xrd, res%this_forces_xrd, &
+                                  res%this_virial_xrd, res%this_energies_nd, res%this_forces_nd, res%this_virial_nd, time, &
+                                  i_beg_list, i_end_list, j_beg_list, &
+                                  j_end_list, n_omp, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, &
+                                  n_sites_temp, n_pairs_temp, write_condition, overwrite_condition, &
+                                  temp_string, species_types_actual, es%v_uc)
+#else
+         call compute_exp_spectra(params, es%n_sites, es%species, es%positions, enl%rjs, enl%xyz, enl%neighbors_list, &
+                                  enl%n_neigh, enl%neighbor_species, es%indices, es%a_box, es%b_box, es%c_box, &
+                                  ib, ie, jb, je, comm%rank, comm%size, ierr, loop%md_istep, loop%mc_istep, &
+                                  res%this_energies_pdf, res%this_forces_pdf, res%this_virial_pdf, &
+                                  res%this_energies_sf, res%this_forces_sf, res%this_virial_sf, &
+                                  res%this_energies_xrd, res%this_forces_xrd, res%this_virial_xrd, &
+                                  res%this_energies_nd, res%this_forces_nd, res%this_virial_nd, &
+                                  time)
+#endif
+      end subroutine exp_spectra
+
    end subroutine evaluate
 
 end module turbogap_evaluate

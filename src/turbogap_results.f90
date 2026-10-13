@@ -39,6 +39,7 @@ module turbogap_results
    use turbogap_setup, only: model_t
    use turbogap_loop, only: loop_t
    use exp_utils, only: exp_dissimilarity, exp_dissim_ref
+   use turbogap_comm, only: comm_t, comm_bcast
 
    implicit none
 
@@ -46,6 +47,12 @@ module turbogap_results
    public :: results_free
    public :: results_prepare
    public :: results_resize_sites
+   public :: results_bcast_sites
+
+   interface bcast_sites
+      module procedure bcast_sites_1
+      module procedure bcast_sites_2
+   end interface bcast_sites
 
    type, public :: results_t
       real(dp) :: energy
@@ -158,9 +165,11 @@ contains
 
       resized = (state%n_sites /= loop%n_sites_prev .or. params%do_mc)
 
-      !     We only need to reallocate the arrays if the number of sites changes
-      ! REMOVE TRUE FROM IF STATEMENT
-      if (state%n_sites /= loop%n_sites_prev .or. params%do_mc) then
+      !     We only need to reallocate the arrays if the number of sites changes.
+!     Or if they were never allocated: n_sites_prev starts at 0, so a rank whose
+!     first evaluation has no sites at all -- an empty domain -- would otherwise
+!     skip the allocation and then zero arrays that do not exist.
+      if (state%n_sites /= loop%n_sites_prev .or. params%do_mc .or. .not. allocated(res%energies)) then
          if (allocated(res%energies)) deallocate (res%energies, &
                                                   res%energies_soap, &
                                                   res%energies_2b, &
@@ -250,7 +259,7 @@ contains
 
       ! Now one could use pointers such that hirshfeld_v(:) acts as an alias for local_properties(vdw_index,:)...
       if (any_has_local_properties(model%soap_turbo_hypers)) then
-         if (state%n_sites /= loop%n_sites_prev .or. params%do_mc) then
+         if (state%n_sites /= loop%n_sites_prev .or. params%do_mc .or. .not. allocated(res%local_properties)) then
             if (allocated(res%local_properties)) then
                nullify (res%this_local_properties_pt)
                deallocate (res%this_local_properties, res%local_properties)
@@ -299,7 +308,7 @@ contains
 !     Written out, and read by MC, even for a frame that computes no forces.
       res%virial = 0.d0
       if (params%do_forces) then
-         if (state%n_sites /= loop%n_sites_prev .or. params%do_mc) then
+         if (state%n_sites /= loop%n_sites_prev .or. params%do_mc .or. .not. allocated(res%forces)) then
             if (allocated(res%forces)) deallocate (res%forces, res%forces_soap, res%forces_2b, res%forces_3b, &
                res%forces_core_pot, res%forces_vdw,&
                  & res%forces_lp, res%forces_estat, res%local_virial_vdw_diag, res%local_virial_vdw_diag_corr)
@@ -442,6 +451,86 @@ contains
       call resize_sites_lead(res%this_local_properties, n)
       if (allocated(res%this_local_properties)) res%this_local_properties_pt => res%this_local_properties
    end subroutine results_resize_sites
+
+!  Every allocated per-site result, from rank 0 to all ranks. The arrays must
+!  already have rank 0's sizes; results_resize_sites gives them those.
+   subroutine results_bcast_sites(res, comm)
+      type(results_t), target, intent(inout) :: res
+      type(comm_t), intent(in) :: comm
+
+      call bcast_sites(comm, res%energies)
+      call bcast_sites(comm, res%this_energies)
+      call bcast_sites(comm, res%energies_exp)
+      call bcast_sites(comm, res%energies_soap)
+      call bcast_sites(comm, res%energies_2b)
+      call bcast_sites(comm, res%energies_3b)
+      call bcast_sites(comm, res%energies_core_pot)
+      call bcast_sites(comm, res%energies_vdw)
+      call bcast_sites(comm, res%this_energies_vdw)
+      call bcast_sites(comm, res%energies_estat)
+      call bcast_sites(comm, res%this_energies_estat)
+      call bcast_sites(comm, res%energies_lp)
+      call bcast_sites(comm, res%this_energies_lp)
+      call bcast_sites(comm, res%energies_pdf)
+      call bcast_sites(comm, res%this_energies_pdf)
+      call bcast_sites(comm, res%energies_sf)
+      call bcast_sites(comm, res%this_energies_sf)
+      call bcast_sites(comm, res%energies_xrd)
+      call bcast_sites(comm, res%this_energies_xrd)
+      call bcast_sites(comm, res%energies_nd)
+      call bcast_sites(comm, res%this_energies_nd)
+      call bcast_sites(comm, res%mbd_ts_scaling)
+      call bcast_sites(comm, res%this_mbd_ts_scaling)
+      call bcast_sites(comm, res%energies_vdw_corr)
+      call bcast_sites(comm, res%energies_dipole)
+      call bcast_sites(comm, res%this_energies_dipole)
+      call bcast_sites(comm, res%forces)
+      call bcast_sites(comm, res%this_forces)
+      call bcast_sites(comm, res%forces_soap)
+      call bcast_sites(comm, res%forces_2b)
+      call bcast_sites(comm, res%forces_3b)
+      call bcast_sites(comm, res%forces_core_pot)
+      call bcast_sites(comm, res%forces_vdw)
+      call bcast_sites(comm, res%this_forces_vdw)
+      call bcast_sites(comm, res%forces_estat)
+      call bcast_sites(comm, res%this_forces_estat)
+      call bcast_sites(comm, res%forces_lp)
+      call bcast_sites(comm, res%this_forces_lp)
+      call bcast_sites(comm, res%forces_pdf)
+      call bcast_sites(comm, res%this_forces_pdf)
+      call bcast_sites(comm, res%forces_sf)
+      call bcast_sites(comm, res%this_forces_sf)
+      call bcast_sites(comm, res%forces_xrd)
+      call bcast_sites(comm, res%this_forces_xrd)
+      call bcast_sites(comm, res%forces_nd)
+      call bcast_sites(comm, res%this_forces_nd)
+      call bcast_sites(comm, res%local_virial_vdw_diag)
+      call bcast_sites(comm, res%local_virial_vdw_diag_corr)
+      call bcast_sites(comm, res%this_local_virial_vdw_diag)
+      call bcast_sites(comm, res%forces_vdw_corr)
+      call bcast_sites(comm, res%local_dipoles)
+      call bcast_sites(comm, res%this_local_dipoles)
+      call bcast_sites(comm, res%local_properties)
+      call bcast_sites(comm, res%this_local_properties)
+      call comm_bcast(comm, res%virial, 9)
+      call comm_bcast(comm, res%energy)
+      call comm_bcast(comm, res%dipole, 3)
+      if (allocated(res%this_local_properties)) res%this_local_properties_pt => res%this_local_properties
+   end subroutine results_bcast_sites
+
+   subroutine bcast_sites_1(comm, x)
+      type(comm_t), intent(in) :: comm
+      real(dp), allocatable, intent(inout) :: x(:)
+
+      if (allocated(x)) call comm_bcast(comm, x, size(x))
+   end subroutine bcast_sites_1
+
+   subroutine bcast_sites_2(comm, x)
+      type(comm_t), intent(in) :: comm
+      real(dp), allocatable, intent(inout) :: x(:, :)
+
+      if (allocated(x)) call comm_bcast(comm, x, size(x))
+   end subroutine bcast_sites_2
 
    subroutine resize_sites_1(x, n)
       real(dp), allocatable, intent(inout) :: x(:)

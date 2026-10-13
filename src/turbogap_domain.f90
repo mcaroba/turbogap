@@ -33,14 +33,15 @@ module turbogap_domain
 
    use kinds, only: dp
    use turbogap_comm, only: comm_t, comm_bcast, comm_allgather, comm_sum_to_root, comm_with_mpi, comm_gather
-   use types, only: input_parameters, any_has_local_properties, contribution_ref, perform_t
+   use types, only: input_parameters, any_has_local_properties, contribution_ref
    use timing, only: times_t, time_start, time_end
    use turbogap_structure, only: state_t
    use turbogap_setup, only: model_t
    use turbogap_loop, only: loop_t
-   use turbogap_results, only: results_t, results_resize_sites
+   use turbogap_results, only: results_t, results_resize_sites, results_bcast_sites
    use domain_legacy, only: legacy_dd_t, legacy_init, legacy_free, legacy_check_widths, legacy_distribute, &
-                            legacy_reverse, legacy_gather, legacy_refresh, legacy_auto_grid, legacy_make_grid
+                            legacy_reverse, legacy_gather, legacy_refresh, legacy_auto_grid, legacy_make_grid, &
+                            legacy_forward
    use error, only: turbogap_abort
    use printing, only: print_parameters
    use read_files, only: read_xyz
@@ -52,6 +53,19 @@ module turbogap_domain
    public :: domain_init
    public :: domain_configure
    public :: domain_report
+   public :: domain_total_dipole
+   public :: domain_n_total
+   public :: domain_site_values
+   public :: domain_site_ids
+   public :: domain_exp_view
+   public :: domain_localize
+   public :: domain_globalize
+
+   interface domain_globalize
+      module procedure globalize_r2
+      module procedure globalize_r3
+   end interface domain_globalize
+   public :: domain_decomposed
    public :: domain_free
    public :: domain_sync_state
    public :: domain_sync_after_md
@@ -100,6 +114,19 @@ module turbogap_domain
       logical :: rebuild_neighbors_list = .true.
    end type neighbors_t
 
+!   The whole structure on every rank, split the replicated way, for the terms
+!   that are a property of all of it (pair distribution, structure factor, XRD,
+!   ND). Built under dd_type legacy only when one of them is on.
+   type, public :: exp_view_t
+      type(state_t) :: state
+      type(neighbors_t) :: nl
+      integer :: i_beg = 1
+      integer :: i_end = 0
+      integer :: j_beg = 1
+      integer :: j_end = 0
+      logical :: active = .false.
+   end type exp_view_t
+
    type, public :: domain_t
       integer :: i_beg
       integer :: i_end
@@ -118,9 +145,16 @@ module turbogap_domain
       real(dp), allocatable :: g_positions(:, :)
       integer, allocatable :: g_species(:)
       character*8, allocatable :: g_xyz_species(:)
-!     Legacy, rank 0: its domain's species, kept for the steps between rebuilds.
+!     Legacy: this rank's local species, kept for the steps between rebuilds;
+!     rank 0's state holds the whole structure then, and so does every rank's
+!     after a replicate_after step.
       integer, allocatable :: l_species(:)
       character*8, allocatable :: l_xyz_species(:)
+      type(exp_view_t) :: view
+!     Legacy: give every rank the whole structure and results after the
+!     evaluation, for the code that runs on every rank afterwards and expects
+!     them (MAD-IR, nested sampling).
+      logical :: replicate_after = .false.
    end type domain_t
 
 contains
@@ -134,20 +168,25 @@ contains
    end subroutine domain_init
 
 !  Choose the decomposition, once the input has been read.
-   subroutine domain_configure(dom, comm, params, model, perform, mode)
+   subroutine domain_configure(dom, comm, params)
       type(domain_t), intent(inout) :: dom
       type(comm_t), intent(in) :: comm
       type(input_parameters), intent(in) :: params
-      type(model_t), intent(in) :: model
-      type(perform_t), intent(in) :: perform
-      character(len=*), intent(in) :: mode
+      character(len=64) :: why
 
       select case (trim(params%dd_type))
       case ("none")
          dom%dd_type = DD_NONE
       case ("legacy")
+         why = legacy_unsupported(params)
+         if (why /= "") then
+            if (comm%rank == 0) write (*, '(A,A,A)') ' dd_type legacy: ', trim(why), &
+               ' is not decomposed; this run evaluates replicated, as dd_type none'
+            dom%dd_type = DD_NONE
+            return
+         end if
          dom%dd_type = DD_LEGACY
-         call legacy_refuse(comm, params, model, perform, mode)
+         dom%replicate_after = params%valid_ir .or. params%do_ir .or. params%do_nested_sampling
          call legacy_init(dom%legacy, comm, params%dd_grid, params%dd_grid_affinity, params%dd_balance)
       case default
          if (comm%rank == 0) write (*, '(A,A,A)') 'ERROR: dd_type is "', trim(params%dd_type), &
@@ -156,33 +195,17 @@ contains
       end select
    end subroutine domain_configure
 
-!  What the legacy decomposition cannot compute correctly is refused, not run;
-!  docs/LEGACY_DD.md says why for each.
-   subroutine legacy_refuse(comm, params, model, perform, mode)
-      type(comm_t), intent(in) :: comm
+!  The first feature of the run that the domains do not compute yet, or blank.
+!  Such a run evaluates replicated instead; docs/LEGACY_DD.md lists them.
+   function legacy_unsupported(params) result(why)
       type(input_parameters), intent(in) :: params
-      type(model_t), intent(in) :: model
-      type(perform_t), intent(in) :: perform
-      character(len=*), intent(in) :: mode
       character(len=64) :: why
 
       why = ""
       if (.not. comm_with_mpi) why = "a build without MPI"
       if (.not. params%do_prediction) why = "a run without do_prediction"
-      if (params%write_soap .or. params%write_derivatives) why = "write_soap or write_derivatives"
-      if (params%do_mc) why = "mc"
-      if (params%do_nested_sampling) why = "nested sampling"
-      if (trim(mode) == "ipi") why = "i-PI"
-      if (trim(params%vdw_type) /= "none") why = "van der Waals"
-      if (model%valid_estat_charges .or. trim(params%estat_method) /= "none") why = "electrostatics"
-      if (params%do_exp .or. params%do_xps .or. model%valid_xps .or. perform%pdf .or. perform%sf .or. &
-          perform%xrd .or. perform%nd) why = "experimental observables"
-      if (params%do_dipole .or. params%valid_ir) why = "dipoles or MAD-IR"
-      if (why /= "") then
-         if (comm%rank == 0) write (*, '(A,A)') 'ERROR: dd_type legacy does not support ', trim(why)
-         call turbogap_abort()
-      end if
-   end subroutine legacy_refuse
+      if (trim(params%vdw_type) == "mbd" .or. trim(params%vdw_type) == "ts+mbd") why = "MBD van der Waals"
+   end function legacy_unsupported
 
 !  Give every rank the structure rank 0 holds. Replicated data: the whole of it,
 !  sized from rank 0's arrays. Sending only what an MC move changed was tried,
@@ -193,12 +216,22 @@ contains
       type(state_t), intent(inout) :: state
       type(input_parameters), intent(in) :: params
       type(times_t), intent(inout) :: time
+
+!     Legacy: domain_build hands each rank its domain.
+      if (dom%dd_type == DD_LEGACY) return
+      call replicate_state(comm, state, params, time)
+   end subroutine domain_sync_state
+
+!  Rank 0's structure to every rank, as the replicated mode keeps it.
+   subroutine replicate_state(comm, state, params, time)
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      type(input_parameters), intent(in) :: params
+      type(times_t), intent(inout) :: time
       integer :: n_pos
       integer :: n_sp
       integer :: n_sp_sc
 
-!     Legacy: domain_build hands each rank its domain.
-      if (dom%dd_type == DD_LEGACY) return
       if (comm%rank == 0) then
          n_pos = size(state%positions, 2)
          n_sp = size(state%xyz_species, 1)
@@ -247,7 +280,7 @@ contains
       call comm_bcast(comm, state%b_box, 3)
       call comm_bcast(comm, state%c_box, 3)
       call time_end(time%mpi_positions)
-   end subroutine domain_sync_state
+   end subroutine replicate_state
 
 !  After the integrator. Replicated data: rank 0 moved the atoms, so its
 !  positions and velocities, and whether the neighbour list went stale, go to
@@ -289,6 +322,8 @@ contains
 
       call comm_bcast(comm, loop%exit_loop)
       call comm_bcast(comm, nl%rebuild_neighbors_list)
+!     Legacy: rank 0 holds i-PI's configuration, and domain_build sends it out.
+      if (dom%dd_type == DD_LEGACY) return
       if (.not. loop%exit_loop) then
          n_pos = size(state%positions, 2)
          call comm_bcast(comm, state%positions, 3*n_pos)
@@ -366,7 +401,12 @@ contains
 
       if (dom%dd_type == DD_LEGACY) then
          call legacy_build(dom, nl, comm, state, params, model, loop, time)
-         return
+         if (dom%dd_type == DD_LEGACY) return
+!        The cell cannot be decomposed: this step and the rest go replicated.
+         call domain_sync_state(dom, comm, state, params, time)
+         if (allocated(dom%do_list)) deallocate (dom%do_list)
+         allocate (dom%do_list(1:state%n_sites))
+         dom%do_list = .true.
       end if
       !   Now that all ranks know the size of n_sites, we allocate do_list
       if (.not. params%do_md .or. (params%do_md .and. loop%md_istep == 0) .or. &
@@ -482,6 +522,7 @@ contains
       integer :: r
 
       call time_start(time%neigh)
+      dom%view%active = .false.
       call comm_bcast(comm, nl%rebuild_neighbors_list)
       if (params%do_md .and. dom%legacy%n_builds > 0 .and. .not. nl%rebuild_neighbors_list) then
          call legacy_reuse(dom, nl, comm, state, params, model, time)
@@ -505,21 +546,25 @@ contains
       call comm_bcast(comm, state%b_box, 3)
       call comm_bcast(comm, state%c_box, 3)
       if (any(state%indices /= 1)) then
-         if (comm%rank == 0) write (*, '(A)') 'ERROR: dd_type legacy needs a cell at least 2 rcut_max across; '// &
-            'this one needs a supercell'
-         call turbogap_abort()
+         call legacy_fall_back(dom, nl, comm, 'the cell needs a supercell to hold one cutoff sphere')
+         call time_end(time%neigh)
+         return
       end if
       if (.not. dom%legacy%grid_ready) then
          grid = legacy_auto_grid(dom%legacy%n_domains, state%a_box, state%b_box, state%c_box, model%rcut_max)
          if (all(grid == 0)) then
-            if (comm%rank == 0) write (*, '(A,I0,A,F0.3,A)') 'ERROR: dd_grid: no grid of ', dom%legacy%n_domains, &
-               ' domains keeps every domain at least rcut_max = ', model%rcut_max, ' A wide; use fewer ranks'
-            call turbogap_abort()
+            call legacy_fall_back(dom, nl, comm, 'no grid of that many domains keeps each one rcut_max wide')
+            call time_end(time%neigh)
+            return
          end if
          call legacy_make_grid(dom%legacy, comm, grid)
          if (comm%rank == 0) call print_parameters("dd_grid (chosen)", grid)
       end if
-      call legacy_check_widths(dom%legacy, state%a_box, state%b_box, state%c_box, model%rcut_max, comm%rank)
+      if (.not. legacy_check_widths(dom%legacy, state%a_box, state%b_box, state%c_box, model%rcut_max)) then
+         call legacy_fall_back(dom, nl, comm, 'a domain of dd_grid is narrower than rcut_max')
+         call time_end(time%neigh)
+         return
+      end if
 
       if (comm%rank == 0) then
          dom%g_n_sites = state%n_sites
@@ -536,10 +581,8 @@ contains
       state%n_sites = dom%legacy%n_local
       state%species_supercell = state%species
       state%xyz_species_supercell = state%xyz_species
-      if (comm%rank == 0) then
-         dom%l_species = state%species
-         dom%l_xyz_species = state%xyz_species
-      end if
+      dom%l_species = state%species
+      dom%l_xyz_species = state%xyz_species
 
       n_owned = dom%legacy%n_owned
       n_ranks = dom%legacy%local%size
@@ -587,6 +630,23 @@ contains
       call time_end(time%neigh)
    end subroutine legacy_build
 
+!  The cell cannot be split as asked: say why, and evaluate replicated from
+!  here on. Rank 0 still holds the whole structure, so nothing is lost.
+   subroutine legacy_fall_back(dom, nl, comm, why)
+      type(domain_t), intent(inout) :: dom
+      type(neighbors_t), intent(inout) :: nl
+      type(comm_t), intent(in) :: comm
+      character(len=*), intent(in) :: why
+
+      if (comm%rank == 0) write (*, '(A,A,A)') ' dd_type legacy: ', why, '; evaluating replicated from here on'
+      dom%dd_type = DD_NONE
+      nl%rebuild_neighbors_list = .true.
+      if (allocated(nl%rjs)) deallocate (nl%rjs, nl%xyz, nl%thetas, nl%phis, nl%neighbor_species)
+      if (allocated(nl%neighbors_list)) deallocate (nl%neighbors_list)
+      if (allocated(nl%n_neigh)) deallocate (nl%n_neigh)
+      if (allocated(nl%n_neigh_local)) deallocate (nl%n_neigh_local)
+   end subroutine legacy_fall_back
+
 !  Legacy, between rebuilds: the domains, halos and neighbour lists stay; the
 !  positions are refreshed and the pair geometry recomputed, as the replicated
 !  mode does when the skin test passes.
@@ -607,11 +667,11 @@ contains
          call move_alloc(state%positions, dom%g_positions)
          call move_alloc(state%species, dom%g_species)
          call move_alloc(state%xyz_species, dom%g_xyz_species)
-         state%species = dom%l_species
-         state%xyz_species = dom%l_xyz_species
-         state%species_supercell = state%species
-         state%xyz_species_supercell = state%xyz_species
       end if
+      state%species = dom%l_species
+      state%xyz_species = dom%l_xyz_species
+      state%species_supercell = state%species
+      state%xyz_species_supercell = state%xyz_species
       call legacy_refresh(dom%legacy, comm, dom%g_positions, state%positions, time%dd_scatter, time%dd_share)
       state%n_sites = dom%legacy%n_local
       dom%do_list = .false.
@@ -634,15 +694,27 @@ contains
       type(model_t), intent(in) :: model
       type(times_t), intent(inout) :: time
 
-!     Legacy: summed inside the domain only; rank 0 gets them in the gather.
+!     Legacy: summed inside the domain, then copied from owners to their halo
+!     copies, since vdW, electrostatics and XPS read a neighbour's property.
+!     Rank 0 gets the owned values in the gather.
       if (dom%dd_type == DD_LEGACY) then
+         call time_start(time%mpi)
          if (any_has_local_properties(model%soap_turbo_hypers)) then
-            call time_start(time%mpi)
             call comm_sum_to_root(dom%legacy%local, res%local_properties, res%this_local_properties, &
                                   state%n_sites*params%n_local_properties)
-            if (dom%legacy%local%rank == 0) res%local_properties = res%this_local_properties
-            call time_end(time%mpi)
+            if (dom%legacy%local%rank == 0) then
+               res%local_properties = res%this_local_properties
+               call legacy_share_sites(dom, res%local_properties)
+            end if
+            call comm_bcast(dom%legacy%local, res%local_properties, state%n_sites*params%n_local_properties)
          end if
+         if (params%do_dipole) then
+            call comm_sum_to_root(dom%legacy%local, res%local_dipoles, res%this_local_dipoles, 3*state%n_sites)
+            if (dom%legacy%local%rank == 0) res%local_dipoles = res%this_local_dipoles
+            call comm_sum_to_root(dom%legacy%local, res%energies_dipole, res%this_energies_dipole, state%n_sites)
+            if (dom%legacy%local%rank == 0) res%energies_dipole = res%this_energies_dipole
+         end if
+         call time_end(time%mpi)
          return
       end if
       if (any_has_local_properties(model%soap_turbo_hypers)) then
@@ -709,6 +781,7 @@ contains
       real(dp), allocatable :: all_this_virial(:, :, :)
       logical :: contrib_on(1:N_CONTRIB)
       type(contribution_ref) :: contrib(1:N_CONTRIB)
+      integer :: family(1:N_CONTRIB)
       integer :: n_active
       integer :: i_contrib
       integer :: counter2
@@ -718,157 +791,7 @@ contains
          return
       end if
       call time_start(time%mpi_ef)
-!       One evaluation of the eleven predicates, and one list built from them.
-!       The pack and unpack walks below read only that list, so they cannot
-!       disagree about which slot belongs to which family -- the failure mode
-!       this replaces was three independent copies of these conditions, where
-!       any two disagreeing shifts the slot numbering and silently attributes
-!       one family's energies and forces to another.
-      contrib_on(C_SOAP) = (model%n_soap_turbo > 0)
-      contrib_on(C_VDW) = allocated(res%this_energies_vdw)
-      contrib_on(C_ESTAT) = allocated(res%this_energies_estat)
-      contrib_on(C_LP) = allocated(res%this_energies_lp)
-      contrib_on(C_PDF) = allocated(res%this_energies_pdf) .and. params%valid_pdf
-      contrib_on(C_SF) = allocated(res%this_energies_sf) .and. params%valid_sf
-      contrib_on(C_XRD) = allocated(res%this_energies_xrd) .and. params%valid_xrd
-      contrib_on(C_ND) = allocated(res%this_energies_nd) .and. params%valid_nd
-      contrib_on(C_2B) = (model%n_distance_2b > 0)
-      contrib_on(C_CP) = (model%n_core_pot > 0)
-      contrib_on(C_3B) = (model%n_angle_3b > 0)
-
-      n_active = 0
-      if (contrib_on(C_SOAP)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%energies_soap
-         contrib(n_active)%e_dst => res%energies_soap
-         contrib(n_active)%forces = params%do_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%forces_soap
-            contrib(n_active)%v_src => res%virial_soap
-            contrib(n_active)%f_dst => res%forces_soap
-            contrib(n_active)%v_dst => res%virial_soap
-         end if
-      end if
-      if (contrib_on(C_VDW)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%this_energies_vdw
-         contrib(n_active)%e_dst => res%energies_vdw
-         contrib(n_active)%forces = params%do_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%this_forces_vdw
-            contrib(n_active)%v_src => res%this_virial_vdw
-            contrib(n_active)%f_dst => res%forces_vdw
-            contrib(n_active)%v_dst => res%virial_vdw
-         end if
-      end if
-      if (contrib_on(C_ESTAT)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%this_energies_estat
-         contrib(n_active)%e_dst => res%energies_estat
-         contrib(n_active)%forces = params%do_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%this_forces_estat
-            contrib(n_active)%v_src => res%this_virial_estat
-            contrib(n_active)%f_dst => res%forces_estat
-            contrib(n_active)%v_dst => res%virial_estat
-         end if
-      end if
-      if (contrib_on(C_LP)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%this_energies_lp
-         contrib(n_active)%e_dst => res%energies_lp
-         contrib(n_active)%forces = params%do_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%this_forces_lp
-            contrib(n_active)%v_src => res%this_virial_lp
-            contrib(n_active)%f_dst => res%forces_lp
-            contrib(n_active)%v_dst => res%virial_lp
-         end if
-      end if
-      if (contrib_on(C_PDF)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%this_energies_pdf
-         contrib(n_active)%e_dst => res%energies_pdf
-         contrib(n_active)%forces = params%do_forces .and. params%exp_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%this_forces_pdf
-            contrib(n_active)%v_src => res%this_virial_pdf
-            contrib(n_active)%f_dst => res%forces_pdf
-            contrib(n_active)%v_dst => res%virial_pdf
-         end if
-      end if
-      if (contrib_on(C_SF)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%this_energies_sf
-         contrib(n_active)%e_dst => res%energies_sf
-         contrib(n_active)%forces = params%do_forces .and. params%exp_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%this_forces_sf
-            contrib(n_active)%v_src => res%this_virial_sf
-            contrib(n_active)%f_dst => res%forces_sf
-            contrib(n_active)%v_dst => res%virial_sf
-         end if
-      end if
-      if (contrib_on(C_XRD)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%this_energies_xrd
-         contrib(n_active)%e_dst => res%energies_xrd
-         contrib(n_active)%forces = params%do_forces .and. params%exp_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%this_forces_xrd
-            contrib(n_active)%v_src => res%this_virial_xrd
-            contrib(n_active)%f_dst => res%forces_xrd
-            contrib(n_active)%v_dst => res%virial_xrd
-         end if
-      end if
-      if (contrib_on(C_ND)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%this_energies_nd
-         contrib(n_active)%e_dst => res%energies_nd
-         contrib(n_active)%forces = params%do_forces .and. params%exp_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%this_forces_nd
-            contrib(n_active)%v_src => res%this_virial_nd
-            contrib(n_active)%f_dst => res%forces_nd
-            contrib(n_active)%v_dst => res%virial_nd
-         end if
-      end if
-      if (contrib_on(C_2B)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%energies_2b
-         contrib(n_active)%e_dst => res%energies_2b
-         contrib(n_active)%forces = params%do_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%forces_2b
-            contrib(n_active)%v_src => res%virial_2b
-            contrib(n_active)%f_dst => res%forces_2b
-            contrib(n_active)%v_dst => res%virial_2b
-         end if
-      end if
-      if (contrib_on(C_CP)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%energies_core_pot
-         contrib(n_active)%e_dst => res%energies_core_pot
-         contrib(n_active)%forces = params%do_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%forces_core_pot
-            contrib(n_active)%v_src => res%virial_core_pot
-            contrib(n_active)%f_dst => res%forces_core_pot
-            contrib(n_active)%v_dst => res%virial_core_pot
-         end if
-      end if
-      if (contrib_on(C_3B)) then
-         n_active = n_active + 1
-         contrib(n_active)%e_src => res%energies_3b
-         contrib(n_active)%e_dst => res%energies_3b
-         contrib(n_active)%forces = params%do_forces
-         if (contrib(n_active)%forces) then
-            contrib(n_active)%f_src => res%forces_3b
-            contrib(n_active)%v_src => res%virial_3b
-            contrib(n_active)%f_dst => res%forces_3b
-            contrib(n_active)%v_dst => res%virial_3b
-         end if
-      end if
+      call contributions_list(res, params, model, contrib_on, contrib, n_active, family)
 
       counter2 = n_active
 
@@ -914,6 +837,201 @@ contains
          end if
       end do
 
+      call contributions_release(res, params, contrib_on)
+
+      !       Clean up
+      deallocate (all_energies, all_this_energies)
+      if (params%do_forces) then
+         deallocate (all_forces, all_this_forces, all_virial, all_this_virial)
+      end if
+
+      call time_end(time%mpi_ef)
+   end subroutine domain_complete_contributions
+
+!  The families active this step, as source and destination arrays. Built from
+!  one evaluation of the eleven predicates, so the pack and unpack walks cannot
+!  disagree about which slot belongs to which family.
+   subroutine contributions_list(res, params, model, contrib_on, contrib, n_active, family)
+      type(results_t), target, intent(inout) :: res
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+      logical, intent(out) :: contrib_on(1:N_CONTRIB)
+      type(contribution_ref), intent(out) :: contrib(1:N_CONTRIB)
+      integer, intent(out) :: n_active
+!     Which family each slot holds.
+      integer, intent(out) :: family(1:N_CONTRIB)
+
+!       One evaluation of the eleven predicates, and one list built from them.
+!       The pack and unpack walks below read only that list, so they cannot
+!       disagree about which slot belongs to which family -- the failure mode
+!       this replaces was three independent copies of these conditions, where
+!       any two disagreeing shifts the slot numbering and silently attributes
+!       one family's energies and forces to another.
+      contrib_on(C_SOAP) = (model%n_soap_turbo > 0)
+      contrib_on(C_VDW) = allocated(res%this_energies_vdw)
+      contrib_on(C_ESTAT) = allocated(res%this_energies_estat)
+      contrib_on(C_LP) = allocated(res%this_energies_lp)
+      contrib_on(C_PDF) = allocated(res%this_energies_pdf) .and. params%valid_pdf
+      contrib_on(C_SF) = allocated(res%this_energies_sf) .and. params%valid_sf
+      contrib_on(C_XRD) = allocated(res%this_energies_xrd) .and. params%valid_xrd
+      contrib_on(C_ND) = allocated(res%this_energies_nd) .and. params%valid_nd
+      contrib_on(C_2B) = (model%n_distance_2b > 0)
+      contrib_on(C_CP) = (model%n_core_pot > 0)
+      contrib_on(C_3B) = (model%n_angle_3b > 0)
+
+      n_active = 0
+      if (contrib_on(C_SOAP)) then
+         n_active = n_active + 1
+         family(n_active) = C_SOAP
+         contrib(n_active)%e_src => res%energies_soap
+         contrib(n_active)%e_dst => res%energies_soap
+         contrib(n_active)%forces = params%do_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%forces_soap
+            contrib(n_active)%v_src => res%virial_soap
+            contrib(n_active)%f_dst => res%forces_soap
+            contrib(n_active)%v_dst => res%virial_soap
+         end if
+      end if
+      if (contrib_on(C_VDW)) then
+         n_active = n_active + 1
+         family(n_active) = C_VDW
+         contrib(n_active)%e_src => res%this_energies_vdw
+         contrib(n_active)%e_dst => res%energies_vdw
+         contrib(n_active)%forces = params%do_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%this_forces_vdw
+            contrib(n_active)%v_src => res%this_virial_vdw
+            contrib(n_active)%f_dst => res%forces_vdw
+            contrib(n_active)%v_dst => res%virial_vdw
+         end if
+      end if
+      if (contrib_on(C_ESTAT)) then
+         n_active = n_active + 1
+         family(n_active) = C_ESTAT
+         contrib(n_active)%e_src => res%this_energies_estat
+         contrib(n_active)%e_dst => res%energies_estat
+         contrib(n_active)%forces = params%do_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%this_forces_estat
+            contrib(n_active)%v_src => res%this_virial_estat
+            contrib(n_active)%f_dst => res%forces_estat
+            contrib(n_active)%v_dst => res%virial_estat
+         end if
+      end if
+      if (contrib_on(C_LP)) then
+         n_active = n_active + 1
+         family(n_active) = C_LP
+         contrib(n_active)%e_src => res%this_energies_lp
+         contrib(n_active)%e_dst => res%energies_lp
+         contrib(n_active)%forces = params%do_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%this_forces_lp
+            contrib(n_active)%v_src => res%this_virial_lp
+            contrib(n_active)%f_dst => res%forces_lp
+            contrib(n_active)%v_dst => res%virial_lp
+         end if
+      end if
+      if (contrib_on(C_PDF)) then
+         n_active = n_active + 1
+         family(n_active) = C_PDF
+         contrib(n_active)%e_src => res%this_energies_pdf
+         contrib(n_active)%e_dst => res%energies_pdf
+         contrib(n_active)%forces = params%do_forces .and. params%exp_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%this_forces_pdf
+            contrib(n_active)%v_src => res%this_virial_pdf
+            contrib(n_active)%f_dst => res%forces_pdf
+            contrib(n_active)%v_dst => res%virial_pdf
+         end if
+      end if
+      if (contrib_on(C_SF)) then
+         n_active = n_active + 1
+         family(n_active) = C_SF
+         contrib(n_active)%e_src => res%this_energies_sf
+         contrib(n_active)%e_dst => res%energies_sf
+         contrib(n_active)%forces = params%do_forces .and. params%exp_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%this_forces_sf
+            contrib(n_active)%v_src => res%this_virial_sf
+            contrib(n_active)%f_dst => res%forces_sf
+            contrib(n_active)%v_dst => res%virial_sf
+         end if
+      end if
+      if (contrib_on(C_XRD)) then
+         n_active = n_active + 1
+         family(n_active) = C_XRD
+         contrib(n_active)%e_src => res%this_energies_xrd
+         contrib(n_active)%e_dst => res%energies_xrd
+         contrib(n_active)%forces = params%do_forces .and. params%exp_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%this_forces_xrd
+            contrib(n_active)%v_src => res%this_virial_xrd
+            contrib(n_active)%f_dst => res%forces_xrd
+            contrib(n_active)%v_dst => res%virial_xrd
+         end if
+      end if
+      if (contrib_on(C_ND)) then
+         n_active = n_active + 1
+         family(n_active) = C_ND
+         contrib(n_active)%e_src => res%this_energies_nd
+         contrib(n_active)%e_dst => res%energies_nd
+         contrib(n_active)%forces = params%do_forces .and. params%exp_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%this_forces_nd
+            contrib(n_active)%v_src => res%this_virial_nd
+            contrib(n_active)%f_dst => res%forces_nd
+            contrib(n_active)%v_dst => res%virial_nd
+         end if
+      end if
+      if (contrib_on(C_2B)) then
+         n_active = n_active + 1
+         family(n_active) = C_2B
+         contrib(n_active)%e_src => res%energies_2b
+         contrib(n_active)%e_dst => res%energies_2b
+         contrib(n_active)%forces = params%do_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%forces_2b
+            contrib(n_active)%v_src => res%virial_2b
+            contrib(n_active)%f_dst => res%forces_2b
+            contrib(n_active)%v_dst => res%virial_2b
+         end if
+      end if
+      if (contrib_on(C_CP)) then
+         n_active = n_active + 1
+         family(n_active) = C_CP
+         contrib(n_active)%e_src => res%energies_core_pot
+         contrib(n_active)%e_dst => res%energies_core_pot
+         contrib(n_active)%forces = params%do_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%forces_core_pot
+            contrib(n_active)%v_src => res%virial_core_pot
+            contrib(n_active)%f_dst => res%forces_core_pot
+            contrib(n_active)%v_dst => res%virial_core_pot
+         end if
+      end if
+      if (contrib_on(C_3B)) then
+         n_active = n_active + 1
+         family(n_active) = C_3B
+         contrib(n_active)%e_src => res%energies_3b
+         contrib(n_active)%e_dst => res%energies_3b
+         contrib(n_active)%forces = params%do_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%forces_3b
+            contrib(n_active)%v_src => res%virial_3b
+            contrib(n_active)%f_dst => res%forces_3b
+            contrib(n_active)%v_dst => res%virial_3b
+         end if
+      end if
+
+   end subroutine contributions_list
+
+!  The this_ arrays, once their contents are in the un-prefixed ones.
+   subroutine contributions_release(res, params, contrib_on)
+      type(results_t), intent(inout) :: res
+      type(input_parameters), intent(in) :: params
+      logical, intent(in) :: contrib_on(1:N_CONTRIB)
+
 !       Release the this_ arrays now that their contents have been unpacked.
 !       Kept explicit rather than folded into the loop: an allocatable cannot
 !       be deallocated through a pointer, and this_local_virial_vdw_diag has no
@@ -947,23 +1065,240 @@ contains
          if (params%do_forces .and. params%exp_forces) deallocate (res%this_forces_nd)
       end if
 
-      !       Clean up
-      deallocate (all_energies, all_this_energies)
-      if (params%do_forces) then
-         deallocate (all_forces, all_this_forces, all_virial, all_this_virial)
-      end if
+   end subroutine contributions_release
 
-      call time_end(time%mpi_ef)
-   end subroutine domain_complete_contributions
+!  Legacy, roots: copy per-site values, sites on the first index, from owners
+!  to halo copies.
+   subroutine legacy_share_sites(dom, x)
+      type(domain_t), intent(in) :: dom
+      real(dp), intent(inout) :: x(:, :)
+      real(dp), allocatable :: t(:, :)
+
+      t = transpose(x)
+      call legacy_forward(dom%legacy, t)
+      x = transpose(t)
+   end subroutine legacy_share_sites
+
+!  Atoms in the whole system, whatever this rank holds.
+   pure integer function domain_n_total(dom, state) result(n)
+      type(domain_t), intent(in) :: dom
+      type(state_t), intent(in) :: state
+
+      n = state%n_sites
+      if (dom%dd_type == DD_LEGACY) n = dom%legacy%n_global
+   end function domain_n_total
+
+!  A per-site value of every atom in the system, in global order, on every
+!  rank. Replicated: the sites here already are the system. Legacy: the owners
+!  send theirs to rank 0, which broadcasts the whole array.
+   subroutine domain_site_values(dom, comm, state, x, all)
+      type(domain_t), intent(in) :: dom
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(in) :: state
+      real(dp), intent(in) :: x(:)
+      real(dp), allocatable, intent(out) :: all(:)
+      real(dp), allocatable :: owned(:, :)
+      real(dp), allocatable :: out(:, :)
+      integer :: n
+
+      if (dom%dd_type /= DD_LEGACY) then
+         all = x(1:state%n_sites)
+         return
+      end if
+      n = dom%legacy%n_global
+      allocate (owned(1:1, 1:max(dom%legacy%n_owned, 1)))
+      owned(1, 1:dom%legacy%n_owned) = x(1:dom%legacy%n_owned)
+      if (comm%rank == 0) then
+         allocate (out(1:1, 1:n))
+      else
+         allocate (out(1:1, 1))
+      end if
+      call legacy_gather(dom%legacy, comm, owned, out)
+      allocate (all(1:n))
+      if (comm%rank == 0) all = out(1, 1:n)
+      call comm_bcast(comm, all, n)
+   end subroutine domain_site_values
+
+!  The global index of each site this rank holds.
+   subroutine domain_site_ids(dom, state, ids)
+      type(domain_t), intent(in) :: dom
+      type(state_t), intent(in) :: state
+      integer, allocatable, intent(out) :: ids(:)
+      integer :: i
+
+      if (dom%dd_type == DD_LEGACY) then
+         ids = dom%legacy%ids
+      else
+         allocate (ids(1:state%n_sites))
+         ids = [(i, i=1, state%n_sites)]
+      end if
+   end subroutine domain_site_ids
+
+!  Legacy: the whole structure on every rank and a replicated neighbour list
+!  for it, for the experimental observables. Rank 0 holds the structure aside
+!  during the evaluation; everyone else gets it from there.
+   subroutine domain_exp_view(dom, comm, state, params, model)
+      type(domain_t), intent(inout) :: dom
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(in) :: state
+      type(input_parameters), intent(in) :: params
+      type(model_t), intent(in) :: model
+      logical, allocatable :: do_list(:)
+      integer, allocatable :: pairs(:)
+      integer :: n
+
+      associate (v => dom%view)
+         v%active = .true.
+         n = dom%legacy%n_global
+         v%state%n_sites = n
+         v%state%a_box = state%a_box
+         v%state%b_box = state%b_box
+         v%state%c_box = state%c_box
+         v%state%indices = state%indices
+         v%state%v_uc = state%v_uc
+         if (allocated(v%state%positions)) deallocate (v%state%positions, v%state%species, v%state%species_supercell)
+         allocate (v%state%positions(1:3, 1:n), v%state%species(1:n))
+         if (comm%rank == 0) then
+            v%state%positions = dom%g_positions(1:3, 1:n)
+            v%state%species = dom%g_species(1:n)
+         end if
+         call comm_bcast(comm, v%state%positions, 3*n)
+         call comm_bcast(comm, v%state%species, n)
+         v%state%species_supercell = v%state%species
+
+         if (comm%rank < mod(n, comm%size)) then
+            v%i_beg = 1 + comm%rank*(n/comm%size + 1)
+            v%i_end = v%i_beg + n/comm%size
+         else
+            v%i_beg = 1 + mod(n, comm%size)*(n/comm%size + 1) + (comm%rank - mod(n, comm%size))*(n/comm%size)
+            v%i_end = v%i_beg + n/comm%size - 1
+         end if
+         allocate (do_list(1:n))
+         do_list = .false.
+         do_list(v%i_beg:v%i_end) = .true.
+
+         if (allocated(v%nl%rjs)) deallocate (v%nl%rjs, v%nl%xyz, v%nl%thetas, v%nl%phis, v%nl%neighbor_species)
+         if (allocated(v%nl%neighbors_list)) deallocate (v%nl%neighbors_list)
+         if (allocated(v%nl%n_neigh)) deallocate (v%nl%n_neigh)
+         if (allocated(v%nl%n_neigh_local)) deallocate (v%nl%n_neigh_local)
+         call build_neighbors_list(v%state%positions, v%state%a_box, v%state%b_box, v%state%c_box, params%do_timing, &
+                                   v%state%species_supercell, model%rcut_max, v%nl%n_atom_pairs, v%nl%rjs, &
+                                   v%nl%thetas, v%nl%phis, v%nl%xyz, v%nl%n_neigh_local, v%nl%neighbors_list, &
+                                   v%nl%neighbor_species, n, v%state%indices, .true., do_list, comm%rank)
+         allocate (pairs(1:comm%size))
+         call comm_allgather(comm, v%nl%n_atom_pairs, pairs)
+         v%j_beg = 1
+         v%j_end = pairs(comm%rank + 1)
+         v%nl%n_atom_pairs_total = sum(pairs)
+         v%nl%n_atom_pairs = v%nl%n_atom_pairs_total
+         allocate (v%nl%n_neigh(1:n))
+         call comm_sum_to_root(comm, v%nl%n_neigh_local, v%nl%n_neigh, n)
+         call comm_bcast(comm, v%nl%n_neigh, n)
+      end associate
+   end subroutine domain_exp_view
+
+!  Legacy: reorder a per-site array, sites on the second index, from global
+!  order into this rank's local order, for code that reads it by local site
+!  during the evaluation. x must have at least n_local columns.
+   subroutine domain_localize(dom, x)
+      type(domain_t), intent(in) :: dom
+      real(dp), intent(inout) :: x(:, :)
+      real(dp), allocatable :: t(:, :)
+
+      if (dom%dd_type /= DD_LEGACY) return
+      t = x(:, dom%legacy%ids)
+      x(:, 1:dom%legacy%n_local) = t
+   end subroutine domain_localize
+
+!  Legacy: the reverse, for a per-site sum each rank accumulated by local site
+!  during the evaluation. On return rank 0 holds the complete sums in global
+!  order and every other rank zeros, so a following all-reduce, as the
+!  replicated mode does, completes it everywhere.
+   subroutine globalize_r2(dom, comm, x)
+      type(domain_t), intent(in) :: dom
+      type(comm_t), intent(in) :: comm
+      real(dp), intent(inout) :: x(:, :)
+      real(dp), allocatable :: part(:, :)
+      real(dp), allocatable :: total(:, :)
+      real(dp), allocatable :: out(:, :)
+      integer :: m
+      integer :: n
+
+      if (dom%dd_type /= DD_LEGACY) return
+      m = size(x, 1)
+      n = dom%legacy%n_local
+      part = x(:, 1:max(n, 1))
+      if (n == 0) part = 0.d0
+      allocate (total(1:m, 1:max(n, 1)))
+      total = 0.d0
+      call comm_sum_to_root(dom%legacy%local, part, total, m*n)
+      if (dom%legacy%local%rank == 0) call legacy_reverse(dom%legacy, total)
+      if (comm%rank == 0) then
+         allocate (out(1:m, 1:dom%legacy%n_global))
+      else
+         allocate (out(1:m, 1))
+      end if
+      call legacy_gather(dom%legacy, comm, total(:, 1:max(dom%legacy%n_owned, 1)), out)
+      x = 0.d0
+      if (comm%rank == 0) x(:, 1:dom%legacy%n_global) = out
+   end subroutine globalize_r2
+
+!  The same for a tensor per site: (a, b, site).
+   subroutine globalize_r3(dom, comm, x)
+      type(domain_t), intent(in) :: dom
+      type(comm_t), intent(in) :: comm
+      real(dp), intent(inout) :: x(:, :, :)
+      real(dp), allocatable :: flat(:, :)
+
+      if (dom%dd_type /= DD_LEGACY) return
+      flat = reshape(x, [size(x, 1)*size(x, 2), size(x, 3)])
+      call globalize_r2(dom, comm, flat)
+      x = reshape(flat, shape(x))
+   end subroutine globalize_r3
+
+!  Does this rank hold only its domain's atoms during the evaluation?
+   pure logical function domain_decomposed(dom) result(yes)
+      type(domain_t), intent(in) :: dom
+
+      yes = (dom%dd_type == DD_LEGACY)
+   end function domain_decomposed
+
+!  The total dipole: a sum over every site, each counted once.
+   subroutine domain_total_dipole(dom, comm, res, state)
+      type(domain_t), intent(in) :: dom
+      type(comm_t), intent(in) :: comm
+      type(results_t), intent(inout) :: res
+      type(state_t), intent(in) :: state
+      real(dp) :: mine(1:3)
+      real(dp) :: all(1:3)
+      integer :: n
+
+      if (dom%dd_type /= DD_LEGACY) then
+         res%dipole(1) = sum(res%local_dipoles(1, 1:state%n_sites))
+         res%dipole(2) = sum(res%local_dipoles(2, 1:state%n_sites))
+         res%dipole(3) = sum(res%local_dipoles(3, 1:state%n_sites))
+         return
+      end if
+      mine = 0.d0
+      if (dom%legacy%local%rank == 0) then
+         n = dom%legacy%n_owned
+         mine(1) = sum(res%local_dipoles(1, 1:n))
+         mine(2) = sum(res%local_dipoles(2, 1:n))
+         mine(3) = sum(res%local_dipoles(3, 1:n))
+      end if
+      call comm_sum_to_root(comm, mine, all, 3)
+      if (comm%rank == 0) res%dipole = all
+      call comm_bcast(comm, res%dipole, 3)
+   end subroutine domain_total_dipole
 
 !  Legacy: what landed on halo sites goes home, the owned sites' results come
 !  to rank 0 in global order, and rank 0 gets its whole structure back with
-!  result arrays to match. The four families are the only ones legacy_refuse
-!  lets through.
+!  result arrays to match. Every active family goes the same way, from the
+!  same list the replicated reduction uses.
    subroutine legacy_complete(dom, comm, res, state, params, model, time)
       type(domain_t), intent(inout) :: dom
       type(comm_t), intent(in) :: comm
-      type(results_t), intent(inout) :: res
+      type(results_t), target, intent(inout) :: res
       type(state_t), intent(inout) :: state
       type(input_parameters), intent(in) :: params
       type(model_t), intent(in) :: model
@@ -972,89 +1307,107 @@ contains
       real(dp), allocatable :: total(:, :)
       real(dp), allocatable :: owned(:, :)
       real(dp), allocatable :: out(:, :)
-      real(dp) :: vir_part(1:9, 1:4)
-      real(dp) :: vir_dom(1:9, 1:4)
-      real(dp) :: vir_all(1:9, 1:4)
-      logical :: fam_on(1:4)
+      real(dp) :: vir_part(1:9, 1:N_CONTRIB)
+      real(dp) :: vir_dom(1:9, 1:N_CONTRIB)
+      real(dp) :: vir_all(1:9, 1:N_CONTRIB)
+      logical :: contrib_on(1:N_CONTRIB)
+      type(contribution_ref) :: contrib(1:N_CONTRIB)
+      integer :: family(1:N_CONTRIB)
+      logical :: on_view(1:N_CONTRIB)
+      real(dp), allocatable :: gpart(:, :)
+      real(dp), allocatable :: gtot(:, :)
+      integer :: n_global
+      integer :: n_active
       integer :: n_lp
+      integer :: n_dip
       integer :: per_fam
       integer :: nv
+      integer :: n_out
       integer :: n
       integer :: k
       integer :: col
       integer :: i
 
       call time_start(time%mpi_ef)
-      if (allocated(res%this_energies_vdw) .or. allocated(res%this_energies_estat) .or. &
-          allocated(res%this_energies_lp) .or. allocated(res%this_energies_pdf) .or. &
-          allocated(res%this_energies_sf) .or. allocated(res%this_energies_xrd) .or. &
-          allocated(res%this_energies_nd)) then
-         if (comm%rank == 0) write (*, '(A)') 'ERROR: dd_type legacy met a term it cannot reduce'
-         call turbogap_abort()
-      end if
-      fam_on = [model%n_soap_turbo > 0, model%n_distance_2b > 0, model%n_core_pot > 0, model%n_angle_3b > 0]
+      call contributions_list(res, params, model, contrib_on, contrib, n_active, family)
       per_fam = 1
       if (params%do_forces) per_fam = 4
-      nv = per_fam*4
+      nv = per_fam*n_active
       n_lp = 0
       if (any_has_local_properties(model%soap_turbo_hypers)) n_lp = params%n_local_properties
+      n_dip = 0
+      if (params%do_dipole) n_dip = 4
       n = state%n_sites
 
-      allocate (part(1:nv, 1:max(n, 1)))
-      allocate (total(1:nv, 1:max(n, 1)))
+!     The families computed on the whole-structure view are indexed by global
+!     atom, not by local site: they skip the halo return and the gather, and are
+!     summed over all ranks straight into global order.
+      on_view = .false.
+      do k = 1, n_active
+         on_view(k) = dom%view%active .and. any(family(k) == [C_PDF, C_SF, C_XRD, C_ND])
+      end do
+      n_global = dom%legacy%n_global
+      if (any(on_view)) then
+         allocate (gpart(1:max(nv, 1), 1:n_global))
+         allocate (gtot(1:max(nv, 1), 1:n_global))
+         gpart = 0.d0
+         gtot = 0.d0
+         do k = 1, n_active
+            if (.not. on_view(k)) cycle
+            col = (k - 1)*per_fam + 1
+            gpart(col, 1:n_global) = contrib(k)%e_src(1:n_global)
+            if (contrib(k)%forces) gpart(col + 1:col + 3, 1:n_global) = contrib(k)%f_src(1:3, 1:n_global)
+         end do
+         call comm_sum_to_root(comm, gpart, gtot, size(gpart))
+      end if
+
+!     Families in columns: energy, then the three force components.
+      allocate (part(1:max(nv, 1), 1:max(n, 1)))
+      allocate (total(1:max(nv, 1), 1:max(n, 1)))
       part = 0.d0
       total = 0.d0
       vir_part = 0.d0
-      do k = 1, 4
-         if (.not. fam_on(k)) cycle
+      do k = 1, n_active
          col = (k - 1)*per_fam + 1
-         select case (k)
-         case (1)
-            part(col, 1:n) = res%energies_soap(1:n)
-            if (params%do_forces) part(col + 1:col + 3, 1:n) = res%forces_soap(1:3, 1:n)
-            if (params%do_forces) vir_part(1:9, k) = reshape(res%virial_soap, [9])
-         case (2)
-            part(col, 1:n) = res%energies_2b(1:n)
-            if (params%do_forces) part(col + 1:col + 3, 1:n) = res%forces_2b(1:3, 1:n)
-            if (params%do_forces) vir_part(1:9, k) = reshape(res%virial_2b, [9])
-         case (3)
-            part(col, 1:n) = res%energies_core_pot(1:n)
-            if (params%do_forces) part(col + 1:col + 3, 1:n) = res%forces_core_pot(1:3, 1:n)
-            if (params%do_forces) vir_part(1:9, k) = reshape(res%virial_core_pot, [9])
-         case (4)
-            part(col, 1:n) = res%energies_3b(1:n)
-            if (params%do_forces) part(col + 1:col + 3, 1:n) = res%forces_3b(1:3, 1:n)
-            if (params%do_forces) vir_part(1:9, k) = reshape(res%virial_3b, [9])
-         end select
+         if (contrib(k)%forces) vir_part(1:9, k) = reshape(contrib(k)%v_src, [9])
+         if (on_view(k)) cycle
+         part(col, 1:n) = contrib(k)%e_src(1:n)
+         if (contrib(k)%forces) part(col + 1:col + 3, 1:n) = contrib(k)%f_src(1:3, 1:n)
       end do
 
-      call comm_sum_to_root(dom%legacy%local, part, total, nv*n)
-      call comm_sum_to_root(dom%legacy%local, vir_part, vir_dom, 36)
+      call comm_sum_to_root(dom%legacy%local, part, total, size(part))
+      call comm_sum_to_root(dom%legacy%local, vir_part, vir_dom, 9*N_CONTRIB)
 
+      n_out = 1 + nv + n_lp + n_dip
       if (dom%legacy%local%rank == 0) then
          call time_start(time%dd_reverse, "dd_reverse")
          call legacy_reverse(dom%legacy, total)
          call time_end(time%dd_reverse, "dd_reverse")
-         call comm_sum_to_root(dom%legacy%roots, vir_dom, vir_all, 36)
-         allocate (owned(1:1 + nv + n_lp, 1:max(dom%legacy%n_owned, 1)))
+         call comm_sum_to_root(dom%legacy%roots, vir_dom, vir_all, 9*N_CONTRIB)
+         allocate (owned(1:n_out, 1:max(dom%legacy%n_owned, 1)))
          do i = 1, dom%legacy%n_owned
             owned(1, i) = res%energies(i)
             owned(2:nv + 1, i) = total(1:nv, i)
             if (n_lp > 0) owned(nv + 2:nv + 1 + n_lp, i) = res%local_properties(i, 1:n_lp)
+            if (n_dip > 0) then
+               owned(nv + n_lp + 2:nv + n_lp + 4, i) = res%local_dipoles(1:3, i)
+               owned(nv + n_lp + 5, i) = res%energies_dipole(i)
+            end if
          end do
       else
-         allocate (owned(1:1 + nv + n_lp, 1))
+         allocate (owned(1:n_out, 1))
       end if
 
       if (comm%rank == 0) then
-         allocate (out(1:1 + nv + n_lp, 1:dom%g_n_sites))
+         allocate (out(1:n_out, 1:dom%g_n_sites))
       else
-         allocate (out(1:1 + nv + n_lp, 1))
+         allocate (out(1:n_out, 1))
       end if
       call time_start(time%dd_gather, "dd_gather")
       call legacy_gather(dom%legacy, comm, owned, out)
       call time_end(time%dd_gather, "dd_gather")
 
+      if (comm%rank /= 0) call contributions_release(res, params, contrib_on)
       if (comm%rank == 0) then
          state%n_sites = dom%g_n_sites
          call move_alloc(dom%g_positions, state%positions)
@@ -1064,36 +1417,37 @@ contains
          state%xyz_species_supercell = state%xyz_species
          n = state%n_sites
          call results_resize_sites(res, n)
+!        The list again, since the destinations were just reallocated. The
+!        resize kept every this_ array allocated, so its predicates still hold.
+         call contributions_list(res, params, model, contrib_on, contrib, n_active, family)
          res%energies(1:n) = out(1, 1:n)
-         do k = 1, 4
-            if (.not. fam_on(k)) cycle
+         do k = 1, n_active
             col = 1 + (k - 1)*per_fam + 1
-            select case (k)
-            case (1)
-               res%energies_soap(1:n) = out(col, 1:n)
-               if (params%do_forces) res%forces_soap(1:3, 1:n) = out(col + 1:col + 3, 1:n)
-               if (params%do_forces) res%virial_soap = reshape(vir_all(1:9, k), [3, 3])
-            case (2)
-               res%energies_2b(1:n) = out(col, 1:n)
-               if (params%do_forces) res%forces_2b(1:3, 1:n) = out(col + 1:col + 3, 1:n)
-               if (params%do_forces) res%virial_2b = reshape(vir_all(1:9, k), [3, 3])
-            case (3)
-               res%energies_core_pot(1:n) = out(col, 1:n)
-               if (params%do_forces) res%forces_core_pot(1:3, 1:n) = out(col + 1:col + 3, 1:n)
-               if (params%do_forces) res%virial_core_pot = reshape(vir_all(1:9, k), [3, 3])
-            case (4)
-               res%energies_3b(1:n) = out(col, 1:n)
-               if (params%do_forces) res%forces_3b(1:3, 1:n) = out(col + 1:col + 3, 1:n)
-               if (params%do_forces) res%virial_3b = reshape(vir_all(1:9, k), [3, 3])
-            end select
+            if (on_view(k)) then
+               contrib(k)%e_dst(1:n) = gtot(col - 1, 1:n)
+               if (contrib(k)%forces) contrib(k)%f_dst(1:3, 1:n) = gtot(col:col + 2, 1:n)
+            else
+               contrib(k)%e_dst(1:n) = out(col, 1:n)
+               if (contrib(k)%forces) contrib(k)%f_dst(1:3, 1:n) = out(col + 1:col + 3, 1:n)
+            end if
+            if (contrib(k)%forces) contrib(k)%v_dst = reshape(vir_all(1:9, k), [3, 3])
          end do
-         if (n_lp > 0) then
-            do i = 1, n_lp
-               res%local_properties(1:n, i) = out(nv + 1 + i, 1:n)
-            end do
+         do i = 1, n_lp
+            res%local_properties(1:n, i) = out(nv + 1 + i, 1:n)
+         end do
+         if (n_dip > 0) then
+            res%local_dipoles(1:3, 1:n) = out(nv + n_lp + 2:nv + n_lp + 4, 1:n)
+            res%energies_dipole(1:n) = out(nv + n_lp + 5, 1:n)
          end if
+         call contributions_release(res, params, contrib_on)
       end if
       call time_end(time%mpi_ef)
+      if (dom%replicate_after) then
+         call comm_bcast(comm, n)
+         if (comm%rank /= 0) call results_resize_sites(res, n)
+         call results_bcast_sites(res, comm)
+         call replicate_state(comm, state, params, time)
+      end if
    end subroutine legacy_complete
 
 !  Legacy: one line per rank at the end of the run, for load balance. Times
@@ -1132,7 +1486,7 @@ contains
 
       deallocate (dom%n_atom_pairs_by_rank)
       if (allocated(dom%do_list)) deallocate (dom%do_list)
-      if (dom%dd_type == DD_LEGACY) call legacy_free(dom%legacy)
+      call legacy_free(dom%legacy)
       if (allocated(dom%g_positions)) deallocate (dom%g_positions, dom%g_species, dom%g_xyz_species)
       if (allocated(dom%l_species)) deallocate (dom%l_species, dom%l_xyz_species)
    end subroutine domain_free

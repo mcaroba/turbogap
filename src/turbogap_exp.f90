@@ -76,7 +76,7 @@ contains
                               a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
                               md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
                               write_condition, overwrite_condition, exp_output, &
-                              energies_lp, forces_lp, virial_lp, time)
+                              energies_lp, forces_lp, virial_lp, time, be_all, site_ids)
 
       implicit none
 
@@ -113,6 +113,11 @@ contains
       real(dp), allocatable, intent(inout) :: forces_lp(:, :)
       real(dp), intent(inout) :: virial_lp(1:3, 1:3)
       type(times_t), intent(inout) :: time
+!   The core binding energy of every atom of the system in its global order,
+!   and the global index of each site here. The spectrum is a property of the
+!   whole system; a rank of a domain decomposition holds only some of it.
+      real(dp), intent(in) :: be_all(:)
+      integer, intent(in) :: site_ids(:)
 
 !   Was driver state; block-local now.
       real(dp), allocatable :: x_xps(:)
@@ -155,7 +160,7 @@ contains
               &%xps_sigma, params%exp_data(xps_idx)%n_samples, mag,&
               & params%exp_data(xps_idx)%x, params&
               &%exp_data(xps_idx)%y_pred, y_i_pred_all,&
-              & local_properties(1:n_sites, core_be_lp_index),&
+              & be_all, &
               & .true.)
 
          call get_energy_scale(params%do_md, params%do_mc,&
@@ -174,7 +179,7 @@ contains
               & params%exp_data(xps_idx)%n_samples, mag, params&
               &%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y,&
               & params%exp_data(xps_idx)%y_pred,&
-              & y_i_pred_all(i_beg:i_end, 1:params &
+              & y_i_pred_all(site_ids(i_beg:i_end), 1:params &
               &%exp_data(xps_idx)%n_samples), params%do_forces, &
               & xyz(1:3, j_beg:j_end),&
               & energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank)
@@ -207,7 +212,7 @@ contains
 
                call preprocess_exp_data(params, params%exp_data(xps_idx)%x,&
                     & params%exp_data(xps_idx)%y, params%exp_data(xps_idx)%label,&
-                    & n_sites, dot_product(cross_product(a_box,&
+                    & size(be_all), dot_product(cross_product(a_box,&
                     & b_box), c_box)/(dfloat(indices(1)*indices(2) &
                     &*indices(3))), params%exp_data(xps_idx)%input, exp_output, .true.)
 
@@ -245,7 +250,7 @@ contains
                  & params%xps_n_samples,&
                  & x_xps, &
                  & y_xps, &
-                 & local_properties(1:n_sites, core_be_lp_index))
+                 & be_all)
 
             call get_overwrite_condition(params%do_mc, params%do_md&
                  &, mc_istep, md_istep, params%write_xyz, overwrite_condition)

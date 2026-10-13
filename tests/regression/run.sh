@@ -28,6 +28,11 @@
 #                       and the case failed (default: 1800)
 #   TURBOGAP_KEEP       keep staging directories for inspection
 #   TURBOGAP_BLESS      regenerate the expected/ output of golden cases
+#   TURBOGAP_INPUT_EXTRA  lines appended to the input of the binary under test
+#                       only, e.g. "dd_type = legacy" to compare a decomposed
+#                       run with the replicated reference (use --gpu, which
+#                       compares within a tolerance)
+#   TURBOGAP_MIN_RANKS  run every case on at least this many ranks
 #
 # Most cases compare the binary under test against the frozen baseline. A case
 # whose case.conf sets REFERENCE=golden instead compares against a checked-in
@@ -179,6 +184,9 @@ stage() {
   # were recorded with. Pinned here rather than in each cases/*/input because
   # it is a property of comparing against stored text, not of any one case.
   printf '\nmax_Gbytes_per_process = 1.0\n' >>"$dir/input"
+  if [ "$label" = test ] && [ -n "${TURBOGAP_INPUT_EXTRA:-}" ]; then
+    printf '%s\n' "$TURBOGAP_INPUT_EXTRA" >>"$dir/input"
+  fi
   printf '%s' "$dir"
 }
 
@@ -248,6 +256,9 @@ for name in "${cases[@]}"; do
   GPU_ATOL=$DEFAULT_GPU_ATOL
   # shellcheck source=/dev/null
   . "$conf"
+  if [ -n "${TURBOGAP_MIN_RANKS:-}" ] && [ "$RANKS" -lt "$TURBOGAP_MIN_RANKS" ]; then
+    RANKS=$TURBOGAP_MIN_RANKS
+  fi
 
   printf '== %s ==\n' "$name"
 

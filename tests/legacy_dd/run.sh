@@ -17,9 +17,19 @@
 #     non-root ranks have to reach the root;
 #   - a sheared cell, where a face's normal is not a cell vector;
 #   - the grid chosen automatically, and equal-volume cuts;
-#   - a slab with vacuum, where count balancing moves the cuts;
+#   - a slab with vacuum, where count balancing moves the cuts, and one cut
+#     into equal slabs, two of which hold no atom at all, owned or halo;
 #   - MD: five steps; twenty, which reuse the domains between rebuilds; and
-#     twenty with a tiny skin, which rebuild nearly every step.
+#     twenty with a tiny skin, which rebuild nearly every step;
+#   - TS van der Waals, which reads its neighbours' Hirshfeld volumes, so the
+#     halo copies have to carry them;
+#   - electrostatics, whose neutralising mean charge is a sum over all atoms
+#     (on a 24k cell: this potential's rcut_max is 20 A);
+#   - the pdf -> S(q) -> XRD chain and the Debye XRD, computed on the
+#     whole-structure view while the potential stays decomposed;
+#   - the dipole model, whose total dipole is a sum over all atoms, and the
+#     MAD-IR bias it drives through 40 MD steps;
+#   - a grid too fine for the cell, which must fall back to replicated.
 #
 # Environment:
 #   TURBOGAP_BIN        binary under test (default: <repo>/bin/turbogap)
@@ -66,17 +76,18 @@ check_setup() {
   fi
 }
 
-# The 897-atom cell with c doubled: half of it vacuum.
+# make_slab <out> <factor>: the 897-atom cell with c stretched by factor, the
+# rest of it vacuum.
 make_slab() {
-  "$PYTHON" - "$DATA/atoms_897.xyz" "$1" <<'EOF'
+  "$PYTHON" - "$DATA/atoms_897.xyz" "$1" "$2" <<'EOF'
 import re
 import sys
 
-src, dst = sys.argv[1], sys.argv[2]
+src, dst, factor = sys.argv[1], sys.argv[2], float(sys.argv[3])
 lines = open(src).read().splitlines()
 old = re.search(r'Lattice="([^"]*)"', lines[1]).group(1)
 lat = [float(x) for x in old.split()]
-lat[6:9] = [2.0 * x for x in lat[6:9]]
+lat[6:9] = [factor * x for x in lat[6:9]]
 lines[1] = lines[1].replace(old, " ".join(f"{x:.10f}" for x in lat))
 open(dst, "w").write("\n".join(lines) + "\n")
 EOF
@@ -153,7 +164,8 @@ dd_grid_affinity = $affinity"
 
   run_one "$WORK/$name/ref" "$mode" "$ranks" || ok=0
   run_one "$WORK/$name/dd" "$mode" "$ranks" || ok=0
-  if [ "$ok" -eq 1 ] && grep -q 'dd_type' "$WORK/$name/dd/out.log" &&
+  # rebuilds is reported only by a run that stayed decomposed to the end.
+  if [ "$ok" -eq 1 ] && grep -q 'rebuilds,' "$WORK/$name/dd/out.log" &&
      "$PYTHON" "$COMPARE" "$WORK/$name/ref/trajectory_out.xyz" "$WORK/$name/dd/trajectory_out.xyz" \
        --rtol "$RTOL" --atol "$ATOL"; then
     printf '    PASS  %s\n' "$(grep -a 'rebuilds,' "$WORK/$name/dd/out.log" | sed 's/^ *dd_type legacy: //')"
@@ -165,20 +177,180 @@ dd_grid_affinity = $affinity"
   fi
 }
 
-# refused <name> <ranks> <extra line>: the run must stop with a dd_ error.
-refused() {
-  local name=$1 ranks=$2 extra=$3
-  printf '== %s: refused ==\n' "$name"
-  mkdir -p "$WORK/$name"
-  ln -sf "$DATA/gap_files" "$WORK/$name/gap_files"
-  cp "$DATA/atoms_897.xyz" "$WORK/$name/atoms.xyz"
-  write_input "$WORK/$name" 0 "dd_type = legacy
-$extra"
-  if ! run_one "$WORK/$name" predict "$ranks" && grep -q 'ERROR: dd' "$WORK/$name/out.log"; then
-    printf '    PASS\n'
+# full_leg <name> <mode> <ranks> <atoms> <gap dir> <extra file or -> <input>:
+# like leg, for an input that is not the CO one; the input names its own
+# potential, which is linked in as gap_files.
+full_leg() {
+  local name=$1 mode=$2 ranks=$3 atoms=$4 gaps=$5 extra_file=$6 body=$7
+  printf '== %s: %s ranks, grid auto ==\n' "$name" "$ranks"
+  local ok=1 kind
+  for kind in ref dd; do
+    mkdir -p "$WORK/$name/$kind"
+    ln -sfn "$gaps" "$WORK/$name/$kind/gap_files"
+    cp "$atoms" "$WORK/$name/$kind/atoms.xyz"
+    [ "$extra_file" != - ] && ln -sf "$extra_file" "$WORK/$name/$kind/"
+    printf '%s\n' "$body" >"$WORK/$name/$kind/input"
+  done
+  printf 'dd_type = legacy\n' >>"$WORK/$name/dd/input"
+  run_one "$WORK/$name/ref" "$mode" "$ranks" || ok=0
+  run_one "$WORK/$name/dd" "$mode" "$ranks" || ok=0
+  if [ "$ok" -eq 1 ] && grep -q 'rebuilds,' "$WORK/$name/dd/out.log" &&
+     "$PYTHON" "$COMPARE" "$WORK/$name/ref/trajectory_out.xyz" "$WORK/$name/dd/trajectory_out.xyz" \
+       --rtol "$RTOL" --atol "$ATOL"; then
+    printf '    PASS  %s\n' "$(grep -a 'rebuilds,' "$WORK/$name/dd/out.log" | sed 's/^ *dd_type legacy: //')"
     pass=$((pass + 1))
   else
-    printf '    FAIL: ran, or stopped for another reason (log in %s)\n' "$WORK/$name"
+    printf '    FAIL (logs in %s)\n' "$WORK/$name"
+    tail -5 "$WORK/$name/dd/out.log" | sed 's/^/      /'
+    fail=$((fail + 1))
+  fi
+}
+
+# tile_water <out> <nx> <ny> <nz>: the first water frame of the dipole data,
+# repeated periodically. Its molecules are far apart, which is fine: the point
+# is a cell large enough to split, with the dipole model on.
+tile_water() {
+  "$PYTHON" - "$DATA_ROOT/water_dipole/water_dipole_tnep_converted_test.xyz" "$1" "$2" "$3" "$4" <<'EOF'
+import re
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+reps = [int(x) for x in sys.argv[3:6]]
+lines = open(src).read().splitlines()
+n = int(lines[0])
+lat = [float(x) for x in re.search(r'Lattice="([^"]*)"', lines[1]).group(1).split()]
+vec = [lat[0:3], lat[3:6], lat[6:9]]
+atoms = [l.split() for l in lines[2:2 + n]]
+out = []
+for i in range(reps[0]):
+    for j in range(reps[1]):
+        for k in range(reps[2]):
+            shift = [i * vec[0][d] + j * vec[1][d] + k * vec[2][d] for d in range(3)]
+            for a in atoms:
+                out.append(f"{a[0]} " + " ".join(f"{float(a[1 + d]) + shift[d]:.10f}" for d in range(3)))
+big = [v * r for row, r in zip(vec, reps) for v in row]
+head = f'Lattice="{" ".join(f"{x:.10f}" for x in big)}" Properties=species:S:1:pos:R:3 pbc="T T T"'
+open(dst, "w").write(f"{len(out)}\n{head}\n" + "\n".join(out) + "\n")
+EOF
+}
+
+# A two-peak IR spectrum, as tests/mad_ir/md_run.sh makes one.
+make_ir_exp() {
+  "$PYTHON" - "$1" <<'EOF'
+import math
+import sys
+
+with open(sys.argv[1], "w") as f:
+    nu = 0.0
+    while nu <= 4000.0:
+        f.write("%10.2f %16.8f\n" % (nu, math.exp(-((nu - 1600.0) / 60.0) ** 2)
+                                    + 0.8 * math.exp(-((nu - 3400.0) / 120.0) ** 2)))
+        nu += 2.0
+EOF
+}
+
+WATER_COMMON='atoms_file = "atoms.xyz"
+pot_file = "gap_files/water_dipole.gap"
+n_species = 2
+species = H O
+masses = 1.008 15.999
+e0 = 0. 0.
+random_seed = 12345
+write_xyz = 1'
+
+MADIR_INPUT="$WATER_COMMON
+soap_radial_legacy_filter = .false.
+md_nsteps = 40
+md_step = 1.0
+thermostat = none
+n_exp = 1
+exp_labels = ir
+exp_data_files = \"ir_exp.dat\"
+exp_energy_scales = 1.0e-6
+exp_forces = .true.
+exp_energies = .true.
+ir_stride = 1
+ir_nu_max = 4000.0
+ir_nu_min = 400.0
+ir_resolution = 3000.0
+ir_lag_factor = 2"
+
+ESTAT_INPUT='atoms_file = "atoms.xyz"
+pot_file = "gap_files/CCLi_estat_ljrep.gap"
+n_species = 2
+species = C Li
+masses = 12.01 6.94
+e0 = 0. 0.
+estat_method = "gsf"
+estat_rcut = 10.0
+estat_dsf_alpha = 0.12
+estat_damped = .true.
+estat_tsf = .true.
+estat_sp = .true.
+estat_gsf = .true.'
+
+XRD_COMMON='atoms_file = "atoms.xyz"
+pot_file = "gap_files/CO.gap"
+n_species = 2
+species = C O
+masses = 12.01 15.99
+e0 = -.16138053 0.
+n_exp = 1
+exp_labels = "xrd"
+exp_data_files = "xrd_glassy_carbon_zeng_2017.fq"
+exp_n_samples = 201
+exp_energy_scales = 100.0
+exp_energies = .true.
+exp_forces = .true.
+md_nsteps = 3
+thermostat = berendsen
+t_beg = 1000
+t_end = 1000
+random_seed = 12345
+write_xyz = 1
+q_range_min = 1.0
+q_range_max = 10.0
+xrd_output = "q*F(q)"
+do_xrd = .true.
+structure_factor_window = .true.'
+
+XRD_CHAIN="$XRD_COMMON
+do_pair_distribution = .true.
+pair_distribution_kde_sigma = 0.1
+pair_distribution_n_samples = 201
+pair_distribution_partial = .true.
+pair_distribution_rcut = 6.0
+r_range_min = 0.1
+r_range_max = 6.0
+do_structure_factor = .true.
+structure_factor_from_pdf = .true."
+
+XRD_DEBYE="$XRD_COMMON
+xrd_debye = .true.
+xrd_rcut = 6.0"
+
+# fallback <name> <ranks> <dd lines>: a decomposition the cell cannot take
+# must say so, run replicated, and match the replicated run.
+fallback() {
+  local name=$1 ranks=$2 dd_lines=$3
+  printf '== %s: falls back ==\n' "$name"
+  local kind
+  for kind in ref dd; do
+    mkdir -p "$WORK/$name/$kind"
+    ln -sf "$DATA/gap_files" "$WORK/$name/$kind/gap_files"
+    cp "$DATA/atoms_897.xyz" "$WORK/$name/$kind/atoms.xyz"
+  done
+  write_input "$WORK/$name/ref" 0
+  write_input "$WORK/$name/dd" 0 "dd_type = legacy
+$dd_lines"
+  if run_one "$WORK/$name/ref" predict "$ranks" && run_one "$WORK/$name/dd" predict "$ranks" &&
+     grep -q 'evaluat.* replicated' "$WORK/$name/dd/out.log" &&
+     "$PYTHON" "$COMPARE" "$WORK/$name/ref/trajectory_out.xyz" "$WORK/$name/dd/trajectory_out.xyz" \
+       --rtol "$RTOL" --atol "$ATOL"; then
+    printf '    PASS  %s\n' "$(grep -a -m1 'dd_type legacy:' "$WORK/$name/dd/out.log" | sed 's/^ *dd_type legacy: //')"
+    pass=$((pass + 1))
+  else
+    printf '    FAIL (logs in %s)\n' "$WORK/$name"
     fail=$((fail + 1))
   fi
 }
@@ -196,13 +368,23 @@ run_leg() {
   sheared) make_sheared "$WORK/sheared.xyz" && leg sheared "$WORK/sheared.xyz" 0 4 "2 1 2" ;;
   auto8) leg auto8 "$small" 0 8 auto ;;
   volume4) leg volume4 "$small" 0 4 "2 2 1" block "dd_balance = volume" ;;
-  slab4) make_slab "$WORK/slab.xyz" && leg slab4 "$WORK/slab.xyz" 0 4 "1 1 4" ;;
+  slab4) make_slab "$WORK/slab.xyz" 2 && leg slab4 "$WORK/slab.xyz" 0 4 "1 1 4" ;;
+  empty6) make_slab "$WORK/slab3.xyz" 3 && leg empty6 "$WORK/slab3.xyz" 3 6 "1 1 6" block "dd_balance = volume" ;;
   md8) leg md8 "$DATA/atoms_7176_vel.xyz" 5 8 "2 2 2" ;;
   md20) leg md20 "$DATA/atoms_7176_vel.xyz" 20 8 auto ;;
   md20_skin) leg md20_skin "$DATA/atoms_7176_vel.xyz" 20 8 auto block "neighbors_buffer = 0.01" ;;
-  narrow) refused narrow 4 "dd_grid = 4 1 1" ;;
-  vdw) refused vdw 2 "dd_grid = 2 1 1
-vdw_type = ts" ;;
+  narrow) fallback narrow 4 "dd_grid = 4 1 1" ;;
+  estat) full_leg estat predict 2 "$DATA_ROOT/C/atoms_24219.xyz" "$DATA_ROOT/CLi/gap_files" - "$ESTAT_INPUT" ;;
+  xrd_view) full_leg xrd_view md 4 "$DATA_ROOT/C/atoms_7176.xyz" "$DATA_ROOT/xrd_mad/gap_files" \
+    "$DATA_ROOT/xrd_mad/xrd_glassy_carbon_zeng_2017.fq" "$XRD_CHAIN" ;;
+  xrd_debye_view) full_leg xrd_debye_view md 4 "$DATA_ROOT/C/atoms_7176.xyz" "$DATA_ROOT/xrd_mad/gap_files" \
+    "$DATA_ROOT/xrd_mad/xrd_glassy_carbon_zeng_2017.fq" "$XRD_DEBYE" ;;
+  dipole) tile_water "$WORK/water222.xyz" 2 2 2 &&
+    full_leg dipole predict 8 "$WORK/water222.xyz" "$DATA_ROOT/water_dipole/gap_files" - "$WATER_COMMON" ;;
+  mad_ir) tile_water "$WORK/water221.xyz" 2 2 1 && make_ir_exp "$WORK/ir_exp.dat" &&
+    full_leg mad_ir md 4 "$WORK/water221.xyz" "$DATA_ROOT/water_dipole/gap_files" "$WORK/ir_exp.dat" "$MADIR_INPUT" ;;
+  vdw_ts) leg vdw_ts "$DATA/atoms_7176.xyz" 0 4 auto block "vdw_type = ts
+vdw_rcut = 6.0" ;;
   *) die "no such leg: $1" ;;
   esac
 }
@@ -217,7 +399,7 @@ fi
 
 pass=0
 fail=0
-legs=${*:-x2 x3 xy4 xyz8 one3 block4 cyclic6 sheared auto8 volume4 slab4 md8 md20 md20_skin narrow vdw}
+legs=${*:-x2 x3 xy4 xyz8 one3 block4 cyclic6 sheared auto8 volume4 slab4 md8 md20 md20_skin empty6 vdw_ts estat xrd_view xrd_debye_view dipole mad_ir narrow}
 for l in $legs; do
   run_leg "$l"
 done

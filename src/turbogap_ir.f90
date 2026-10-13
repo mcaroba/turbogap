@@ -39,6 +39,7 @@ module turbogap_ir
    use turbogap_structure, only: state_t
    use turbogap_results, only: results_t
    use turbogap_loop, only: loop_t
+   use turbogap_domain, only: domain_t, domain_n_total, domain_localize, domain_globalize
    use exp_utils, only: exp_dissimilarity, exp_dissim_ref, get_energy_scale
    use exp_interface, only: get_write_condition
    use mad_ir, only: CM_PER_INV_FS, mad_ir_state, mad_ir_collect, mad_ir_need_dmu, mad_ir_dmu_dr, &
@@ -251,13 +252,19 @@ contains
 
 !  Before the descriptors: set up on first use, and decide whether this step
 !  contributes a configuration, since get_soap must know before it builds.
-   subroutine ir_before_evaluate(ir, params, state, res, loop, comm)
+   subroutine ir_before_evaluate(ir, params, state, res, loop, comm, dom)
       type(ir_run_t), intent(inout) :: ir
       type(input_parameters), intent(inout) :: params
       type(state_t), intent(in) :: state
       type(results_t), intent(inout) :: res
       type(loop_t), intent(in) :: loop
       type(comm_t), intent(in) :: comm
+!     The IR arrays are per atom of the whole system; under a domain
+!     decomposition this rank holds only its domain's sites while evaluating.
+      type(domain_t), intent(in) :: dom
+      integer :: n_atoms
+
+      n_atoms = domain_n_total(dom, state)
 
 !           Decide here, before any descriptor is evaluated, whether this step
 !           contributes a configuration to the IR ensemble: get_soap has to be
@@ -288,7 +295,7 @@ contains
                                  trim(params%ir_estimator) /= "unbiased", &
                                  params%ir_taper_partial, params%ir_match_offset, &
                                  params%ir_weight_by_spacing, &
-                                 state%n_sites, ir%mad_ir_ok, ir%mad_ir_resumed, ir%mad_ir_msg, &
+                                 n_atoms, ir%mad_ir_ok, ir%mad_ir_resumed, ir%mad_ir_msg, &
                                  params%ir_acf_mode, params%ir_tau_mem)
             else
 !                    Prediction: the ensemble is the whole trajectory, so its
@@ -311,7 +318,7 @@ contains
                                          params%ir_window, params%ir_subtract_mean, &
                                          trim(params%ir_estimator) /= "unbiased", &
                                          params%ir_taper_partial, &
-                                         state%n_sites, ir%mad_ir_ok, ir%mad_ir_msg, &
+                                         n_atoms, ir%mad_ir_ok, ir%mad_ir_msg, &
                                          params%ir_acf_mode, params%ir_tau_mem)
             end if
             if (.not. ir%mad_ir_ok) then
@@ -359,7 +366,7 @@ contains
                   write (*, *) "       or leave ir_bias_mode at acf for a prediction run."
                   stop
                end if
-               call mad_ir_xl_setup(mad_ir_state, state%n_sites, params%ir_xl_n_modes, &
+               call mad_ir_xl_setup(mad_ir_state, n_atoms, params%ir_xl_n_modes, &
                                     params%md_step, params%ir_stride, &
                                     params%ir_xl_tau_mem, &
                                     trim(params%ir_xl_amplitude) == "coherent", &
@@ -429,7 +436,7 @@ contains
                   write (*, *) "       the bias off."
                   call turbogap_abort()
                end if
-               call ir_aux_setup(mad_ir_state, state%n_sites, params%md_step, params%ir_stride, &
+               call ir_aux_setup(mad_ir_state, n_atoms, params%md_step, params%ir_stride, &
                                  params%ir_aux_eff_mass, params%ir_aux_damping, &
                                  params%ir_aux_tau, params%ir_aux_gain, &
                                  params%ir_aux_eta_max, params%ir_aux_restart_file, &
@@ -490,6 +497,8 @@ contains
 !              gradient is contracted at, which is far below the bank's own
 !              time resolution. It is identically zero while the bank charges.
          if (mad_ir_xl_collect) mad_ir_xl_force = 0.d0
+!              The descriptor pass reads the weight by local site.
+         if (mad_ir_xl_collect) call domain_localize(dom, mad_ir_xl_site_w)
       end if
    end subroutine ir_before_evaluate
 
@@ -505,7 +514,7 @@ contains
 
 !  After the forces: push this frame's dipole, apply whichever bias the run
 !  asked for, and write the restart and spectrum files on their schedule.
-   subroutine ir_after_forces(ir, params, state, res, loop, comm, md_time, time3, write_condition, time)
+   subroutine ir_after_forces(ir, params, state, res, loop, comm, md_time, time3, write_condition, time, dom)
       type(ir_run_t), intent(inout) :: ir
       type(input_parameters), intent(inout) :: params
       type(state_t), intent(inout) :: state
@@ -516,8 +525,13 @@ contains
       real(dp), intent(in) :: time3
       logical, intent(inout) :: write_condition
       type(times_t), intent(inout) :: time
+      type(domain_t), intent(in) :: dom
 
       if ((params%valid_ir .or. params%do_ir) .and. mad_ir_collect) then
+!              Under a domain decomposition the descriptor pass summed these by
+!              local site; bring them to global order first.
+         if (mad_ir_need_dmu) call domain_globalize(dom, comm, mad_ir_dmu_dr)
+         if (mad_ir_xl_collect) call domain_globalize(dom, comm, mad_ir_xl_force)
 !              Nothing to reduce when no force is being formed from it.
          if (mad_ir_need_dmu) then
             call time_start(time%mpi)

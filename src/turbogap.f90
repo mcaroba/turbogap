@@ -123,7 +123,7 @@ program turbogap
 
    call ir_init(ir, params, comm)
 
-   call domain_configure(dom, comm, params, model, perform, mode)
+   call domain_configure(dom, comm, params)
 
    call time_end(time%setup)
 
