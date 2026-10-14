@@ -34,12 +34,21 @@
 #     MAD-IR bias it drives through 40 MD steps;
 #   - a grid too fine for the cell, which must fall back to replicated.
 #
+# Under dd_type rcb (TURBOGAP_DD_TYPE=rcb, as tests/rcb_dd/run.sh sets it)
+# the same legs run, a dd_grid giving only the number of domains, without the
+# fallback leg, since no cell is too narrow for it, and with legs of their
+# own: a cluster in vacuum, a pore, prime rank counts, and a droplet in thin
+# vapour integrated on the domains, where count and cost disagree and the boxes
+# must be redrawn by pair count.
+#
 # Environment:
 #   TURBOGAP_BIN        binary under test (default: <repo>/bin/turbogap)
 #   TURBOGAP_DATA_ROOT  directory holding the test systems (see ../data_root.sh)
 #   TURBOGAP_PYTHON     interpreter for the comparison
 #   TURBOGAP_KEEP       keep the staging directory for inspection
 #   TURBOGAP_RTOL, TURBOGAP_ATOL   comparison tolerances (default 1e-7 each)
+#   TURBOGAP_MD_ATOL    absolute tolerance of the MD legs (default 2e-6)
+#   TURBOGAP_DD_TYPE    legacy (default) or rcb
 #
 # Usage: run.sh [leg ...]      (no argument runs all of them)
 
@@ -61,8 +70,15 @@ COMPARE=$repo/tests/regression/compare_tol.py
 # Per-atom values are written to 8-10 significant digits; a reordered sum moves
 # the last of them. A device binary does not reproduce itself even replicated,
 # so it needs its own, looser, tolerance.
+DD_TYPE=${TURBOGAP_DD_TYPE:-legacy}
 RTOL=${TURBOGAP_RTOL:-1e-7}
 ATOL=${TURBOGAP_ATOL:-1e-7}
+# An MD frame's virial has components of 1e3-1e4 eV carrying ~1e-6 eV of
+# round-off, so a small off-diagonal one fails a relative test. Control: the
+# replicated run alone moves them by up to 1.2e-6 eV between 2 and 4 ranks
+# (integ_bussi's input), 4e-7 between 4 and 8 (md20_skin's) and 2e-7 between 3
+# and 6 (integ_empty's).
+MD_ATOL=${TURBOGAP_MD_ATOL:-2e-6}
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -93,6 +109,41 @@ lat = [float(x) for x in old.split()]
 lat[6:9] = [factor * x for x in lat[6:9]]
 lines[1] = lines[1].replace(old, " ".join(f"{x:.10f}" for x in lat))
 open(dst, "w").write("\n".join(lines) + "\n")
+EOF
+}
+
+# make_sphere <out> <keep> <radius>: the 7176-atom cell with velocities, keeping
+# the atoms inside (keep = in) or outside (out) a sphere of radius times the
+# shortest cell edge about the centre, or (vapour) all those inside a sphere a
+# quarter of the way along a and every eighth of the rest: a droplet to one
+# side, whose vapour atoms have few neighbours.
+make_sphere() {
+  "$PYTHON" - "$DATA/atoms_7176_vel.xyz" "$1" "$2" "$3" <<'EOF'
+import re
+import sys
+
+src, dst, keep, radius = sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4])
+lines = open(src).read().splitlines()
+n = int(lines[0])
+lat = [float(x) for x in re.search(r'Lattice="([^"]*)"', lines[1]).group(1).split()]
+box = [lat[0], lat[4], lat[8]]
+r = radius * min(box)
+centre = [b / 2 for b in box]
+if keep == "vapour":
+    centre[0] = box[0] / 4
+out = []
+n_outside = 0
+for line in lines[2:2 + n]:
+    x = [float(v) for v in line.split()[1:4]]
+    inside = sum(((x[k] - centre[k] + box[k] / 2) % box[k] - box[k] / 2) ** 2 for k in range(3)) < r * r
+    if not inside:
+        n_outside += 1
+    if keep == "vapour":
+        if inside or n_outside % 8 == 0:
+            out.append(line)
+    elif inside == (keep == "in"):
+        out.append(line)
+open(dst, "w").write(f"{len(out)}\n{lines[1]}\n" + "\n".join(out) + "\n")
 EOF
 }
 
@@ -149,12 +200,13 @@ run_one() {
 #     [extra lines for the decomposed run only]
 leg() {
   local name=$1 atoms=$2 steps=$3 ranks=$4 grid=$5 affinity=${6:-block} extra=${7:-} dd_extra=${8:-}
-  local mode=predict grid_line=""
-  [ "$steps" -gt 0 ] && mode=md
+  local mode=predict grid_line="" atol=$ATOL
+  [ "$steps" -gt 0 ] && mode=md && atol=$MD_ATOL
   [ "$grid" != auto ] && grid_line="dd_grid = $grid"
   printf '== %s: %s ranks, grid %s, %s ==\n' "$name" "$ranks" "$grid" "$affinity"
 
   local ok=1 kind
+  last_ok=0
   for kind in ref dd; do
     mkdir -p "$WORK/$name/$kind"
     ln -sf "$DATA/gap_files" "$WORK/$name/$kind/gap_files"
@@ -162,7 +214,7 @@ leg() {
   done
   write_input "$WORK/$name/ref" "$steps" "$extra"
   write_input "$WORK/$name/dd" "$steps" "$extra
-dd_type = legacy
+dd_type = $DD_TYPE
 $grid_line
 dd_grid_affinity = $affinity
 $dd_extra"
@@ -172,9 +224,10 @@ $dd_extra"
   # rebuilds is reported only by a run that stayed decomposed to the end.
   if [ "$ok" -eq 1 ] && grep -q 'rebuilds,' "$WORK/$name/dd/out.log" &&
      "$PYTHON" "$COMPARE" "$WORK/$name/ref/trajectory_out.xyz" "$WORK/$name/dd/trajectory_out.xyz" \
-       --rtol "$RTOL" --atol "$ATOL"; then
-    printf '    PASS  %s\n' "$(grep -a 'rebuilds,' "$WORK/$name/dd/out.log" | sed 's/^ *dd_type legacy: //')"
+       --rtol "$RTOL" --atol "$atol"; then
+    printf '    PASS  %s\n' "$(grep -a 'rebuilds,' "$WORK/$name/dd/out.log" | sed 's/^ *dd_type [a-z]*: //')"
     pass=$((pass + 1))
+    last_ok=1
   else
     printf '    FAIL (logs in %s)\n' "$WORK/$name"
     tail -5 "$WORK/$name/dd/out.log" | sed 's/^/      /'
@@ -188,7 +241,9 @@ $dd_extra"
 full_leg() {
   local name=$1 mode=$2 ranks=$3 atoms=$4 gaps=$5 extra_file=$6 body=$7
   printf '== %s: %s ranks, grid auto ==\n' "$name" "$ranks"
-  local ok=1 kind
+  local ok=1 kind atol=$ATOL
+  [ "$mode" = md ] && atol=$MD_ATOL
+  last_ok=0
   for kind in ref dd; do
     mkdir -p "$WORK/$name/$kind"
     ln -sfn "$gaps" "$WORK/$name/$kind/gap_files"
@@ -196,14 +251,15 @@ full_leg() {
     [ "$extra_file" != - ] && ln -sf "$extra_file" "$WORK/$name/$kind/"
     printf '%s\n' "$body" >"$WORK/$name/$kind/input"
   done
-  printf 'dd_type = legacy\n' >>"$WORK/$name/dd/input"
+  printf 'dd_type = %s\n' "$DD_TYPE" >>"$WORK/$name/dd/input"
   run_one "$WORK/$name/ref" "$mode" "$ranks" || ok=0
   run_one "$WORK/$name/dd" "$mode" "$ranks" || ok=0
   if [ "$ok" -eq 1 ] && grep -q 'rebuilds,' "$WORK/$name/dd/out.log" &&
      "$PYTHON" "$COMPARE" "$WORK/$name/ref/trajectory_out.xyz" "$WORK/$name/dd/trajectory_out.xyz" \
-       --rtol "$RTOL" --atol "$ATOL"; then
-    printf '    PASS  %s\n' "$(grep -a 'rebuilds,' "$WORK/$name/dd/out.log" | sed 's/^ *dd_type legacy: //')"
+       --rtol "$RTOL" --atol "$atol"; then
+    printf '    PASS  %s\n' "$(grep -a 'rebuilds,' "$WORK/$name/dd/out.log" | sed 's/^ *dd_type [a-z]*: //')"
     pass=$((pass + 1))
+    last_ok=1
   else
     printf '    FAIL (logs in %s)\n' "$WORK/$name"
     tail -5 "$WORK/$name/dd/out.log" | sed 's/^/      /'
@@ -341,12 +397,23 @@ integ() {
   local name=$1 atoms=$2 steps=$3 ranks=$4 extra=$5 expect=${6:-domain}
   leg "$name" "$atoms" "$steps" "$ranks" auto block "$extra" "dd_integrate = domain"
   local log=$WORK/$name/dd/out.log
+  [ "$last_ok" -eq 1 ] || return 0
   if [ "$expect" = domain ] && ! grep -q 'integrated on the domains' "$log"; then
     printf '    FAIL: did not integrate on the domains\n'
     pass=$((pass - 1))
     fail=$((fail + 1))
   elif [ "$expect" = rank0 ] && ! grep -q 'is integrated on rank 0' "$log"; then
     printf '    FAIL: no note that it integrated on rank 0\n'
+    pass=$((pass - 1))
+    fail=$((fail + 1))
+  fi
+}
+
+# redrawn <name>: the leg's rcb run must have redrawn its boxes by pair count.
+redrawn() {
+  [ "$last_ok" -eq 1 ] || return 0
+  if ! grep -Eq 'boxes redrawn by pair count at rebuilds: [1-9]' "$WORK/$1/dd/out.log"; then
+    printf '    FAIL: the boxes were never redrawn\n'
     pass=$((pass - 1))
     fail=$((fail + 1))
   fi
@@ -370,7 +437,7 @@ $dd_lines"
      grep -q 'evaluat.* replicated' "$WORK/$name/dd/out.log" &&
      "$PYTHON" "$COMPARE" "$WORK/$name/ref/trajectory_out.xyz" "$WORK/$name/dd/trajectory_out.xyz" \
        --rtol "$RTOL" --atol "$ATOL"; then
-    printf '    PASS  %s\n' "$(grep -a -m1 'dd_type legacy:' "$WORK/$name/dd/out.log" | sed 's/^ *dd_type legacy: //')"
+    printf '    PASS  %s\n' "$(grep -a -m1 'dd_type legacy:' "$WORK/$name/dd/out.log" | sed 's/^ *dd_type [a-z]*: //')"
     pass=$((pass + 1))
   else
     printf '    FAIL (logs in %s)\n' "$WORK/$name"
@@ -418,6 +485,12 @@ tau_t = 100." rank0 ;;
     full_leg mad_ir md 4 "$WORK/water221.xyz" "$DATA_ROOT/water_dipole/gap_files" "$WORK/ir_exp.dat" "$MADIR_INPUT" ;;
   vdw_ts) leg vdw_ts "$DATA/atoms_7176.xyz" 0 4 auto block "vdw_type = ts
 vdw_rcut = 6.0" ;;
+  prime5) leg prime5 "$DATA/atoms_7176.xyz" 0 5 auto ;;
+  prime7) leg prime7 "$DATA/atoms_7176_vel.xyz" 10 7 auto ;;
+  cluster) make_sphere "$WORK/cluster.xyz" in 0.42 && leg cluster "$WORK/cluster.xyz" 0 8 auto ;;
+  pore) make_sphere "$WORK/pore.xyz" out 0.35 && leg pore "$WORK/pore.xyz" 0 6 auto ;;
+  integ_droplet) make_sphere "$WORK/droplet.xyz" vapour 0.3 &&
+    integ integ_droplet "$WORK/droplet.xyz" 20 8 "neighbors_buffer = 0.01" && redrawn integ_droplet ;;
   *) die "no such leg: $1" ;;
   esac
 }
@@ -432,7 +505,14 @@ fi
 
 pass=0
 fail=0
-legs=${*:-x2 x3 xy4 xyz8 one3 block4 cyclic6 sheared auto8 volume4 slab4 md8 md20 md20_skin integ8 integ_bussi integ_nve integ_skin integ_empty integ_gle empty6 vdw_ts estat xrd_view xrd_debye_view dipole mad_ir narrow}
+last_ok=0
+common="x2 x3 xy4 xyz8 one3 block4 cyclic6 sheared auto8 volume4 slab4 md8 md20 md20_skin integ8 integ_bussi
+integ_nve integ_skin integ_empty integ_gle empty6 vdw_ts estat xrd_view xrd_debye_view dipole mad_ir"
+if [ "$DD_TYPE" = rcb ]; then
+  legs=${*:-$common prime5 prime7 cluster pore integ_droplet}
+else
+  legs=${*:-$common narrow}
+fi
 for l in $legs; do
   run_leg "$l"
 done

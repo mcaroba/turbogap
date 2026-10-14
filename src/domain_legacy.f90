@@ -41,6 +41,13 @@
 !  domain the new positions of the atoms it already holds, as the replicated
 !  mode refreshes its neighbour list between rebuilds.
 !
+!  dd_type rcb replaces the grid by recursive coordinate bisection, weighted
+!  by each atom's pair count (rcb_partition): the domains are boxes of any
+!  shape and number, so a cluster, a pore or a prime rank count balance too.
+!  Each root sends its partners, the domains whose boxes come within rcut of
+!  its own, the atoms they need directly (rcb_halos), so forward and reverse
+!  are one exchange each, and a migrating atom goes straight to its owner.
+!
 !  Atoms travel as REC_ATOM doubles: global index, species, position, and the
 !  eight characters of the xyz species moved bit for bit.
 module domain_legacy
@@ -48,7 +55,7 @@ module domain_legacy
    use kinds, only: dp
    use turbogap_comm, only: comm_t, comm_split, comm_free, comm_cart_create, comm_cart_shift, &
                             comm_cart_coords, comm_cart_rank, comm_sendrecv, comm_scatterv, comm_gatherv, &
-                            comm_gather, comm_bcast, comm_sum_all
+                            comm_gather, comm_bcast, comm_sum_all, comm_max_all, comm_alltoall, comm_exchange
    use error, only: turbogap_abort
    use timing, only: time_start, time_end
 
@@ -76,6 +83,11 @@ module domain_legacy
 !   and the displacement since the last neighbour build (3).
    integer, parameter, public :: REC_DYN = 22
    integer, parameter :: BINS_PER_SLAB = 256
+!   RCB: histogram bins per pass of a bisection (two passes, so a cut is
+!   placed to 1/RCB_BINS**2 of its box), and how far the heaviest domain may
+!   outweigh the average before the cuts are moved at a rebuild.
+   integer, parameter :: RCB_BINS = 32
+   real(dp), parameter :: RCB_TOLERANCE = 1.05d0
    integer, parameter :: DOWN = 1
    integer, parameter :: UP = 2
 
@@ -128,6 +140,25 @@ module domain_legacy
       integer, allocatable :: all_ids(:)
       integer, allocatable :: local_counts(:)
       integer, allocatable :: local_displs(:)
+!     dd_type rcb. Every root holds every domain's box in fractional
+!     coordinates and the tree that finds an atom's owner: node_child(side, k)
+!     is the next node, or minus the domain at a leaf.
+      logical :: rcb = .false.
+      integer :: n_rebalances = 0
+      integer :: n_nodes = 0
+      real(dp), allocatable :: box_lo(:, :)
+      real(dp), allocatable :: box_hi(:, :)
+      integer, allocatable :: node_axis(:)
+      real(dp), allocatable :: node_cut(:)
+      integer, allocatable :: node_child(:, :)
+!     The halo plan, per partner (a roots rank): the owned sites sent to it,
+!     send_idx(send_off(p-1)+1:send_off(p)), and the local site each one it
+!     sends lands on, land(recv_off(p-1)+1:recv_off(p)), 0 for a duplicate.
+      integer, allocatable :: partners(:)
+      integer, allocatable :: send_off(:)
+      integer, allocatable :: send_idx(:)
+      integer, allocatable :: recv_off(:)
+      integer, allocatable :: land(:)
    end type legacy_dd_t
 
 contains
@@ -136,12 +167,13 @@ contains
 !  cyclic deals them out round-robin. grid = 0 0 0 asks for one domain per rank,
 !  laid out by legacy_auto_grid once the cell is known; any other grid is laid
 !  out now.
-   subroutine legacy_init(ld, world, grid, affinity, balance)
+   subroutine legacy_init(ld, world, grid, affinity, balance, rcb)
       type(legacy_dd_t), intent(inout) :: ld
       type(comm_t), intent(in) :: world
       integer, intent(in) :: grid(1:3)
       character(len=*), intent(in) :: affinity
       character(len=*), intent(in) :: balance
+      logical, intent(in) :: rcb
       integer :: color
       integer :: per_domain
 
@@ -185,7 +217,13 @@ contains
       else
          call comm_split(world, -1, world%rank, ld%root_split)
       end if
-      if (.not. all(grid == 0)) call legacy_make_grid(ld, world, grid)
+      ld%rcb = rcb
+      if (rcb) then
+         ld%roots = ld%root_split
+         ld%grid_ready = .true.
+      else if (.not. all(grid == 0)) then
+         call legacy_make_grid(ld, world, grid)
+      end if
    end subroutine legacy_init
 
 !  Lay the roots out as a periodic grid. Collective over world.
@@ -282,7 +320,7 @@ contains
       type(legacy_dd_t), intent(inout) :: ld
 
       if (.not. ld%active) return
-      if (ld%grid_ready .and. ld%local%rank == 0) call comm_free(ld%roots)
+      if (ld%grid_ready .and. ld%local%rank == 0 .and. .not. ld%rcb) call comm_free(ld%roots)
       call comm_free(ld%root_split)
       call comm_free(ld%local)
       if (allocated(ld%rank_of)) deallocate (ld%rank_of)
@@ -290,6 +328,8 @@ contains
       if (allocated(ld%all_ids)) deallocate (ld%all_ids, ld%local_counts, ld%local_displs)
       if (allocated(ld%ids)) deallocate (ld%ids)
       if (allocated(ld%slot)) deallocate (ld%slot)
+      if (allocated(ld%box_lo)) deallocate (ld%box_lo, ld%box_hi, ld%node_axis, ld%node_cut, ld%node_child)
+      if (allocated(ld%partners)) deallocate (ld%partners, ld%send_off, ld%send_idx, ld%recv_off, ld%land)
    end subroutine legacy_free
 
 !  Rows of the inverse cell, so recip . r is the fractional coordinate.
@@ -439,6 +479,7 @@ contains
 
       call reciprocal_rows(a_box, b_box, c_box, recip)
       ok = .true.
+      if (ld%rcb) return
       do axis = 1, 3
          if (ld%grid(axis) == 1) cycle
          if (1.d0/norm2(recip(axis, 1:3))/dble(ld%grid(axis)) < rcut) ok = .false.
@@ -530,7 +571,11 @@ contains
       if (ld%local%rank == 0) then
          call build_slots(ld, rec)
          call time_start(t_halo, "dd_halo")
-         call exchange_halos(ld, recip, rcut, rec)
+         if (ld%rcb) then
+            call rcb_halos(ld, recip, rcut, rec)
+         else
+            call exchange_halos(ld, recip, rcut, rec)
+         end if
          call time_end(t_halo, "dd_halo")
          sizes = [ld%n_owned, ld%n_local]
       end if
@@ -682,14 +727,22 @@ contains
 
       allocate (counts(1:ld%n_domains))
       allocate (displs(1:ld%n_domains))
-      if (world%rank == 0) call balance_cuts(ld, positions, n_global, recip, rcut)
-      call comm_bcast(ld%roots, ld%cuts, size(ld%cuts))
+      if (ld%rcb) then
+         call rcb_from_rank0(ld, world, positions, n_global, recip)
+      else
+         if (world%rank == 0) call balance_cuts(ld, positions, n_global, recip, rcut)
+         call comm_bcast(ld%roots, ld%cuts, size(ld%cuts))
+      end if
       if (world%rank == 0) then
          allocate (domain(1:n_global))
          counts = 0
          do i = 1, n_global
-            c = legacy_cell(legacy_frac(recip, positions(1:3, i)), ld%grid, ld%cuts)
-            domain(i) = ld%rank_of(c(1), c(2), c(3)) + 1
+            if (ld%rcb) then
+               domain(i) = rcb_owner(ld, legacy_frac(recip, positions(1:3, i)))
+            else
+               c = legacy_cell(legacy_frac(recip, positions(1:3, i)), ld%grid, ld%cuts)
+               domain(i) = ld%rank_of(c(1), c(2), c(3)) + 1
+            end if
             counts(domain(i)) = counts(domain(i)) + 1
          end do
          displs(1) = 0
@@ -828,14 +881,16 @@ contains
 !  changed moves to the neighbour on the way, one axis at a time, until none
 !  is left to move. An atom more than one domain away moves one hop per pass.
 !  dyn(:, i) is owned atom i, REC_DYN fields; on return it holds this domain's
-!  new owned atoms and ld%n_owned their number.
-   subroutine legacy_migrate(ld, dyn, a_box, b_box, c_box, rcut)
+!  new owned atoms and ld%n_owned their number. weights(i), its pair count,
+!  is what dd_type rcb balances.
+   subroutine legacy_migrate(ld, dyn, a_box, b_box, c_box, rcut, weights)
       type(legacy_dd_t), intent(inout) :: ld
       real(dp), allocatable, intent(inout) :: dyn(:, :)
       real(dp), intent(in) :: a_box(1:3)
       real(dp), intent(in) :: b_box(1:3)
       real(dp), intent(in) :: c_box(1:3)
       real(dp), intent(in) :: rcut
+      real(dp), intent(in) :: weights(:)
       real(dp), allocatable :: hist(:, :)
       real(dp), allocatable :: send(:, :)
       real(dp), allocatable :: keep(:, :)
@@ -854,6 +909,10 @@ contains
       integer :: k
 
       call reciprocal_rows(a_box, b_box, c_box, recip)
+      if (ld%rcb) then
+         call rcb_migrate(ld, dyn, recip, weights)
+         return
+      end if
       if (ld%balance_count) then
          call coordinate_histograms(ld, dyn(3:5, :), ld%n_owned, recip, hist)
          call comm_sum_all(ld%roots, hist, size(hist))
@@ -977,6 +1036,10 @@ contains
       integer :: i
       integer :: j
 
+      if (ld%rcb) then
+         call rcb_forward(ld, values)
+         return
+      end if
       nv = size(values, 1)
       do axis = 1, 3
          if (ld%grid(axis) == 1) cycle
@@ -1025,6 +1088,10 @@ contains
       integer :: j
       integer :: k
 
+      if (ld%rcb) then
+         call rcb_reverse(ld, values)
+         return
+      end if
       nv = size(values, 1)
       do axis = 3, 1, -1
          if (ld%grid(axis) == 1) cycle
@@ -1101,5 +1168,604 @@ contains
          end do
       end if
    end subroutine legacy_gather
+
+!  Rank 0 holds every atom: the boxes are drawn over them, weighted by count.
+!  Collective over the roots.
+   subroutine rcb_from_rank0(ld, world, positions, n_global, recip)
+      type(legacy_dd_t), intent(inout) :: ld
+      type(comm_t), intent(in) :: world
+      real(dp), intent(in) :: positions(:, :)
+      integer, intent(in) :: n_global
+      real(dp), intent(in) :: recip(1:3, 1:3)
+      real(dp), allocatable :: s(:, :)
+      real(dp), allocatable :: w(:)
+      integer :: n
+      integer :: i
+
+      n = 0
+      if (world%rank == 0) n = n_global
+      allocate (s(1:3, 1:max(n, 1)), w(1:max(n, 1)))
+      do i = 1, n
+         s(1:3, i) = legacy_frac(recip, positions(1:3, i))
+      end do
+      w = 1.d0
+      call rcb_partition(ld, s, w, n, recip, .false.)
+   end subroutine rcb_from_rank0
+
+!  Recursive coordinate bisection over the n atoms this root holds, at
+!  fractional s with whole-number weights w. A box shared by several domains
+!  is cut across its atoms' longest extent so that each side's weight is in
+!  proportion to its domains. The weights are summed exactly, so every root
+!  draws the same tree. With keep_axes the tree's axes stay and only its cuts
+!  move, so the boxes shift rather than reshuffle and few atoms migrate.
+!  Collective over the roots.
+   subroutine rcb_partition(ld, s, w, n, recip, keep_axes)
+      type(legacy_dd_t), intent(inout) :: ld
+      real(dp), intent(in) :: s(:, :)
+      real(dp), intent(in) :: w(:)
+      integer, intent(in) :: n
+      real(dp), intent(in) :: recip(1:3, 1:3)
+      logical, intent(in) :: keep_axes
+!     A box being cut: lo(3), hi(3); and its domains, first domain, parent
+!     node and side of the parent.
+      real(dp), allocatable :: box(:, :)
+      integer, allocatable :: tag(:, :)
+      real(dp), allocatable :: new_box(:, :)
+      integer, allocatable :: new_tag(:, :)
+      real(dp), allocatable :: ext(:, :)
+      real(dp), allocatable :: span(:, :)
+      integer, allocatable :: axis_of(:)
+      integer, allocatable :: n_dom_of(:)
+      integer, allocatable :: old_axis(:)
+      real(dp), allocatable :: cut_of(:)
+      integer, allocatable :: left_of(:)
+      integer, allocatable :: leaf(:)
+      real(dp) :: width(1:3)
+      real(dp) :: blo(1:3)
+      real(dp) :: bhi(1:3)
+      logical :: keep
+      integer :: n_split
+      integer :: n_boxes
+      integer :: n_new
+      integer :: n_dom
+      integer :: n1
+      integer :: axis
+      integer :: k
+      integer :: i
+      integer :: d
+
+      do axis = 1, 3
+         width(axis) = 1.d0/norm2(recip(axis, 1:3))
+      end do
+      n_dom = ld%n_domains
+      keep = keep_axes .and. ld%n_nodes == n_dom - 1 .and. n_dom > 1
+      if (keep) old_axis = ld%node_axis(1:ld%n_nodes)
+      if (allocated(ld%box_lo)) deallocate (ld%box_lo, ld%box_hi, ld%node_axis, ld%node_cut, ld%node_child)
+      allocate (ld%box_lo(1:3, 1:n_dom), ld%box_hi(1:3, 1:n_dom))
+      allocate (ld%node_axis(1:max(n_dom - 1, 1)), ld%node_cut(1:max(n_dom - 1, 1)))
+      allocate (ld%node_child(1:2, 1:max(n_dom - 1, 1)))
+      ld%n_nodes = 0
+
+      n_boxes = 1
+      allocate (box(1:6, 1:1), tag(1:4, 1:1))
+      box(1:3, 1) = 0.d0
+      box(4:6, 1) = 1.d0
+      tag(1:4, 1) = [n_dom, 1, 0, 0]
+      allocate (leaf(1:max(n, 1)))
+      leaf = 1
+
+      do while (n_boxes > 0)
+!        Each box's atoms' extent, as maxima of s and of -s.
+         allocate (ext(1:6, 1:n_boxes))
+         ext = -huge(1.d0)
+         do i = 1, n
+            k = leaf(i)
+            if (k == 0) cycle
+            ext(1:3, k) = max(ext(1:3, k), s(1:3, i))
+            ext(4:6, k) = max(ext(4:6, k), -s(1:3, i))
+         end do
+         call comm_max_all(ld%roots, ext, 6*n_boxes)
+
+         allocate (axis_of(1:n_boxes), span(1:2, 1:n_boxes), cut_of(1:n_boxes), left_of(1:n_boxes))
+         axis_of = 0
+         n_split = 0
+         do k = 1, n_boxes
+            if (tag(1, k) == 1) cycle
+            n_split = n_split + 1
+            if (ext(1, k) >= -ext(4, k)) then
+               blo = -ext(4:6, k)
+               bhi = ext(1:3, k)
+            else
+               blo = box(1:3, k)
+               bhi = box(4:6, k)
+            end if
+!           Nodes are made box by box, level by level, so the tree being
+!           redrawn numbers them the same way.
+            if (keep) then
+               axis_of(k) = old_axis(ld%n_nodes + n_split)
+            else
+               axis_of(k) = maxloc((bhi - blo)*width, 1)
+            end if
+            span(1:2, k) = [blo(axis_of(k)), bhi(axis_of(k))]
+         end do
+         n_dom_of = tag(1, 1:n_boxes)
+         call rcb_cuts(ld, s, w, n, leaf, axis_of, n_dom_of, span, cut_of)
+
+         n_new = 2*count(axis_of > 0)
+         allocate (new_box(1:6, 1:max(n_new, 1)), new_tag(1:4, 1:max(n_new, 1)))
+         n_new = 0
+         do k = 1, n_boxes
+            if (axis_of(k) == 0) then
+               d = tag(2, k)
+               ld%box_lo(1:3, d) = box(1:3, k)
+               ld%box_hi(1:3, d) = box(4:6, k)
+               if (tag(3, k) > 0) ld%node_child(tag(4, k), tag(3, k)) = -d
+               cycle
+            end if
+            axis = axis_of(k)
+            n1 = tag(1, k)/2
+            if (cut_of(k) < 0.d0) cut_of(k) = 0.5d0*(box(axis, k) + box(3 + axis, k))
+            cut_of(k) = min(max(cut_of(k), box(axis, k)), box(3 + axis, k))
+
+            ld%n_nodes = ld%n_nodes + 1
+            ld%node_axis(ld%n_nodes) = axis
+            ld%node_cut(ld%n_nodes) = cut_of(k)
+            if (tag(3, k) > 0) ld%node_child(tag(4, k), tag(3, k)) = ld%n_nodes
+
+            left_of(k) = n_new + 1
+            new_box(1:6, n_new + 1) = box(1:6, k)
+            new_box(3 + axis, n_new + 1) = cut_of(k)
+            new_tag(1:4, n_new + 1) = [n1, tag(2, k), ld%n_nodes, 1]
+            new_box(1:6, n_new + 2) = box(1:6, k)
+            new_box(axis, n_new + 2) = cut_of(k)
+            new_tag(1:4, n_new + 2) = [tag(1, k) - n1, tag(2, k) + n1, ld%n_nodes, 2]
+            n_new = n_new + 2
+         end do
+
+         do i = 1, n
+            k = leaf(i)
+            if (k == 0) cycle
+            if (axis_of(k) == 0) then
+               leaf(i) = 0
+            else if (s(axis_of(k), i) < cut_of(k)) then
+               leaf(i) = left_of(k)
+            else
+               leaf(i) = left_of(k) + 1
+            end if
+         end do
+
+         deallocate (ext, axis_of, span, cut_of, left_of, box, tag)
+         call move_alloc(new_box, box)
+         call move_alloc(new_tag, tag)
+         n_boxes = n_new
+      end do
+   end subroutine rcb_partition
+
+!  Where each box being split (axis_of > 0) is cut along its axis so the weight
+!  below is n_dom_of/2 of n_dom_of parts: a histogram over the atoms' span
+!  finds the bin, a second over that bin the place within it. -1 for a box
+!  with no weight. Collective over the roots.
+   subroutine rcb_cuts(ld, s, w, n, leaf, axis_of, n_dom_of, span, cut_of)
+      type(legacy_dd_t), intent(in) :: ld
+      real(dp), intent(in) :: s(:, :)
+      real(dp), intent(in) :: w(:)
+      integer, intent(in) :: n
+      integer, intent(in) :: leaf(:)
+      integer, intent(in) :: axis_of(:)
+      integer, intent(in) :: n_dom_of(:)
+      real(dp), intent(in) :: span(:, :)
+      real(dp), intent(out) :: cut_of(:)
+      real(dp), allocatable :: hist(:, :)
+      real(dp), allocatable :: fine(:, :)
+      real(dp), allocatable :: target(:)
+      real(dp), allocatable :: below(:)
+      integer, allocatable :: coarse(:)
+      real(dp) :: dx
+      real(dp) :: f
+      integer :: n_boxes
+      integer :: k
+      integer :: i
+      integer :: b
+
+      n_boxes = size(axis_of)
+      allocate (hist(1:RCB_BINS, 1:n_boxes), fine(1:RCB_BINS, 1:n_boxes))
+      allocate (target(1:n_boxes), below(1:n_boxes), coarse(1:n_boxes))
+      hist = 0.d0
+      do i = 1, n
+         k = leaf(i)
+         if (k == 0) cycle
+         if (axis_of(k) == 0) cycle
+         b = rcb_bin(s(axis_of(k), i), span(1:2, k))
+         hist(b, k) = hist(b, k) + w(i)
+      end do
+      call comm_sum_all(ld%roots, hist, RCB_BINS*n_boxes)
+
+!     The coarse bin holding the cut, and the weight below it.
+      coarse = 0
+      below = 0.d0
+      do k = 1, n_boxes
+         if (axis_of(k) == 0) cycle
+         target(k) = sum(hist(1:RCB_BINS, k))*dble(n_dom_of(k)/2)/dble(n_dom_of(k))
+         do while (coarse(k) < RCB_BINS - 1 .and. below(k) + hist(coarse(k) + 1, k) <= target(k))
+            coarse(k) = coarse(k) + 1
+            below(k) = below(k) + hist(coarse(k), k)
+         end do
+      end do
+
+      fine = 0.d0
+      do i = 1, n
+         k = leaf(i)
+         if (k == 0) cycle
+         if (axis_of(k) == 0) cycle
+         if (rcb_bin(s(axis_of(k), i), span(1:2, k)) /= coarse(k) + 1) cycle
+         dx = (span(2, k) - span(1, k))/dble(RCB_BINS)
+         b = rcb_bin(s(axis_of(k), i), [span(1, k) + dble(coarse(k))*dx, span(1, k) + dble(coarse(k) + 1)*dx])
+         fine(b, k) = fine(b, k) + w(i)
+      end do
+      call comm_sum_all(ld%roots, fine, RCB_BINS*n_boxes)
+
+      cut_of = -1.d0
+      do k = 1, n_boxes
+         if (axis_of(k) == 0) cycle
+         if (sum(hist(1:RCB_BINS, k)) <= 0.d0 .or. span(2, k) <= span(1, k)) cycle
+         b = 0
+         do while (b < RCB_BINS .and. below(k) + fine(min(b + 1, RCB_BINS), k) <= target(k))
+            b = b + 1
+            below(k) = below(k) + fine(b, k)
+         end do
+         f = 0.d0
+         if (b < RCB_BINS) then
+            if (fine(b + 1, k) > 0.d0) f = (target(k) - below(k))/fine(b + 1, k)
+         end if
+         dx = (span(2, k) - span(1, k))/dble(RCB_BINS)
+         cut_of(k) = span(1, k) + dble(coarse(k))*dx + (dble(b) + f)/dble(RCB_BINS)*dx
+      end do
+   end subroutine rcb_cuts
+
+!  The histogram bin of coordinate x over span(1):span(2).
+   pure integer function rcb_bin(x, span) result(b)
+      real(dp), intent(in) :: x
+      real(dp), intent(in) :: span(1:2)
+
+      b = 1
+      if (span(2) > span(1)) b = min(RCB_BINS, max(1, 1 + int((x - span(1))/(span(2) - span(1))*dble(RCB_BINS))))
+   end function rcb_bin
+
+!  The domain whose box holds fractional coordinate s.
+   pure integer function rcb_owner(ld, s) result(d)
+      type(legacy_dd_t), intent(in) :: ld
+      real(dp), intent(in) :: s(1:3)
+      integer :: k
+      integer :: c
+
+      d = 1
+      if (ld%n_nodes == 0) return
+      k = 1
+      do
+         if (s(ld%node_axis(k)) < ld%node_cut(k)) then
+            c = ld%node_child(1, k)
+         else
+            c = ld%node_child(2, k)
+         end if
+         if (c < 0) then
+            d = -c
+            return
+         end if
+         k = c
+      end do
+   end function rcb_owner
+
+!  Do the boxes of domains d1 < d2 come within w of each other along every
+!  axis of the periodic cell? Always asked with the lower domain first, so
+!  both sides of a pair reach the same answer.
+   pure logical function rcb_boxes_meet(ld, d1, d2, w) result(yes)
+      type(legacy_dd_t), intent(in) :: ld
+      integer, intent(in) :: d1
+      integer, intent(in) :: d2
+      real(dp), intent(in) :: w(1:3)
+      real(dp) :: l1
+      real(dp) :: l2
+      real(dp) :: d
+      integer :: a
+
+      yes = .false.
+      do a = 1, 3
+         l1 = ld%box_hi(a, d1) - ld%box_lo(a, d1)
+         l2 = ld%box_hi(a, d2) - ld%box_lo(a, d2)
+         if (l1 + l2 + 2.d0*w(a) >= 1.d0) cycle
+         d = modulo(ld%box_lo(a, d2) - ld%box_lo(a, d1), 1.d0)
+         if (d < l1 + w(a) .or. d + l2 > 1.d0 - w(a)) cycle
+         return
+      end do
+      yes = .true.
+   end function rcb_boxes_meet
+
+!  Is fractional s within w of domain d's box, the cell being periodic?
+   pure logical function rcb_near(ld, d, s, w) result(yes)
+      type(legacy_dd_t), intent(in) :: ld
+      integer, intent(in) :: d
+      real(dp), intent(in) :: s(1:3)
+      real(dp), intent(in) :: w(1:3)
+      real(dp) :: l
+      integer :: a
+
+      yes = .false.
+      do a = 1, 3
+         l = ld%box_hi(a, d) - ld%box_lo(a, d) + 2.d0*w(a)
+         if (l >= 1.d0) cycle
+         if (modulo(s(a) - ld%box_lo(a, d) + w(a), 1.d0) >= l) return
+      end do
+      yes = .true.
+   end function rcb_near
+
+!  The halo, in one exchange: every partner sends the owned atoms within rcut
+!  of this box, and they are appended after the owned ones, partner by
+!  partner. Called on the roots, with the owned records in rec.
+   subroutine rcb_halos(ld, recip, rcut, rec)
+      type(legacy_dd_t), intent(inout) :: ld
+      real(dp), intent(in) :: recip(1:3, 1:3)
+      real(dp), intent(in) :: rcut
+      real(dp), allocatable, intent(inout) :: rec(:, :)
+      real(dp), allocatable :: send(:)
+      real(dp), allocatable :: recv(:)
+      real(dp), allocatable :: n_out(:)
+      real(dp), allocatable :: n_in(:)
+      real(dp), allocatable :: s(:, :)
+      integer, allocatable :: ones(:)
+      integer, allocatable :: steps(:)
+      integer, allocatable :: counts(:)
+      integer, allocatable :: displs(:)
+      integer, allocatable :: r_counts(:)
+      integer, allocatable :: r_displs(:)
+      real(dp) :: w(1:3)
+      integer :: me
+      integer :: n_p
+      integer :: p
+      integer :: d
+      integer :: i
+      integer :: k
+      integer :: id
+
+      me = ld%roots%rank + 1
+      do i = 1, 3
+         w(i) = rcut*norm2(recip(i, 1:3))
+      end do
+      if (allocated(ld%partners)) deallocate (ld%partners, ld%send_off, ld%send_idx, ld%recv_off, ld%land)
+      allocate (ld%partners(1:ld%n_domains))
+      n_p = 0
+      do d = 1, ld%n_domains
+         if (d == me) cycle
+         if (rcb_boxes_meet(ld, min(d, me), max(d, me), w)) then
+            n_p = n_p + 1
+            ld%partners(n_p) = d - 1
+         end if
+      end do
+      ld%partners = ld%partners(1:n_p)
+
+      allocate (s(1:3, 1:max(ld%n_owned, 1)))
+      do i = 1, ld%n_owned
+         s(1:3, i) = legacy_frac(recip, rec(3:5, i))
+      end do
+      allocate (ld%send_off(0:n_p), ld%send_idx(1:16))
+      ld%send_off(0) = 0
+      k = 0
+      do p = 1, n_p
+         do i = 1, ld%n_owned
+            if (.not. rcb_near(ld, ld%partners(p) + 1, s(1:3, i), w)) cycle
+            k = k + 1
+            if (k > size(ld%send_idx)) ld%send_idx = [ld%send_idx, ld%send_idx]
+            ld%send_idx(k) = i
+         end do
+         ld%send_off(p) = k
+      end do
+
+      allocate (ones(1:max(n_p, 1)), steps(1:max(n_p, 1)), n_out(1:max(n_p, 1)), n_in(1:max(n_p, 1)))
+      ones = 1
+      do p = 1, n_p
+         steps(p) = p - 1
+         n_out(p) = dble(ld%send_off(p) - ld%send_off(p - 1))
+      end do
+      call comm_exchange(ld%roots, ld%partners, n_out, ones, steps, n_in, ones, steps)
+
+      allocate (counts(1:max(n_p, 1)), displs(1:max(n_p, 1)), r_counts(1:max(n_p, 1)), r_displs(1:max(n_p, 1)))
+      allocate (ld%recv_off(0:n_p))
+      ld%recv_off(0) = 0
+      do p = 1, n_p
+         counts(p) = REC_ATOM*(ld%send_off(p) - ld%send_off(p - 1))
+         displs(p) = REC_ATOM*ld%send_off(p - 1)
+         ld%recv_off(p) = ld%recv_off(p - 1) + nint(n_in(p))
+         r_counts(p) = REC_ATOM*nint(n_in(p))
+         r_displs(p) = REC_ATOM*ld%recv_off(p - 1)
+      end do
+      allocate (send(1:REC_ATOM*max(ld%send_off(n_p), 1)), recv(1:REC_ATOM*max(ld%recv_off(n_p), 1)))
+      do k = 1, ld%send_off(n_p)
+         send((k - 1)*REC_ATOM + 1:k*REC_ATOM) = rec(1:REC_ATOM, ld%send_idx(k))
+      end do
+      call comm_exchange(ld%roots, ld%partners, send, counts, displs, recv, r_counts, r_displs)
+
+      allocate (ld%land(1:max(ld%recv_off(n_p), 1)))
+      ld%land = 0
+      do k = 1, ld%recv_off(n_p)
+         id = nint(recv((k - 1)*REC_ATOM + 1))
+         if (ld%slot(id) /= 0) cycle
+         ld%n_local = ld%n_local + 1
+         call grow(rec, ld%n_local)
+         rec(1:REC_ATOM, ld%n_local) = recv((k - 1)*REC_ATOM + 1:k*REC_ATOM)
+         ld%slot(id) = ld%n_local
+         ld%land(k) = ld%n_local
+      end do
+   end subroutine rcb_halos
+
+!  The element counts and offsets of nv values per site over the plan's runs:
+!  off(p-1)+1:off(p) for partner p.
+   subroutine rcb_layout(off, nv, counts, displs)
+      integer, intent(in) :: off(0:)
+      integer, intent(in) :: nv
+      integer, allocatable, intent(out) :: counts(:)
+      integer, allocatable, intent(out) :: displs(:)
+      integer :: p
+
+      allocate (counts(1:max(ubound(off, 1), 1)), displs(1:max(ubound(off, 1), 1)))
+      do p = 1, ubound(off, 1)
+         counts(p) = nv*(off(p) - off(p - 1))
+         displs(p) = nv*off(p - 1)
+      end do
+   end subroutine rcb_layout
+
+!  Owners' values to their halo copies. Called on the roots.
+   subroutine rcb_forward(ld, values)
+      type(legacy_dd_t), intent(in) :: ld
+      real(dp), intent(inout) :: values(:, :)
+      real(dp), allocatable :: send(:)
+      real(dp), allocatable :: recv(:)
+      integer, allocatable :: counts(:)
+      integer, allocatable :: displs(:)
+      integer, allocatable :: r_counts(:)
+      integer, allocatable :: r_displs(:)
+      integer :: nv
+      integer :: n_p
+      integer :: k
+
+      nv = size(values, 1)
+      n_p = size(ld%partners)
+      call rcb_layout(ld%send_off, nv, counts, displs)
+      call rcb_layout(ld%recv_off, nv, r_counts, r_displs)
+      allocate (send(1:nv*max(ld%send_off(n_p), 1)), recv(1:nv*max(ld%recv_off(n_p), 1)))
+      do k = 1, ld%send_off(n_p)
+         send((k - 1)*nv + 1:k*nv) = values(1:nv, ld%send_idx(k))
+      end do
+      call comm_exchange(ld%roots, ld%partners, send, counts, displs, recv, r_counts, r_displs)
+      do k = 1, ld%recv_off(n_p)
+         if (ld%land(k) > 0) values(1:nv, ld%land(k)) = recv((k - 1)*nv + 1:k*nv)
+      end do
+   end subroutine rcb_forward
+
+!  What landed on halo copies, back to the owners and added there, partner by
+!  partner in a fixed order. Called on the roots.
+   subroutine rcb_reverse(ld, values)
+      type(legacy_dd_t), intent(in) :: ld
+      real(dp), intent(inout) :: values(:, :)
+      real(dp), allocatable :: send(:)
+      real(dp), allocatable :: recv(:)
+      integer, allocatable :: counts(:)
+      integer, allocatable :: displs(:)
+      integer, allocatable :: r_counts(:)
+      integer, allocatable :: r_displs(:)
+      integer :: nv
+      integer :: n_p
+      integer :: k
+      integer :: j
+
+      nv = size(values, 1)
+      n_p = size(ld%partners)
+      call rcb_layout(ld%recv_off, nv, counts, displs)
+      call rcb_layout(ld%send_off, nv, r_counts, r_displs)
+      allocate (send(1:nv*max(ld%recv_off(n_p), 1)), recv(1:nv*max(ld%send_off(n_p), 1)))
+      send = 0.d0
+      do k = 1, ld%recv_off(n_p)
+         if (ld%land(k) > 0) send((k - 1)*nv + 1:k*nv) = values(1:nv, ld%land(k))
+      end do
+      call comm_exchange(ld%roots, ld%partners, send, counts, displs, recv, r_counts, r_displs)
+      do k = 1, ld%send_off(n_p)
+         j = ld%send_idx(k)
+         values(1:nv, j) = values(1:nv, j) + recv((k - 1)*nv + 1:k*nv)
+      end do
+   end subroutine rcb_reverse
+
+!  Domain integration, at a rebuild, on the roots: the boxes are redrawn by
+!  weight if the heaviest domain outweighs the average by more than
+!  RCB_TOLERANCE, then every owned atom goes straight to the domain whose box
+!  holds it. Kept atoms stay first, in order; arrivals follow by sender.
+   subroutine rcb_migrate(ld, dyn, recip, weights)
+      type(legacy_dd_t), intent(inout) :: ld
+      real(dp), allocatable, intent(inout) :: dyn(:, :)
+      real(dp), intent(in) :: recip(1:3, 1:3)
+      real(dp), intent(in) :: weights(:)
+      real(dp), allocatable :: s(:, :)
+      real(dp), allocatable :: send(:)
+      real(dp), allocatable :: recv(:)
+      real(dp), allocatable :: keep(:, :)
+      integer, allocatable :: dest(:)
+      integer, allocatable :: n_to(:)
+      integer, allocatable :: n_from(:)
+      integer, allocatable :: partners(:)
+      integer, allocatable :: counts(:)
+      integer, allocatable :: displs(:)
+      integer, allocatable :: r_counts(:)
+      integer, allocatable :: r_displs(:)
+      integer, allocatable :: fill(:)
+      real(dp) :: load(1:1)
+      real(dp) :: total
+      integer :: me
+      integer :: n_p
+      integer :: n_keep
+      integer :: n_recv
+      integer :: p
+      integer :: d
+      integer :: i
+
+      me = ld%roots%rank + 1
+      allocate (s(1:3, 1:max(ld%n_owned, 1)))
+      do i = 1, ld%n_owned
+         s(1:3, i) = legacy_frac(recip, dyn(3:5, i))
+      end do
+      load(1) = sum(weights(1:ld%n_owned))
+      total = load(1)
+      call comm_sum_all(ld%roots, total)
+      call comm_max_all(ld%roots, load, 1)
+      if (load(1) > RCB_TOLERANCE*total/dble(ld%n_domains)) then
+         call rcb_partition(ld, s, weights, ld%n_owned, recip, .true.)
+         ld%n_rebalances = ld%n_rebalances + 1
+      end if
+
+      allocate (dest(1:max(ld%n_owned, 1)), n_to(1:ld%n_domains), n_from(1:ld%n_domains))
+      n_to = 0
+      do i = 1, ld%n_owned
+         dest(i) = rcb_owner(ld, s(1:3, i))
+         if (dest(i) /= me) n_to(dest(i)) = n_to(dest(i)) + 1
+      end do
+      call comm_alltoall(ld%roots, n_to, n_from)
+      ld%n_migrated = ld%n_migrated + sum(n_to)
+
+      n_p = count(n_to > 0 .or. n_from > 0)
+      allocate (partners(1:max(n_p, 1)), counts(1:max(n_p, 1)), displs(1:max(n_p, 1)))
+      allocate (r_counts(1:max(n_p, 1)), r_displs(1:max(n_p, 1)), fill(1:ld%n_domains))
+      p = 0
+      fill = 0
+      do d = 1, ld%n_domains
+         if (n_to(d) == 0 .and. n_from(d) == 0) cycle
+         p = p + 1
+         partners(p) = d - 1
+         counts(p) = REC_DYN*n_to(d)
+         r_counts(p) = REC_DYN*n_from(d)
+         displs(p) = 0
+         r_displs(p) = 0
+         if (p > 1) then
+            displs(p) = displs(p - 1) + counts(p - 1)
+            r_displs(p) = r_displs(p - 1) + r_counts(p - 1)
+         end if
+         fill(d) = displs(p)
+      end do
+
+      allocate (send(1:max(REC_DYN*sum(n_to), 1)), recv(1:max(REC_DYN*sum(n_from), 1)))
+      allocate (keep(1:REC_DYN, 1:max(ld%n_owned + sum(n_from), 1)))
+      n_keep = 0
+      do i = 1, ld%n_owned
+         if (dest(i) == me) then
+            n_keep = n_keep + 1
+            keep(1:REC_DYN, n_keep) = dyn(1:REC_DYN, i)
+         else
+            send(fill(dest(i)) + 1:fill(dest(i)) + REC_DYN) = dyn(1:REC_DYN, i)
+            fill(dest(i)) = fill(dest(i)) + REC_DYN
+         end if
+      end do
+      call comm_exchange(ld%roots, partners(1:n_p), send, counts, displs, recv, r_counts, r_displs)
+      n_recv = sum(n_from)
+      do i = 1, n_recv
+         keep(1:REC_DYN, n_keep + i) = recv((i - 1)*REC_DYN + 1:i*REC_DYN)
+      end do
+      ld%n_owned = n_keep + n_recv
+      call move_alloc(keep, dyn)
+   end subroutine rcb_migrate
 
 end module domain_legacy

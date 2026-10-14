@@ -115,8 +115,10 @@ contains
          write (*, '(A)') '      whole structure and splits the atoms in index order. "legacy" cuts'
          write (*, '(A)') '      the cell into the dd_grid of spatial domains, each holding its own'
          write (*, '(A)') '      atoms and a halo rcut_max wide; it supports SOAP, 2b, 3b and'
-         write (*, '(A)') '      core_pot only, and refuses anything else at start-up. See'
-         write (*, '(A)') '      docs/LEGACY_DD.md.'
+         write (*, '(A)') '      core_pot only, and refuses anything else at start-up. "rcb" is'
+         write (*, '(A)') '      legacy with the grid replaced by recursive coordinate bisection'
+         write (*, '(A)') '      weighted by pair count, for any number of domains and for clusters,'
+         write (*, '(A)') '      pores and surfaces. See docs/LEGACY_DD.md.'
          write (*, '(A)') '      -> see dd_grid, dd_grid_affinity'
          write (*, '(A)') ''
       end if

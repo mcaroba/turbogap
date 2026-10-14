@@ -174,6 +174,9 @@ module turbogap_domain
 !     migrate between domains at rebuilds; rank 0 holds the structure only
 !     long enough to write it out.
       logical :: integrate = .false.
+!     Legacy: each owned site's pair count at the last full build, what
+!     dd_type rcb balances when the atoms next migrate.
+      real(dp), allocatable :: owned_pairs(:)
    end type domain_t
 
 contains
@@ -196,10 +199,10 @@ contains
       select case (trim(params%dd_type))
       case ("none")
          dom%dd_type = DD_NONE
-      case ("legacy")
+      case ("legacy", "rcb")
          why = legacy_unsupported(params)
          if (why /= "") then
-            if (comm%rank == 0) write (*, '(A,A,A)') ' dd_type legacy: ', trim(why), &
+            if (comm%rank == 0) write (*, '(A,A,A,A,A)') ' dd_type ', trim(params%dd_type), ': ', trim(why), &
                ' is not decomposed; this run evaluates replicated, as dd_type none'
             dom%dd_type = DD_NONE
             return
@@ -219,10 +222,11 @@ contains
                '"; it must be rank0 or domain'
             call turbogap_abort()
          end if
-         call legacy_init(dom%legacy, comm, params%dd_grid, params%dd_grid_affinity, params%dd_balance)
+         call legacy_init(dom%legacy, comm, params%dd_grid, params%dd_grid_affinity, params%dd_balance, &
+                          trim(params%dd_type) == "rcb")
       case default
          if (comm%rank == 0) write (*, '(A,A,A)') 'ERROR: dd_type is "', trim(params%dd_type), &
-            '"; it must be none or legacy'
+            '"; it must be none, legacy or rcb'
          call turbogap_abort()
       end select
    end subroutine domain_configure
@@ -778,6 +782,7 @@ contains
       allocate (nl%n_neigh(1:state%n_sites))
       nl%n_neigh(1:state%n_sites) = nl%n_neigh_local(1:state%n_sites)
       call comm_sum_all(dom%legacy%local, nl%n_neigh, state%n_sites)
+      dom%owned_pairs = dble(nl%n_neigh(1:n_owned)) + 1.d0
       dom%j_beg = 1
       dom%j_end = pairs(r + 1)
 
@@ -887,7 +892,7 @@ contains
       if (dom%legacy%local%rank == 0) then
          call pack_dynamics(dom, state, dyn)
          call time_start(time%dd_scatter, "dd_scatter")
-         call legacy_migrate(dom%legacy, dyn, state%a_box, state%b_box, state%c_box, model%rcut_max)
+         call legacy_migrate(dom%legacy, dyn, state%a_box, state%b_box, state%c_box, model%rcut_max, dom%owned_pairs)
          call time_end(time%dd_scatter, "dd_scatter")
       end if
       call legacy_rebuild_owned(dom%legacy, dyn, state%a_box, state%b_box, state%c_box, model%rcut_max, &
@@ -948,7 +953,8 @@ contains
       type(comm_t), intent(in) :: comm
       character(len=*), intent(in) :: why
 
-      if (comm%rank == 0) write (*, '(A,A,A)') ' dd_type legacy: ', why, '; evaluating replicated from here on'
+      if (comm%rank == 0) write (*, '(A,A,A,A,A)') ' dd_type ', trim(merge('rcb   ', 'legacy', dom%legacy%rcb)), ': ', &
+         why, '; evaluating replicated from here on'
       dom%dd_type = DD_NONE
       dom%integrate = .false.
       nl%rebuild_neighbors_list = .true.
@@ -1809,6 +1815,7 @@ contains
       integer, parameter :: N_COL = 13
       real(dp) :: mine(1:N_COL)
       real(dp), allocatable :: all(:)
+      character(len=6) :: name
       integer :: r
       integer :: k
 
@@ -1820,12 +1827,15 @@ contains
       allocate (all(1:N_COL*comm%size))
       call comm_gather(comm, mine, N_COL, all)
       if (comm%rank /= 0) return
-      write (*, '(A,I0,A,I0,A,A)') ' dd_type legacy: ', dom%legacy%n_builds, ' rebuilds, ', dom%legacy%n_refreshes, &
-         ' steps reusing the domains', trim(merge(', integrated on the domains', '                           ', &
-                                                  dom%integrate))
-      if (dom%integrate) write (*, '(A,I0)') ' dd_type legacy: atoms migrated between domains: ', &
+      name = merge('rcb   ', 'legacy', dom%legacy%rcb)
+      write (*, '(A,A,A,I0,A,I0,A,A)') ' dd_type ', trim(name), ': ', dom%legacy%n_builds, ' rebuilds, ', &
+         dom%legacy%n_refreshes, ' steps reusing the domains', &
+         trim(merge(', integrated on the domains', '                           ', dom%integrate))
+      if (dom%integrate) write (*, '(A,A,A,I0)') ' dd_type ', trim(name), ': atoms migrated between domains: ', &
          nint(sum(all(13::N_COL)))
-      write (*, '(A)') ' dd_type legacy, per rank (seconds over the run; sites and pairs of the last step):'
+      if (dom%legacy%rcb .and. dom%integrate) write (*, '(A,I0)') &
+         ' dd_type rcb: boxes redrawn by pair count at rebuilds: ', dom%legacy%n_rebalances
+      write (*, '(A,A,A)') ' dd_type ', trim(name), ', per rank (seconds over the run; sites and pairs of the last step):'
       write (*, '(A)') '  rank  dom.rank  owned   local  slice     pairs      gap    neigh  scatter     halo    share'// &
          '  reverse   gather'
       do r = 0, comm%size - 1
@@ -1843,6 +1853,7 @@ contains
       call legacy_free(dom%legacy)
       if (allocated(dom%g_positions)) deallocate (dom%g_positions, dom%g_species, dom%g_xyz_species)
       if (allocated(dom%l_species)) deallocate (dom%l_species, dom%l_xyz_species)
+      if (allocated(dom%owned_pairs)) deallocate (dom%owned_pairs)
    end subroutine domain_free
 
 end module turbogap_domain

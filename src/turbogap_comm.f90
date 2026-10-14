@@ -59,6 +59,9 @@ module turbogap_comm
    public :: comm_scatterv
    public :: comm_gatherv
    public :: comm_gather
+   public :: comm_max_all
+   public :: comm_alltoall
+   public :: comm_exchange
 
 #ifdef _MPIF90
    logical, parameter :: comm_with_mpi = .true.
@@ -105,6 +108,11 @@ module turbogap_comm
    interface comm_any_all
       module procedure any_all_l1
    end interface comm_any_all
+
+   interface comm_max_all
+      module procedure max_all_r1
+      module procedure max_all_r2
+   end interface comm_max_all
 
    interface comm_allgather
       module procedure allgather_i0
@@ -346,6 +354,79 @@ contains
       all(1) = x
 #endif
    end subroutine allgather_i0
+
+   subroutine max_all_r1(comm, x, n)
+      type(comm_t), intent(in) :: comm
+      real(dp), contiguous, intent(inout) :: x(:)
+      integer, intent(in) :: n
+      integer :: ierr
+#ifdef _MPIF90
+      call mpi_allreduce(MPI_IN_PLACE, x, n, MPI_DOUBLE_PRECISION, MPI_MAX, comm%handle, ierr)
+#endif
+   end subroutine max_all_r1
+
+   subroutine max_all_r2(comm, x, n)
+      type(comm_t), intent(in) :: comm
+      real(dp), contiguous, intent(inout) :: x(:, :)
+      integer, intent(in) :: n
+      integer :: ierr
+#ifdef _MPIF90
+      call mpi_allreduce(MPI_IN_PLACE, x, n, MPI_DOUBLE_PRECISION, MPI_MAX, comm%handle, ierr)
+#endif
+   end subroutine max_all_r2
+
+!  One integer to and from every rank: recv(i) is what rank i-1 sent here.
+   subroutine comm_alltoall(comm, send, recv)
+      type(comm_t), intent(in) :: comm
+      integer, contiguous, intent(in) :: send(:)
+      integer, contiguous, intent(inout) :: recv(:)
+      integer :: ierr
+#ifdef _MPIF90
+      call mpi_alltoall(send, 1, MPI_INTEGER, recv, 1, MPI_INTEGER, comm%handle, ierr)
+#else
+      ierr = 0
+      recv(1) = send(1)
+#endif
+   end subroutine comm_alltoall
+
+!  Point to point with a set of partners at once: partners(p) is sent
+!  send_counts(p) values from offset send_displs(p), and what it sends here
+!  lands at offset recv_displs(p). Every partner must name this rank too.
+   subroutine comm_exchange(comm, partners, send, send_counts, send_displs, recv, recv_counts, recv_displs)
+      type(comm_t), intent(in) :: comm
+      integer, contiguous, intent(in) :: partners(:)
+      real(dp), contiguous, intent(in) :: send(:)
+      integer, contiguous, intent(in) :: send_counts(:)
+      integer, contiguous, intent(in) :: send_displs(:)
+      real(dp), contiguous, intent(inout) :: recv(:)
+      integer, contiguous, intent(in) :: recv_counts(:)
+      integer, contiguous, intent(in) :: recv_displs(:)
+      integer :: n
+      integer :: p
+      integer :: ierr
+#ifdef _MPIF90
+      integer, allocatable :: requests(:)
+
+      n = size(partners)
+      allocate (requests(1:2*max(n, 1)))
+      requests = MPI_REQUEST_NULL
+      do p = 1, n
+         if (recv_counts(p) > 0) call mpi_irecv(recv(recv_displs(p) + 1), recv_counts(p), MPI_DOUBLE_PRECISION, &
+                                                partners(p), 2, comm%handle, requests(p), ierr)
+      end do
+      do p = 1, n
+         if (send_counts(p) > 0) call mpi_isend(send(send_displs(p) + 1), send_counts(p), MPI_DOUBLE_PRECISION, &
+                                                partners(p), 2, comm%handle, requests(n + p), ierr)
+      end do
+      call mpi_waitall(2*n, requests, MPI_STATUSES_IGNORE, ierr)
+#else
+      n = size(partners)
+      ierr = comm%rank
+      do p = 1, n
+         recv(recv_displs(p) + 1:recv_displs(p) + recv_counts(p)) = send(send_displs(p) + 1:send_displs(p) + send_counts(p))
+      end do
+#endif
+   end subroutine comm_exchange
 
 !  A child communicator per colour, ranked by key. A negative colour leaves
 !  this rank out: it gets a communicator of size 0 that nothing may use.

@@ -2314,7 +2314,9 @@ contains
          !> How the atoms are split over MPI ranks. "none" gives every rank the whole structure and
          !> splits the atoms in index order. "legacy" cuts the cell into the dd_grid of spatial
          !> domains, each holding its own atoms and a halo rcut_max wide; it supports SOAP, 2b, 3b
-         !> and core_pot only, and refuses anything else at start-up. See docs/LEGACY_DD.md.
+         !> and core_pot only, and refuses anything else at start-up. "rcb" is legacy with the grid
+         !> replaced by recursive coordinate bisection weighted by pair count, for any number of
+         !> domains and for clusters, pores and surfaces. See docs/LEGACY_DD.md.
          !> @see dd_grid, dd_grid_affinity
       else if (keyword == 'dd_type') then
          backspace (unit)
