@@ -161,6 +161,13 @@ module domain_legacy
       integer, allocatable :: land(:)
    end type legacy_dd_t
 
+!   rcb's exchange buffers, kept and only grown: memory freshly allocated for
+!   each exchange has to be registered with the network again, which on Roihu
+!   cost up to 0.4 s an exchange across 2304 ranks. One decomposition per
+!   process, so one pair.
+   real(dp), allocatable :: xsend(:)
+   real(dp), allocatable :: xrecv(:)
+
 contains
 
 !  Group the ranks into domains. block puts consecutive ranks in a domain;
@@ -330,6 +337,7 @@ contains
       if (allocated(ld%slot)) deallocate (ld%slot)
       if (allocated(ld%box_lo)) deallocate (ld%box_lo, ld%box_hi, ld%node_axis, ld%node_cut, ld%node_child)
       if (allocated(ld%partners)) deallocate (ld%partners, ld%send_off, ld%send_idx, ld%recv_off, ld%land)
+      if (allocated(xsend)) deallocate (xsend, xrecv)
    end subroutine legacy_free
 
 !  Rows of the inverse cell, so recip . r is the fractional coordinate.
@@ -1506,8 +1514,6 @@ contains
       real(dp), intent(in) :: recip(1:3, 1:3)
       real(dp), intent(in) :: rcut
       real(dp), allocatable, intent(inout) :: rec(:, :)
-      real(dp), allocatable :: send(:)
-      real(dp), allocatable :: recv(:)
       real(dp), allocatable :: n_out(:)
       real(dp), allocatable :: n_in(:)
       real(dp), allocatable :: s(:, :)
@@ -1577,24 +1583,41 @@ contains
          r_counts(p) = REC_ATOM*nint(n_in(p))
          r_displs(p) = REC_ATOM*ld%recv_off(p - 1)
       end do
-      allocate (send(1:REC_ATOM*max(ld%send_off(n_p), 1)), recv(1:REC_ATOM*max(ld%recv_off(n_p), 1)))
+      call rcb_buffers(REC_ATOM*ld%send_off(n_p), REC_ATOM*ld%recv_off(n_p))
       do k = 1, ld%send_off(n_p)
-         send((k - 1)*REC_ATOM + 1:k*REC_ATOM) = rec(1:REC_ATOM, ld%send_idx(k))
+         xsend((k - 1)*REC_ATOM + 1:k*REC_ATOM) = rec(1:REC_ATOM, ld%send_idx(k))
       end do
-      call comm_exchange(ld%roots, ld%partners, send, counts, displs, recv, r_counts, r_displs)
+      call comm_exchange(ld%roots, ld%partners, xsend, counts, displs, xrecv, r_counts, r_displs)
 
       allocate (ld%land(1:max(ld%recv_off(n_p), 1)))
       ld%land = 0
       do k = 1, ld%recv_off(n_p)
-         id = nint(recv((k - 1)*REC_ATOM + 1))
+         id = nint(xrecv((k - 1)*REC_ATOM + 1))
          if (ld%slot(id) /= 0) cycle
          ld%n_local = ld%n_local + 1
          call grow(rec, ld%n_local)
-         rec(1:REC_ATOM, ld%n_local) = recv((k - 1)*REC_ATOM + 1:k*REC_ATOM)
+         rec(1:REC_ATOM, ld%n_local) = xrecv((k - 1)*REC_ATOM + 1:k*REC_ATOM)
          ld%slot(id) = ld%n_local
          ld%land(k) = ld%n_local
       end do
    end subroutine rcb_halos
+
+!  At least n_send and n_recv values in the exchange buffers, grown with room
+!  to spare and never shrunk, so they stay where they are from call to call.
+   subroutine rcb_buffers(n_send, n_recv)
+      integer, intent(in) :: n_send
+      integer, intent(in) :: n_recv
+
+      if (.not. allocated(xsend)) allocate (xsend(1:1024), xrecv(1:1024))
+      if (n_send > size(xsend)) then
+         deallocate (xsend)
+         allocate (xsend(1:n_send + n_send/2))
+      end if
+      if (n_recv > size(xrecv)) then
+         deallocate (xrecv)
+         allocate (xrecv(1:n_recv + n_recv/2))
+      end if
+   end subroutine rcb_buffers
 
 !  The element counts and offsets of nv values per site over the plan's runs:
 !  off(p-1)+1:off(p) for partner p.
@@ -1616,8 +1639,6 @@ contains
    subroutine rcb_forward(ld, values)
       type(legacy_dd_t), intent(in) :: ld
       real(dp), intent(inout) :: values(:, :)
-      real(dp), allocatable :: send(:)
-      real(dp), allocatable :: recv(:)
       integer, allocatable :: counts(:)
       integer, allocatable :: displs(:)
       integer, allocatable :: r_counts(:)
@@ -1630,13 +1651,13 @@ contains
       n_p = size(ld%partners)
       call rcb_layout(ld%send_off, nv, counts, displs)
       call rcb_layout(ld%recv_off, nv, r_counts, r_displs)
-      allocate (send(1:nv*max(ld%send_off(n_p), 1)), recv(1:nv*max(ld%recv_off(n_p), 1)))
+      call rcb_buffers(nv*ld%send_off(n_p), nv*ld%recv_off(n_p))
       do k = 1, ld%send_off(n_p)
-         send((k - 1)*nv + 1:k*nv) = values(1:nv, ld%send_idx(k))
+         xsend((k - 1)*nv + 1:k*nv) = values(1:nv, ld%send_idx(k))
       end do
-      call comm_exchange(ld%roots, ld%partners, send, counts, displs, recv, r_counts, r_displs)
+      call comm_exchange(ld%roots, ld%partners, xsend, counts, displs, xrecv, r_counts, r_displs)
       do k = 1, ld%recv_off(n_p)
-         if (ld%land(k) > 0) values(1:nv, ld%land(k)) = recv((k - 1)*nv + 1:k*nv)
+         if (ld%land(k) > 0) values(1:nv, ld%land(k)) = xrecv((k - 1)*nv + 1:k*nv)
       end do
    end subroutine rcb_forward
 
@@ -1645,8 +1666,6 @@ contains
    subroutine rcb_reverse(ld, values)
       type(legacy_dd_t), intent(in) :: ld
       real(dp), intent(inout) :: values(:, :)
-      real(dp), allocatable :: send(:)
-      real(dp), allocatable :: recv(:)
       integer, allocatable :: counts(:)
       integer, allocatable :: displs(:)
       integer, allocatable :: r_counts(:)
@@ -1660,15 +1679,15 @@ contains
       n_p = size(ld%partners)
       call rcb_layout(ld%recv_off, nv, counts, displs)
       call rcb_layout(ld%send_off, nv, r_counts, r_displs)
-      allocate (send(1:nv*max(ld%recv_off(n_p), 1)), recv(1:nv*max(ld%send_off(n_p), 1)))
-      send = 0.d0
+      call rcb_buffers(nv*ld%recv_off(n_p), nv*ld%send_off(n_p))
       do k = 1, ld%recv_off(n_p)
-         if (ld%land(k) > 0) send((k - 1)*nv + 1:k*nv) = values(1:nv, ld%land(k))
+         xsend((k - 1)*nv + 1:k*nv) = 0.d0
+         if (ld%land(k) > 0) xsend((k - 1)*nv + 1:k*nv) = values(1:nv, ld%land(k))
       end do
-      call comm_exchange(ld%roots, ld%partners, send, counts, displs, recv, r_counts, r_displs)
+      call comm_exchange(ld%roots, ld%partners, xsend, counts, displs, xrecv, r_counts, r_displs)
       do k = 1, ld%send_off(n_p)
          j = ld%send_idx(k)
-         values(1:nv, j) = values(1:nv, j) + recv((k - 1)*nv + 1:k*nv)
+         values(1:nv, j) = values(1:nv, j) + xrecv((k - 1)*nv + 1:k*nv)
       end do
    end subroutine rcb_reverse
 
@@ -1682,8 +1701,6 @@ contains
       real(dp), intent(in) :: recip(1:3, 1:3)
       real(dp), intent(in) :: weights(:)
       real(dp), allocatable :: s(:, :)
-      real(dp), allocatable :: send(:)
-      real(dp), allocatable :: recv(:)
       real(dp), allocatable :: keep(:, :)
       integer, allocatable :: dest(:)
       integer, allocatable :: n_to(:)
@@ -1747,7 +1764,7 @@ contains
          fill(d) = displs(p)
       end do
 
-      allocate (send(1:max(REC_DYN*sum(n_to), 1)), recv(1:max(REC_DYN*sum(n_from), 1)))
+      call rcb_buffers(REC_DYN*sum(n_to), REC_DYN*sum(n_from))
       allocate (keep(1:REC_DYN, 1:max(ld%n_owned + sum(n_from), 1)))
       n_keep = 0
       do i = 1, ld%n_owned
@@ -1755,14 +1772,14 @@ contains
             n_keep = n_keep + 1
             keep(1:REC_DYN, n_keep) = dyn(1:REC_DYN, i)
          else
-            send(fill(dest(i)) + 1:fill(dest(i)) + REC_DYN) = dyn(1:REC_DYN, i)
+            xsend(fill(dest(i)) + 1:fill(dest(i)) + REC_DYN) = dyn(1:REC_DYN, i)
             fill(dest(i)) = fill(dest(i)) + REC_DYN
          end if
       end do
-      call comm_exchange(ld%roots, partners(1:n_p), send, counts, displs, recv, r_counts, r_displs)
+      call comm_exchange(ld%roots, partners(1:n_p), xsend, counts, displs, xrecv, r_counts, r_displs)
       n_recv = sum(n_from)
       do i = 1, n_recv
-         keep(1:REC_DYN, n_keep + i) = recv((i - 1)*REC_DYN + 1:i*REC_DYN)
+         keep(1:REC_DYN, n_keep + i) = xrecv((i - 1)*REC_DYN + 1:i*REC_DYN)
       end do
       ld%n_owned = n_keep + n_recv
       call move_alloc(keep, dyn)
