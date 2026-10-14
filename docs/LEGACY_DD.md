@@ -367,6 +367,71 @@ changes nothing. What stays serial inside a rank: the 2b and 3b terms, the
 radial expansion, allocating and clearing soap_cart_der per batch, and the
 ordered sum of the pair forces.
 
+## `dd_type = rcb`: recursive bisection instead of the grid
+
+legacy cuts each axis once across the whole cell. That balances a slab, but
+not anything that varies in three dimensions, and a rank count with no
+factorisation into slabs at least `rcut_max` wide (any prime above the
+number that fit along one axis) finds no grid and falls back. Measured on
+Roihu, 2304 ranks, `dd_integrate = domain`, CO cut from the 308k cell: the
+slowest rank's GAP time is 1.57x the mean on a spherical pore (255k atoms,
+126 empty domains) and 1.67x on a cluster in vacuum (112k atoms, 80 empty);
+bulk and the slab stay within 1.06-1.11.
+
+`dd_type = rcb` keeps everything above (the seam, the integrator, the
+fallbacks, `dd_grid`'s product as the number of domains) and replaces the
+grid:
+
+- the cell is bisected recursively, each box cut across its atoms' longest
+  extent so the two sides' weights match their domain counts. The cut comes
+  from two 32-bin histograms summed over the domain roots, exact for
+  whole-number weights, so every root draws the same tree. Any number of
+  domains, of any width;
+- the first build weights atoms by count; afterwards, under
+  `dd_integrate = domain`, by pair count (GAP time per rank follows pairs,
+  R^2 = 0.93 over 18k rank samples). When the heaviest domain exceeds the mean
+  by 5% at a rebuild the cuts move, the tree's axes kept, so few atoms
+  migrate;
+- a domain exchanges its halo directly with the partners whose boxes are
+  within `rcut_max` (about 24 of them at 2304 domains, against the 26 that
+  legacy's six sweeps reach), one exchange for forward and one for reverse;
+  a migrating atom goes straight to its owner.
+
+`tests/rcb_dd/run.sh` runs every `legacy_dd` leg under rcb but the narrow
+grid, plus a cluster, a pore, 5 and 7 ranks, and an off-centre droplet in
+vapour whose boxes must be redrawn. The MD legs of both compare at atol
+2e-6: an MD frame's virial components (1e3-1e4 eV) carry ~1e-6 eV of
+round-off, which the replicated run alone shows between 2 and 4 ranks.
+
+Measured on Roihu, same inputs, s/step (legacy / rcb), and the slowest
+rank's GAP time over the mean under rcb:
+
+| | 1 node | 6 nodes | GAP max/mean, 6 nodes |
+| --- | --- | --- | --- |
+| bulk 308k | 1.629 / 1.640 | 0.280 / 0.403 | 1.05 |
+| slab 308k | 1.625 / 1.622 | 0.280 / 0.399 | 1.06 |
+| pore 255k | 1.490 / 1.363 | 0.349 / 0.347 | 1.08 |
+| cluster 112k | 0.611 / 0.585 | 0.146 / 0.192 | 1.06 |
+
+What the numbers say:
+
+- rcb balances everything to within 2-8%. On one node that is 8.5% off a
+  step on the pore and 4% on the cluster, and no change on bulk or the slab.
+- The gain is smaller than the imbalance predicted: balanced, the mean GAP
+  time per rank rises by ~20% at the same total work (pore 1.08 -> 1.28 s on
+  one node). Our reading, not verified: the busy cores of an unbalanced run
+  were running faster while others idled.
+- On six nodes rcb pays ~0.12 s/step that legacy does not: ~0.05 s in the
+  point-to-point exchange itself (timed after a barrier, so not waiting),
+  ~0.05 s of ranks arriving late at the step's reduce, and ~0.02 s of
+  re-balancing. It does not shrink over 40 steps, so it is not connection
+  set-up; the bytes moved are the same as legacy's. The exchange posts
+  isend/irecv to all ~24 partners at once where legacy makes six sendrecvs;
+  why that costs this much across nodes on Roihu's Open MPI/UCX is open.
+
+So, for now: rcb for an inhomogeneous cell on one node, or for a rank count
+legacy cannot grid; legacy for bulk and for several nodes.
+
 ## Not yet done
 
 - MBD on the domains: a halo as wide as its cluster radius, a forward exchange
@@ -380,3 +445,7 @@ ordered sum of the pair forces.
 - `dd_integrate = domain` for the thermostats and features it does not cover
   yet: GLE and Langevin (whose per-atom bath state would migrate with the
   atom), the barostat (its box change moves the cuts), and the optimisers.
+- rcb's exchange across nodes: a microbenchmark of the partner pattern under
+  Open MPI/UCX, then either a scheduled pairwise exchange (an edge colouring
+  of the partner graph, which every root can compute) or neighbourhood
+  collectives on a graph communicator.
