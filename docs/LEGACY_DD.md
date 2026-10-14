@@ -403,34 +403,47 @@ vapour whose boxes must be redrawn. The MD legs of both compare at atol
 2e-6: an MD frame's virial components (1e3-1e4 eV) carry ~1e-6 eV of
 round-off, which the replicated run alone shows between 2 and 4 ranks.
 
-Measured on Roihu, same inputs, s/step (legacy / rcb), and the slowest
-rank's GAP time over the mean under rcb:
+Measured on Roihu, same inputs, s/step (legacy / rcb), single runs; the
+same input moves by up to ~15% between runs on different nodes:
 
-| | 1 node | 6 nodes | GAP max/mean, 6 nodes |
+| | 1 node | 6 nodes | rcb's GAP max/mean, 6 nodes |
 | --- | --- | --- | --- |
-| bulk 308k | 1.629 / 1.640 | 0.280 / 0.403 | 1.05 |
-| slab 308k | 1.625 / 1.622 | 0.280 / 0.399 | 1.06 |
-| pore 255k | 1.490 / 1.363 | 0.349 / 0.347 | 1.08 |
-| cluster 112k | 0.611 / 0.585 | 0.146 / 0.192 | 1.06 |
+| bulk 308k | 1.626 / 1.648 | 0.284 / 0.301 | 1.04 |
+| slab 308k | 1.636 / 1.641 | 0.288 / 0.320 | 1.08 |
+| pore 255k | 1.449 / 1.364 | 0.312 / 0.266 | 1.05 |
+| cluster 112k | 0.620 / 0.576 | 0.131 / 0.160 | 1.04 |
+
+A second six-node run, with UCX rendezvous off as well, gave pore 0.315 /
+0.236 and cluster 0.150 / 0.122, so the cluster is within run-to-run noise.
 
 What the numbers say:
 
-- rcb balances everything to within 2-8%. On one node that is 8.5% off a
-  step on the pore and 4% on the cluster, and no change on bulk or the slab.
+- rcb balances everything to within 2-8%. It is faster wherever legacy is
+  unbalanced (the pore by 6% on one node and 15-25% on six), and 1-11%
+  slower where legacy already balances (bulk, the slab): its re-balancing
+  and migration cost ~0.02 s/step at 2304 domains.
 - The gain is smaller than the imbalance predicted: balanced, the mean GAP
   time per rank rises by ~20% at the same total work (pore 1.08 -> 1.28 s on
   one node). Our reading, not verified: the busy cores of an unbalanced run
   were running faster while others idled.
-- On six nodes rcb pays ~0.12 s/step that legacy does not: ~0.05 s in the
-  point-to-point exchange itself (timed after a barrier, so not waiting),
-  ~0.05 s of ranks arriving late at the step's reduce, and ~0.02 s of
-  re-balancing. It does not shrink over 40 steps, so it is not connection
-  set-up; the bytes moved are the same as legacy's. The exchange posts
-  isend/irecv to all ~24 partners at once where legacy makes six sendrecvs;
-  why that costs this much across nodes on Roihu's Open MPI/UCX is open.
+- The exchange buffers must stay put. The first version allocated them in
+  each call, and across nodes an exchange then cost up to 0.4 s, where an MPI
+  replay of the same graph and volume (`exchange_bench`, below) takes ~1 ms:
+  under UCX, memory a large message is sent from or received into is
+  registered with the network, and fresh memory after every rebuild was
+  registered again, in the calls that post the sends. `UCX_RNDV_THRESH=inf`
+  made it vanish; keeping one grow-only pair of buffers does the same
+  without it, and took bulk from 0.403 to 0.301 s/step.
 
-So, for now: rcb for an inhomogeneous cell on one node, or for a rank count
-legacy cannot grid; legacy for bulk and for several nodes.
+The exchange itself was measured apart from TurboGAP by replaying each
+partition's halo graph (from the real structures) at 2304 ranks: direct
+isend/irecv to every partner takes ~1.1 ms for the reverse payload, the same
+for legacy's graph and rcb's; an edge-coloured pairwise schedule 0.8 ms,
+neighbourhood collectives 1.0 ms, legacy-style six sweeps 0.45 ms. A
+one-off MPI_Alltoall over all ranks does not slow the exchanges after it.
+
+So: rcb for a cell legacy cannot balance (vacuum, pores, clusters, surfaces
+in 3D) or a rank count it cannot grid; legacy for a uniform bulk or slab.
 
 ## Not yet done
 
@@ -445,7 +458,6 @@ legacy cannot grid; legacy for bulk and for several nodes.
 - `dd_integrate = domain` for the thermostats and features it does not cover
   yet: GLE and Langevin (whose per-atom bath state would migrate with the
   atom), the barostat (its box change moves the cuts), and the optimisers.
-- rcb's exchange across nodes: a microbenchmark of the partner pattern under
-  Open MPI/UCX, then either a scheduled pairwise exchange (an edge colouring
-  of the partner graph, which every root can compute) or neighbourhood
-  collectives on a graph communicator.
+- rcb's remaining cost where legacy is balanced: re-balancing only when
+  it pays (the 5% threshold is near the noise of 134-atom domains), and
+  migration to partners alone when the boxes have not moved.
