@@ -346,24 +346,26 @@ contains
       h = ieor(fingerprint_of(cell), ishftc(fingerprint_of(counts), 17))
    end function cell_fingerprint
 
-!  Rank 0's shape, then its data. A negative extent means unallocated there.
-   subroutine send_shape(comm, allocated_here, here, dims)
+!  Rank 0's shape, then its data. A negative extent means unallocated there;
+!  the callers take size and shape only of an allocated array.
+   subroutine send_shape(comm, here, dims)
       type(comm_t), intent(in) :: comm
-      logical, intent(in) :: allocated_here
       integer, intent(in) :: here(1:2)
       integer, intent(out) :: dims(1:2)
 
-      dims = -1
-      if (allocated_here) dims = here
+      dims = here
       call comm_bcast(comm, dims, 2)
    end subroutine send_shape
 
    subroutine send_r2(comm, x)
       type(comm_t), intent(in) :: comm
       real(dp), allocatable, intent(inout) :: x(:, :)
+      integer :: here(1:2)
       integer :: dims(1:2)
 
-      call send_shape(comm, allocated(x), shape(x), dims)
+      here = -1
+      if (allocated(x)) here = shape(x)
+      call send_shape(comm, here, dims)
       if (comm%rank /= 0) then
          if (allocated(x)) then
             if (dims(1) < 0 .or. any(shape(x) /= dims)) deallocate (x)
@@ -376,9 +378,12 @@ contains
    subroutine send_l2(comm, x)
       type(comm_t), intent(in) :: comm
       logical, allocatable, intent(inout) :: x(:, :)
+      integer :: here(1:2)
       integer :: dims(1:2)
 
-      call send_shape(comm, allocated(x), shape(x), dims)
+      here = -1
+      if (allocated(x)) here = shape(x)
+      call send_shape(comm, here, dims)
       if (comm%rank /= 0) then
          if (allocated(x)) then
             if (dims(1) < 0 .or. any(shape(x) /= dims)) deallocate (x)
@@ -391,9 +396,12 @@ contains
    subroutine send_r1(comm, x)
       type(comm_t), intent(in) :: comm
       real(dp), allocatable, intent(inout) :: x(:)
+      integer :: here(1:2)
       integer :: dims(1:2)
 
-      call send_shape(comm, allocated(x), [size(x), 1], dims)
+      here = -1
+      if (allocated(x)) here = [size(x), 1]
+      call send_shape(comm, here, dims)
       if (comm%rank /= 0) then
          if (allocated(x)) then
             if (dims(1) < 0 .or. size(x) /= dims(1)) deallocate (x)
@@ -406,9 +414,12 @@ contains
    subroutine send_i1(comm, x)
       type(comm_t), intent(in) :: comm
       integer, allocatable, intent(inout) :: x(:)
+      integer :: here(1:2)
       integer :: dims(1:2)
 
-      call send_shape(comm, allocated(x), [size(x), 1], dims)
+      here = -1
+      if (allocated(x)) here = [size(x), 1]
+      call send_shape(comm, here, dims)
       if (comm%rank /= 0) then
          if (allocated(x)) then
             if (dims(1) < 0 .or. size(x) /= dims(1)) deallocate (x)
@@ -421,9 +432,12 @@ contains
    subroutine send_c1(comm, x)
       type(comm_t), intent(in) :: comm
       character*8, allocatable, intent(inout) :: x(:)
+      integer :: here(1:2)
       integer :: dims(1:2)
 
-      call send_shape(comm, allocated(x), [size(x), 1], dims)
+      here = -1
+      if (allocated(x)) here = [size(x), 1]
+      call send_shape(comm, here, dims)
       if (comm%rank /= 0) then
          if (allocated(x)) then
             if (dims(1) < 0 .or. size(x) /= dims(1)) deallocate (x)
