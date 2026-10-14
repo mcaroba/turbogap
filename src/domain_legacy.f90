@@ -55,7 +55,8 @@ module domain_legacy
    use kinds, only: dp
    use turbogap_comm, only: comm_t, comm_split, comm_free, comm_cart_create, comm_cart_shift, &
                             comm_cart_coords, comm_cart_rank, comm_sendrecv, comm_scatterv, comm_gatherv, &
-                            comm_gather, comm_bcast, comm_sum_all, comm_max_all, comm_alltoall, comm_exchange
+                            comm_gather, comm_bcast, comm_sum_all, comm_max_all, comm_alltoall, comm_exchange, &
+                            comm_any_all
    use error, only: turbogap_abort
    use timing, only: time_start, time_end
 
@@ -84,10 +85,15 @@ module domain_legacy
    integer, parameter, public :: REC_DYN = 22
    integer, parameter :: BINS_PER_SLAB = 256
 !   RCB: histogram bins per pass of a bisection (two passes, so a cut is
-!   placed to 1/RCB_BINS**2 of its box), and how far the heaviest domain may
-!   outweigh the average before the cuts are moved at a rebuild.
+!   placed to 1/RCB_BINS**2 of its box); how far the heaviest domain may
+!   outweigh the average before the cuts are moved at a rebuild, and by how
+!   much more than the last move managed, since small domains never balance
+!   exactly. Below 10% there is nothing to win: on Roihu the slowest rank's
+!   GAP time is 1.04-1.06 of the mean in bulk however exactly the pairs are
+!   balanced.
    integer, parameter :: RCB_BINS = 32
-   real(dp), parameter :: RCB_TOLERANCE = 1.05d0
+   real(dp), parameter :: RCB_TOLERANCE = 1.10d0
+   real(dp), parameter :: RCB_MARGIN = 0.03d0
    integer, parameter :: DOWN = 1
    integer, parameter :: UP = 2
 
@@ -145,6 +151,12 @@ module domain_legacy
 !     is the next node, or minus the domain at a leaf.
       logical :: rcb = .false.
       integer :: n_rebalances = 0
+!     Rebuilds whose migration went through every rank, not just partners.
+      integer :: n_global_migrations = 0
+!     The heaviest domain over the mean at the first rebuild after the cuts
+!     last moved: what moving them achieves here.
+      real(dp) :: rcb_floor = 1.d0
+      logical :: rcb_settle = .false.
       integer :: n_nodes = 0
       real(dp), allocatable :: box_lo(:, :)
       real(dp), allocatable :: box_hi(:, :)
@@ -1691,10 +1703,13 @@ contains
       end do
    end subroutine rcb_reverse
 
-!  Domain integration, at a rebuild, on the roots: the boxes are redrawn by
-!  weight if the heaviest domain outweighs the average by more than
-!  RCB_TOLERANCE, then every owned atom goes straight to the domain whose box
-!  holds it. Kept atoms stay first, in order; arrivals follow by sender.
+!  Domain integration, at a rebuild, on the roots: the cuts move by weight
+!  if the heaviest domain outweighs the average by more than RCB_TOLERANCE
+!  and by RCB_MARGIN more than the last move left it, then every owned atom
+!  goes straight to the domain whose box holds it. Unless the cuts moved,
+!  that is a partner: an atom moves less than the neighbour buffer between
+!  rebuilds, so it is still within rcut_max of its old box. Kept atoms stay
+!  first, in order; arrivals follow by sender.
    subroutine rcb_migrate(ld, dyn, recip, weights)
       type(legacy_dd_t), intent(inout) :: ld
       real(dp), allocatable, intent(inout) :: dyn(:, :)
@@ -1711,9 +1726,18 @@ contains
       integer, allocatable :: r_counts(:)
       integer, allocatable :: r_displs(:)
       integer, allocatable :: fill(:)
+      integer, allocatable :: partner_of(:)
+      integer, allocatable :: ones(:)
+      integer, allocatable :: steps(:)
+      real(dp), allocatable :: n_out(:)
+      real(dp), allocatable :: n_in(:)
       real(dp) :: load(1:1)
       real(dp) :: total
+      real(dp) :: ratio
+      logical :: redrawn
+      logical :: far(1:1)
       integer :: me
+      integer :: n_hp
       integer :: n_p
       integer :: n_keep
       integer :: n_recv
@@ -1730,9 +1754,16 @@ contains
       total = load(1)
       call comm_sum_all(ld%roots, total)
       call comm_max_all(ld%roots, load, 1)
-      if (load(1) > RCB_TOLERANCE*total/dble(ld%n_domains)) then
+      ratio = load(1)*dble(ld%n_domains)/max(total, 1.d0)
+      if (ld%rcb_settle) then
+         ld%rcb_floor = ratio
+         ld%rcb_settle = .false.
+      end if
+      redrawn = ratio > max(RCB_TOLERANCE, ld%rcb_floor + RCB_MARGIN)
+      if (redrawn) then
          call rcb_partition(ld, s, weights, ld%n_owned, recip, .true.)
          ld%n_rebalances = ld%n_rebalances + 1
+         ld%rcb_settle = .true.
       end if
 
       allocate (dest(1:max(ld%n_owned, 1)), n_to(1:ld%n_domains), n_from(1:ld%n_domains))
@@ -1741,7 +1772,34 @@ contains
          dest(i) = rcb_owner(ld, s(1:3, i))
          if (dest(i) /= me) n_to(dest(i)) = n_to(dest(i)) + 1
       end do
-      call comm_alltoall(ld%roots, n_to, n_from)
+
+      n_hp = size(ld%partners)
+      allocate (partner_of(1:ld%n_domains))
+      partner_of = 0
+      do p = 1, n_hp
+         partner_of(ld%partners(p) + 1) = p
+      end do
+      far(1) = .false.
+      if (.not. redrawn) then
+         far(1) = any(n_to > 0 .and. partner_of == 0)
+         call comm_any_all(ld%roots, far, 1)
+      end if
+      if (redrawn .or. far(1)) then
+         call comm_alltoall(ld%roots, n_to, n_from)
+         ld%n_global_migrations = ld%n_global_migrations + 1
+      else
+         allocate (ones(1:max(n_hp, 1)), steps(1:max(n_hp, 1)), n_out(1:max(n_hp, 1)), n_in(1:max(n_hp, 1)))
+         ones = 1
+         do p = 1, n_hp
+            steps(p) = p - 1
+            n_out(p) = dble(n_to(ld%partners(p) + 1))
+         end do
+         call comm_exchange(ld%roots, ld%partners, n_out, ones, steps, n_in, ones, steps)
+         n_from = 0
+         do p = 1, n_hp
+            n_from(ld%partners(p) + 1) = nint(n_in(p))
+         end do
+      end if
       ld%n_migrated = ld%n_migrated + sum(n_to)
 
       n_p = count(n_to > 0 .or. n_from > 0)

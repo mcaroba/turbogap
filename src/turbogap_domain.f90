@@ -1835,6 +1835,8 @@ contains
          nint(sum(all(13::N_COL)))
       if (dom%legacy%rcb .and. dom%integrate) write (*, '(A,I0)') &
          ' dd_type rcb: boxes redrawn by pair count at rebuilds: ', dom%legacy%n_rebalances
+      if (dom%legacy%rcb .and. dom%integrate) write (*, '(A,I0)') &
+         ' dd_type rcb: rebuilds that migrated through every rank: ', dom%legacy%n_global_migrations
       write (*, '(A,A,A)') ' dd_type ', trim(name), ', per rank (seconds over the run; sites and pairs of the last step):'
       write (*, '(A)') '  rank  dom.rank  owned   local  slice     pairs      gap    neigh  scatter     halo    share'// &
          '  reverse   gather'

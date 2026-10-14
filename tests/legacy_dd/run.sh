@@ -406,7 +406,19 @@ integ() {
     printf '    FAIL: no note that it integrated on rank 0\n'
     pass=$((pass - 1))
     fail=$((fail + 1))
+  elif [ "$expect" = domain ] && [ "$DD_TYPE" = rcb ] && ! partners_only "$log"; then
+    printf '    FAIL: migrated through every rank where only partners were needed\n'
+    pass=$((pass - 1))
+    fail=$((fail + 1))
   fi
+}
+
+# partners_only <log>: rcb went through every rank only when its cuts moved.
+partners_only() {
+  local redrawn global
+  redrawn=$(grep -a 'boxes redrawn by pair count' "$1" | awk '{print $NF}')
+  global=$(grep -a 'migrated through every rank' "$1" | awk '{print $NF}')
+  [ -n "$redrawn" ] && [ "$redrawn" = "$global" ]
 }
 
 # redrawn <name>: the leg's rcb run must have redrawn its boxes by pair count.
