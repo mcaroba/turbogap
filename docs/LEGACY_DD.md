@@ -389,9 +389,15 @@ grid:
   domains, of any width;
 - the first build weights atoms by count; afterwards, under
   `dd_integrate = domain`, by pair count (GAP time per rank follows pairs,
-  R^2 = 0.93 over 18k rank samples). When the heaviest domain exceeds the mean
-  by 5% at a rebuild the cuts move, the tree's axes kept, so few atoms
-  migrate;
+  R^2 = 0.93 over 18k rank samples). The cuts move, the tree's axes kept so
+  few atoms migrate, when at a rebuild the heaviest domain exceeds the mean
+  by 10% and by 3% more than the last move left it. Below 10% there is
+  nothing to win: in bulk the slowest rank's GAP time is 1.04-1.06 of the
+  mean however exactly the pairs are balanced;
+- between moves of the cuts an atom migrates only to a halo partner (it has
+  moved less than the neighbour buffer, so it is still within `rcut_max` of
+  its old box); only a move goes through every rank, and the test legs check
+  that it never does otherwise;
 - a domain exchanges its halo directly with the partners whose boxes are
   within `rcut_max` (about 24 of them at 2304 domains, against the 26 that
   legacy's six sweeps reach), one exchange for forward and one for reverse;
@@ -403,25 +409,27 @@ vapour whose boxes must be redrawn. The MD legs of both compare at atol
 2e-6: an MD frame's virial components (1e3-1e4 eV) carry ~1e-6 eV of
 round-off, which the replicated run alone shows between 2 and 4 ranks.
 
-Measured on Roihu, same inputs, s/step (legacy / rcb), single runs; the
-same input moves by up to ~15% between runs on different nodes:
+Measured on Roihu, same inputs, s/step (legacy / rcb); two six-node runs
+on different nodes, since the same input moves by up to ~15% between them:
 
-| | 1 node | 6 nodes | rcb's GAP max/mean, 6 nodes |
-| --- | --- | --- | --- |
-| bulk 308k | 1.626 / 1.648 | 0.284 / 0.301 | 1.04 |
-| slab 308k | 1.636 / 1.641 | 0.288 / 0.320 | 1.08 |
-| pore 255k | 1.449 / 1.364 | 0.312 / 0.266 | 1.05 |
-| cluster 112k | 0.620 / 0.576 | 0.131 / 0.160 | 1.04 |
-
-A second six-node run, with UCX rendezvous off as well, gave pore 0.315 /
-0.236 and cluster 0.150 / 0.122, so the cluster is within run-to-run noise.
+| | 1 node | 6 nodes, run A | 6 nodes, run B | moves of the cuts |
+| --- | --- | --- | --- | --- |
+| bulk 308k | 1.641 / 1.645 | 0.293 / 0.289 | 0.282 / 0.309 | 0 |
+| slab 308k | 1.645 / 1.646 | 0.315 / 0.317 | 0.296 / 0.314 | 1 |
+| pore 255k | 1.463 / 1.354 | 0.309 / 0.276 | 0.312 / 0.261 | 1 |
+| cluster 112k | 0.605 / 0.583 | 0.148 / 0.175 | 0.148 / 0.167 | 3 |
 
 What the numbers say:
 
-- rcb balances everything to within 2-8%. It is faster wherever legacy is
-  unbalanced (the pore by 6% on one node and 15-25% on six), and 1-11%
-  slower where legacy already balances (bulk, the slab): its re-balancing
-  and migration cost ~0.02 s/step at 2304 domains.
+- rcb balances everything to within 2-8% (the cluster on six nodes, 48
+  atoms a domain, to 5-17%). It is faster wherever legacy is unbalanced and
+  the domains are not tiny: the pore by 7% on one node and 10-16% on six, the
+  cluster by 4% on one node. On bulk and the slab it is within noise of
+  legacy.
+- The cluster on six nodes is 13-18% slower: at 48 atoms a domain its
+  imbalance hovers around the 10% threshold, the cuts move three times in 20
+  steps, and each move costs more than it wins there. With a 5% threshold it
+  tied legacy but bulk paid 8-10% for moves it did not need.
 - The gain is smaller than the imbalance predicted: balanced, the mean GAP
   time per rank rises by ~20% at the same total work (pore 1.08 -> 1.28 s on
   one node). Our reading, not verified: the busy cores of an unbalanced run
@@ -434,6 +442,8 @@ What the numbers say:
   registered again, in the calls that post the sends. `UCX_RNDV_THRESH=inf`
   made it vanish; keeping one grow-only pair of buffers does the same
   without it, and took bulk from 0.403 to 0.301 s/step.
+- Moves of the cuts cost ~0.05 s each at 2304 ranks: an all-to-all of
+  counts (~40 ms) and the bisection's histogram allreduces.
 
 The exchange itself was measured apart from TurboGAP by replaying each
 partition's halo graph (from the real structures) at 2304 ranks: direct
@@ -443,7 +453,8 @@ neighbourhood collectives 1.0 ms, legacy-style six sweeps 0.45 ms. A
 one-off MPI_Alltoall over all ranks does not slow the exchanges after it.
 
 So: rcb for a cell legacy cannot balance (vacuum, pores, clusters, surfaces
-in 3D) or a rank count it cannot grid; legacy for a uniform bulk or slab.
+in 3D) with a few hundred atoms or more a domain, or a rank count legacy
+cannot grid; either for a uniform bulk or slab.
 
 ## Not yet done
 
@@ -458,6 +469,6 @@ in 3D) or a rank count it cannot grid; legacy for a uniform bulk or slab.
 - `dd_integrate = domain` for the thermostats and features it does not cover
   yet: GLE and Langevin (whose per-atom bath state would migrate with the
   atom), the barostat (its box change moves the cuts), and the optimisers.
-- rcb's remaining cost where legacy is balanced: re-balancing only when
-  it pays (the 5% threshold is near the noise of 134-atom domains), and
-  migration to partners alone when the boxes have not moved.
+- rcb with very small domains: deciding to move the cuts on the measured
+  GAP time rather than pair counts, so that a move happens only when the
+  time it would save over the coming rebuilds exceeds its ~0.05 s.
