@@ -485,6 +485,15 @@ extern "C" void cuda_set_device(int my_rank) {
   gpuErrchk(hipGetDeviceCount(&num_gpus));
   gpuErrchk(hipSetDevice(my_rank % num_gpus));
   gpuErrchk(hipGetDevice(&mygpuid));
+  // The pool's default release threshold of 0 returns its memory to the driver
+  // at every synchronise, so each allocation after one is a driver call (~100
+  // us, not ~5). Keep it; the failure path in gpu_malloc_async trims it.
+  {
+    hipMemPool_t pool;
+    uint64_t keep = UINT64_MAX;
+    gpuErrchk(hipDeviceGetDefaultMemPool(&pool, mygpuid));
+    gpuErrchk(hipMemPoolSetAttribute(pool, hipMemPoolAttrReleaseThreshold, &keep));
+  }
   // Say which card this rank took, and out of how many it could see. Whether
   // ranks land on separate devices depends entirely on what the launcher makes
   // visible: one GPU per task and every rank correctly picks its own single
