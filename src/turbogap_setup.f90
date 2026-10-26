@@ -578,6 +578,10 @@ contains
                           & 1, MPI_LOGICAL, 0,&
                           & MPI_COMM_WORLD, ierr)
 
+                  call mpi_bcast(soap_turbo_hypers(i)%local_property_models(j)%zero_trunc, &
+                          & 1, MPI_LOGICAL, 0,&
+                          & MPI_COMM_WORLD, ierr)
+
                end do
             end if
          end do

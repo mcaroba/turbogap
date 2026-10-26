@@ -24,6 +24,10 @@
 #
 # Host against device in the same session, never against a stored number: the
 # device does not reproduce itself run to run.
+#
+# The host on 3 ranks must clamp the same sites as on 1: zero_trunc is set
+# while rank 0 reads the potential, and a rank it never reached kept negative
+# values for the sites it owns.
 
 set -euo pipefail
 
@@ -41,8 +45,11 @@ V0_SHIFTED=5.0
 NSITES=512
 TOL_Q=1.0e-6
 TOL_F=1.0e-6
+RANKS=3
 
 . "$repo/tests/data_root.sh"
+# shellcheck source=../mpi_oversubscribe.sh
+. "$here/../mpi_oversubscribe.sh"
 
 say() { printf '\n== %s\n' "$1"; }
 skip() { printf '    SKIP: %s\n' "$1"; exit 0; }
@@ -50,8 +57,8 @@ die() { printf '    FAIL: %s\n' "$1" >&2; exit 1; }
 
 check_preconditions() {
     [ -x "$BIN" ] || skip "no host binary at $BIN"
-    [ -x "$GPU_BIN" ] || skip "no device binary at $GPU_BIN (make TURBOGAP_ARCH=... BUILD_TAG_EXTRA=-gpu)"
     [ -d "$DATA_ROOT/xps_opt" ] || skip "no xps_opt data under $DATA_ROOT"
+    command -v mpirun > /dev/null || skip "no mpirun for the $RANKS-rank leg"
 }
 
 stage_potential() {
@@ -100,22 +107,25 @@ INPUT
 }
 
 run_one() {
-    local dir=$1 bin=$2
+    local dir=$1 bin=$2 ranks=${3:-1}
+    local launch=""
+    [ "$ranks" -gt 1 ] && launch="mpirun $MPI_OVERSUBSCRIBE -np $ranks"
     mkdir -p "$WORK/$dir"
     cp "$WORK/input" "$WORK/$dir/"
     ln -sf "$DATA_ROOT/xps_opt/atoms.xyz" "$WORK/$dir/"
     ln -sf "$WORK/gap_files" "$WORK/$dir/gap_files"
     ln -sf "$WORK/target.dat" "$WORK/$dir/"
-    ( cd "$WORK/$dir" && "$bin" md > run.log 2>&1 ) \
+    ( cd "$WORK/$dir" && OMP_NUM_THREADS=1 $launch "$bin" md > run.log 2>&1 ) \
         || { tail -20 "$WORK/$dir/run.log"; die "$dir run"; }
 }
 
 compare() {
-    "$PYTHON" - "$WORK/cpu/trajectory_out.xyz" "$WORK/gpu/trajectory_out.xyz" \
-               "$NSITES" "$TOL_Q" "$TOL_F" <<'PY'
+    local ref=$1 other=$2
+    "$PYTHON" - "$WORK/$ref/trajectory_out.xyz" "$WORK/$other/trajectory_out.xyz" \
+               "$NSITES" "$TOL_Q" "$TOL_F" "$ref" "$other" <<'PY'
 import sys
 
-path_h, path_d, n, tol_q, tol_f = sys.argv[1:6]
+path_h, path_d, n, tol_q, tol_f, name_h, name_d = sys.argv[1:8]
 n, tol_q, tol_f = int(n), float(tol_q), float(tol_f)
 
 
@@ -134,7 +144,7 @@ fd, qd = frame(path_d)
 
 clamped_h = [i for i, v in enumerate(qh) if v == 0.0]
 clamped_d = [i for i, v in enumerate(qd) if v == 0.0]
-print("    clamped: %d of %d on the host, %d on the device" % (len(clamped_h), n, len(clamped_d)))
+print("    clamped: %d of %d on %s, %d on %s" % (len(clamped_h), n, name_h, len(clamped_d), name_d))
 
 # Without this the rest is vacuous: two backends that both clamp nothing agree
 # trivially, and so do two that clamp everything.
@@ -142,36 +152,45 @@ if not 0 < len(clamped_h) < n:
     sys.exit("    FAIL: the clamp fired on %d of %d sites; it must fire on some "
              "and not all, or nothing is tested" % (len(clamped_h), n))
 if clamped_h != clamped_d:
-    sys.exit("    FAIL: the two backends clamped different sites")
+    sys.exit("    FAIL: %s and %s clamped different sites" % (name_h, name_d))
 
 dq = max(abs(a - b) for a, b in zip(qh, qd))
 df = max(abs(a - b) for x, y in zip(fh, fd) for a, b in zip(x, y))
 mf = max(abs(a) for x in fh for a in x)
-print("    core_electron_be: max |device - host| = %.3e" % dq)
-print("    forces          : max |F| = %.4f eV/A, max |device - host| = %.3e eV/A (%.1e rel)"
-      % (mf, df, df / mf))
+print("    core_electron_be: max |%s - %s| = %.3e" % (name_d, name_h, dq))
+print("    forces          : max |F| = %.4f eV/A, max |%s - %s| = %.3e eV/A (%.1e rel)"
+      % (mf, name_d, name_h, df, df / mf))
 if dq > tol_q:
     sys.exit("    FAIL: the clamped values disagree")
 if df > tol_f:
     sys.exit("    FAIL: the forces disagree -- the gradient of a clamped site "
-             "is being kept on one backend and dropped on the other")
-print("    PASS: the device clamps the same sites and drops their gradients")
+             "is being kept in one run and dropped in the other")
+print("    PASS: %s clamps the same sites as %s and drops their gradients" % (name_d, name_h))
 PY
 }
 
 main() {
-    say "zero_trunc on the device: same values, same dropped gradients"
     check_preconditions
     stage_potential
     stage_target
     stage_input
     run_one cpu "$BIN"
-    run_one gpu "$GPU_BIN"
     grep -q "floored at zero" "$WORK/cpu/run.log" \
         || die "the host did not report flooring; the case no longer clamps"
-    grep -q "floored at zero" "$WORK/gpu/run.log" \
-        || die "the device did not report flooring"
-    compare
+
+    say "zero_trunc on $RANKS host ranks: the same sites as on 1"
+    run_one cpu$RANKS "$BIN" "$RANKS"
+    compare cpu cpu$RANKS
+
+    say "zero_trunc on the device: same values, same dropped gradients"
+    if [ -x "$GPU_BIN" ]; then
+        run_one gpu "$GPU_BIN"
+        grep -q "floored at zero" "$WORK/gpu/run.log" \
+            || die "the device did not report flooring"
+        compare cpu gpu
+    else
+        printf '    SKIP: no device binary at %s\n' "$GPU_BIN"
+    fi
     [ -n "${TURBOGAP_KEEP:-}" ] || rm -rf "$WORK"
 }
 
