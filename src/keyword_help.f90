@@ -2456,6 +2456,86 @@ contains
          write (*, '(A)') ''
       end if
 
+!     ---- Metadynamics
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '=== METADYNAMICS ==='
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  do_metadynamics                      [logical, default false]'
+         write (*, '(A)') '      Run SOAP-kernel metadynamics. A random target atom is picked, and'
+         write (*, '(A)') '      the SOAP environments around it are deposited into a'
+         write (*, '(A)') '      history-dependent bias that pushes the system away from environments'
+         write (*, '(A)') '      it has already visited. Every metadynamics_window steps a new target'
+         write (*, '(A)') '      is drawn and the bias restarts from zero. The bias acts on the'
+         write (*, '(A)') '      forces and the virial, but its energy is kept out of the total'
+         write (*, '(A)') '      energy and reported as energy_metadynamics instead. Needs at least'
+         write (*, '(A)') '      one soap_turbo descriptor.'
+         write (*, '(A)') '      -> see metadynamics_xi, metadynamics_dt, metadynamics_stride,'
+         write (*, '(A)') '         metadynamics_window'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  metadynamics_dt                      [real, default 1.0]'
+         write (*, '(A)') '      Well-tempering scale. A bias point visited N times has height'
+         write (*, '(A)') '      metadynamics_xi*ln(1 + N/metadynamics_dt), so a larger value makes'
+         write (*, '(A)') '      the heights grow faster with repeated visits and saturate later.'
+         write (*, '(A)') '      -> needs do_metadynamics; see metadynamics_xi'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  metadynamics_reg                     [real, default 1.e-6]'
+         write (*, '(A)') '      Added to the diagonal of the bias kernel matrix before the weights'
+         write (*, '(A)') '      are solved for. Increase it if the run warns that the kernel matrix'
+         write (*, '(A)') '      is singular.'
+         write (*, '(A)') '      -> needs do_metadynamics'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  metadynamics_stride                  [integer, default 10]'
+         write (*, '(A)') '      Deposit the environments around the target atom into the bias every'
+         write (*, '(A)') '      this many MD steps, counted from the step the target was picked.'
+         write (*, '(A)') '      -> needs do_metadynamics; see metadynamics_window'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  metadynamics_threshold               [real, default 0.99]'
+         write (*, '(A)') '      Two SOAP vectors whose dot product is above this count as the same'
+         write (*, '(A)') '      environment: a new environment that close to a stored one adds a'
+         write (*, '(A)') '      visit to it instead of a new bias point.'
+         write (*, '(A)') '      -> needs do_metadynamics'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  metadynamics_window                  [integer, default 400]'
+         write (*, '(A)') '      Number of MD steps spent on one target atom. After that a new target'
+         write (*, '(A)') '      is drawn at random and the bias restarts from zero.'
+         write (*, '(A)') '      -> needs do_metadynamics; see metadynamics_stride'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  metadynamics_xi                      [real, default 2.0, eV]'
+         write (*, '(A)') '      Height scale of the bias. See metadynamics_dt for how heights grow'
+         write (*, '(A)') '      with revisits.'
+         write (*, '(A)') '      -> needs do_metadynamics; see metadynamics_dt'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  metadynamics_zeta                    [integer, default 10]'
+         write (*, '(A)') '      Exponent of the bias kernel (q_i.q_j)^zeta. Larger values make each'
+         write (*, '(A)') '      bias point narrower in SOAP space.'
+         write (*, '(A)') '      -> needs do_metadynamics'
+         write (*, '(A)') ''
+      end if
+      if (every .or. (mode == 'md')) then
+         write (*, '(A)') '  print_metadynamics_forces            [logical, default false]'
+         write (*, '(A)') '      Write the per-atom bias energies and forces of the latest step to'
+         write (*, '(A)') '      metadynamics_forces.dat, overwriting it every step.'
+         write (*, '(A)') '      -> needs do_metadynamics'
+         write (*, '(A)') ''
+      end if
+
+
 !     ---- Output
       if (every .or. .not. gap_only) then
          write (*, '(A)') '=== OUTPUT ==='

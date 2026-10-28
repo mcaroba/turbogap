@@ -78,7 +78,7 @@ contains
         &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
         & valid_pdf, valid_sf, valid_xrd, valid_nd, do_pair_distribution,&
         & do_structure_factor, do_xrd, do_nd, string, do_dipole, dipole,&
-        & energies_dipole)
+        & energies_dipole, do_metadynamics, energies_metadynamics)
       implicit none
       real(dp), intent(in), allocatable :: energies_soap(:)
       real(dp), intent(in), allocatable :: energies_2b(:)
@@ -102,6 +102,8 @@ contains
       logical, intent(in), optional :: do_dipole
       real(dp), intent(in), optional :: dipole(1:3)
       real(dp), intent(in), allocatable, optional :: energies_dipole(:)
+      logical, intent(in), optional :: do_metadynamics
+      real(dp), intent(in), allocatable, optional :: energies_metadynamics(:)
       character*1024, intent(out) :: string
       character*32 :: temp_string
       character*32 :: dipole_string(1:3)
@@ -171,6 +173,16 @@ contains
                trim(adjustl(dipole_string(3)))//""""
          end if
       end if
+
+      if (present(do_metadynamics)) then
+         if (do_metadynamics .and. present(energies_metadynamics)) then
+            if (allocated(energies_metadynamics)) then
+               write (temp_string, "(F16.8)") sum(energies_metadynamics)
+               write (string, "(A)") adjustl(trim(string))//" energy_metadynamics="//trim(adjustl(temp_string))
+            endif
+         endif
+      endif
+
 
    end subroutine get_xyz_energy_string
 

@@ -44,6 +44,7 @@ module turbogap_soap
    use turbogap_setup, only: model_t
    use turbogap_results, only: results_t
    use turbogap_loop, only: loop_t
+   use enhanced_sampling, only: metad_state, metad_deposit
 #ifdef _GPU
    use iso_c_binding
    use F_B_C, only: gpu_malloc_async, cpy_htod, gpu_free_async
@@ -59,7 +60,7 @@ module turbogap_soap
 
 contains
 
-   subroutine compute_soap(res, state, nl, dom, model, params, loop, comm, time)
+   subroutine compute_soap(res, state, nl, dom, model, params, loop, comm, time, metad)
       type(results_t), target, intent(inout) :: res
       type(state_t), intent(in) :: state
       type(neighbors_t), intent(inout) :: nl
@@ -69,6 +70,7 @@ contains
       type(loop_t), intent(in) :: loop
       type(comm_t), intent(in) :: comm
       type(times_t), intent(inout) :: time
+      type(metad_state), intent(inout) :: metad
       real(dp), allocatable :: soap(:, :)
       real(dp), allocatable :: soap_cart_der(:, :, :)
       integer, allocatable :: der_neighbors(:)
@@ -305,7 +307,7 @@ contains
                  & res%this_local_properties_cart_der_pt,&
                  & model%local_property_indexes, this_i_beg, this_i_end, this_j_beg, this_j_end, &
                  & res%this_virial, n_lp_count, model%soap_turbo_hypers(i)%is_dipole_model, &
-                 & res%this_local_dipoles, res%this_energies_dipole)
+                 & res%this_local_dipoles, res%this_energies_dipole, metad, i)
 
             call soap_backend_end()
 #endif
@@ -446,6 +448,11 @@ contains
          end if
 
          call time_end(time%soap)
+         
+         ! Deposit
+         if (metad%on) then 
+            call metad_deposit(metad, comm%rank, comm%size)
+         endif
 
       end do
       call time_end(time%gap)

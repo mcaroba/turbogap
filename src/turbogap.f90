@@ -52,6 +52,7 @@ program turbogap
    use turbogap_ir, only: ir_run_t, ir_init, ir_step_begin, ir_step_end, ir_finish
    use turbogap_vdw, only: vdw_state, vdw_write_ts_scaling
    use turbogap_soap, only: soap_free_device
+   use enhanced_sampling
 
    implicit none
 
@@ -69,6 +70,7 @@ program turbogap
    type(perform_t) :: perform
    type(vdw_state) :: vdw_ws
    type(times_t) :: time
+   type(metad_state), target :: metad
    real(dp) :: time1
    real(dp) :: time3
    integer :: n_omp = 1
@@ -109,6 +111,9 @@ program turbogap
                                  model%local_properties_dim_mpi_soap_turbo, dyn%nrows, dyn%allelstopdata, &
                                  dyn%ephbeta, dyn%ephfdm, dyn%ephlsc, time)
 
+!  Metadynamics set-up. Does nothing unless do_metadynamics is set.
+   call metad_init(metad, params, model%soap_turbo_hypers, model%n_soap_turbo, comm%rank)
+
 !  After the input: it reads mem_fraction and writes max_Gbytes_per_process.
    call gpu_memory_budget_init(params, comm%rank, comm%size)
 
@@ -141,9 +146,12 @@ program turbogap
       call domain_build(dom, nl, comm, state, params, model, loop, smp%mc_file, time)
       call structure_update_volume(state)
 
+      if (metad%on) call metad_begin_step(metad, loop%md_istep, state%n_sites, state%xyz_species,&
+                                          & model%soap_turbo_hypers, comm%rank)
+
       if (params%do_prediction .or. params%write_soap .or. params%write_derivatives) then
          call evaluate(res, state, nl, dom, model, params, perform, loop, dyn, ir, vdw_ws, comm, &
-                       do_electrostatics, n_omp, time3, time)
+                       do_electrostatics, n_omp, time3, time, metad)
       else
          call print_nothing_to_do(comm)
       end if
@@ -155,12 +163,12 @@ program turbogap
                                   res%forces, res%energy, res%virial, loop%exit_loop, nl%rebuild_neighbors_list)
          call domain_sync_after_ipi(dom, comm, state, nl, loop)
       else
-         call md_step(dyn, state, res, nl, model, params, loop, smp%i_image, smp%i_nested, comm, time)
+         call md_step(dyn, state, res, nl, model, params, loop, smp%i_image, smp%i_nested, comm, time, metad)
          call domain_sync_after_md(dom, comm, state, nl, params, time)
       end if
 
       call nested_step(smp, state, res, dyn, nl, params, loop, comm)
-
+      
       call mc_step(smp, state, res, dyn, nl, model, params, perform, loop, comm, time)
 
       call loop_sync(loop, params, comm, time)

@@ -56,6 +56,7 @@ module turbogap_md
    use eph_fdm
    use eph_electronic_stopping
    use neighbors_skin, only: skin_accumulate, skin_needs_rebuild
+   use enhanced_sampling, only: metad_state, metad_add_bias
 #ifdef _MPIF90
    use mpi
 #endif
@@ -99,7 +100,7 @@ contains
                          forces_prev, masses, masses_types, xyz, xyz_species, a_box, b_box, c_box, indices, &
                          v_uc, virial, energy, energy_prev, energies, energies_soap, energies_2b, &
                          energies_3b, energies_core_pot, energies_vdw, energies_lp, energies_exp, &
-                         energies_pdf, energies_sf, energies_xrd, energies_nd, local_properties, &
+                         energies_pdf, energies_sf, energies_xrd, energies_nd, energies_metadynamics, local_properties, &
                          local_property_labels, instant_temp, instant_pressure, instant_pressure_prev, &
                          e_kin, e_kinetic, kb, evpera3tobar, fix_atom, exit_loop, rebuild_neighbors_list, &
                          i_image, i_nested, n_pos, nrows, filename, string, allelstopdata, ephbeta, ephfdm, &
@@ -152,6 +153,9 @@ contains
       real(dp), intent(in) :: dipole(1:3)
       real(dp), allocatable, intent(in) :: local_dipoles(:, :)
       real(dp), allocatable, intent(in) :: energies_dipole(:)
+!     Metadynamics
+      real(dp), allocatable, intent(in), optional :: energies_metadynamics(:)
+
       character*1024, allocatable, intent(in) :: local_property_labels(:)
       real(dp), intent(inout) :: instant_temp
       real(dp), intent(inout) :: instant_pressure
@@ -514,7 +518,8 @@ contains
                     &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                     & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                     & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
-                    & params%do_dipole, dipole, energies_dipole)
+                    & params%do_dipole, dipole, energies_dipole,&
+                    & params%do_metadynamics, energies_metadynamics)
 
                call write_extxyz(n_sites, md_istep, md_time, time_step,&
                     & instant_temp, instant_pressure, a_box&
@@ -537,7 +542,8 @@ contains
                     &, energies_lp, energies_pdf, energies_sf, energies_xrd, energies_nd,&
                     & params%valid_pdf, params%valid_sf, params%valid_xrd, params%valid_nd, params%do_pair_distribution,&
                     & params%do_structure_factor, params%do_xrd, params%do_nd, string,&
-                    & params%do_dipole, dipole, energies_dipole)
+                    & params%do_dipole, dipole, energies_dipole,&
+                    & params%do_metadynamics, energies_metadynamics)
 
                call write_extxyz(n_sites, md_istep, md_time, time_step, instant_temp, instant_pressure, &
                     a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), c_box/dfloat(indices(3)), &
@@ -729,7 +735,7 @@ contains
 
 !  One step of the integrator on rank 0. Nested sampling drives it too, which
 !  is why the walker indices come in.
-   subroutine md_step(dyn, state, res, nl, model, params, loop, i_image, i_nested, comm, time)
+   subroutine md_step(dyn, state, res, nl, model, params, loop, i_image, i_nested, comm, time, metad)
       type(dynamics_t), intent(inout) :: dyn
       type(state_t), intent(inout) :: state
       type(results_t), intent(inout) :: res
@@ -741,6 +747,7 @@ contains
       integer, intent(inout) :: i_nested
       type(comm_t), intent(in) :: comm
       type(times_t), intent(inout) :: time
+      type(metad_state), intent(inout) :: metad
       character*1024 :: filename
       character*1024 :: string
       integer :: ierr
@@ -754,7 +761,7 @@ contains
                       res%energy_prev, res%energies, res%energies_soap, res%energies_2b, res%energies_3b, &
                       res%energies_core_pot, &
                       res%energies_vdw, res%energies_lp, res%energies_exp, res%energies_pdf, res%energies_sf, res%energies_xrd, &
-                      res%energies_nd, res%local_properties, model%local_property_labels, dyn%instant_temp, &
+                      res%energies_nd, metad%energies, res%local_properties, model%local_property_labels, dyn%instant_temp, &
                       dyn%instant_pressure, dyn%instant_pressure_prev, dyn%e_kin, dyn%e_kinetic, dyn%kb, dyn%evpera3tobar, &
                       state%fix_atom, loop%exit_loop, nl%rebuild_neighbors_list, i_image, i_nested, n_pos, dyn%nrows, &
                       filename, string, dyn%allelstopdata, dyn%ephbeta, dyn%ephfdm, dyn%ephlsc, time, &

@@ -1028,6 +1028,8 @@ contains
          if (keyword_found) cycle
          call read_options_output(10, iostatus, rank, keyword, mode, params, n_species, keyword_found)
          if (keyword_found) cycle
+         call read_options_metadynamics(10, iostatus, rank, keyword, mode, params, keyword_found)
+         if (keyword_found) cycle
 
 !      Accepted here and ignored: these tune the GPU implementation and a CPU
 !      build has nothing to tune. They are read anyway so that one input deck
@@ -5624,6 +5626,130 @@ contains
       keyword_found = .true.
 
    end subroutine read_options_gpu
+
+   !****************************************************************
+!  Input keywords for metadynamics (src/enhanced_sampling.f90)
+!
+!  Sets keyword_found when it recognises the keyword and leaves it alone
+!  otherwise, so read_input_file can offer the line to the next family.
+   subroutine read_options_metadynamics(unit, iostatus, rank, keyword, mode, params, keyword_found)
+      implicit none
+
+      integer, intent(in) :: unit, rank
+      integer, intent(inout) :: iostatus
+      character*64, intent(in) :: keyword
+      character(len=*), intent(in) :: mode
+      type(input_parameters), intent(inout) :: params
+      logical, intent(inout) :: keyword_found
+
+      character*64 :: cjunk
+
+      !> @kw do_metadynamics
+      !> Run SOAP-kernel metadynamics. A random target atom is picked, and the SOAP environments
+      !> around it are deposited into a history-dependent bias that pushes the system away from
+      !> environments it has already visited. Every metadynamics_window steps a new target is
+      !> drawn and the bias restarts from zero. The bias acts on the forces and the virial, but its
+      !> energy is kept out of the total energy and reported as energy_metadynamics instead.
+      !> Needs at least one soap_turbo descriptor.
+      !> @modes md
+      !> @see metadynamics_xi, metadynamics_dt, metadynamics_stride, metadynamics_window
+      if (keyword == "do_metadynamics") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_metadynamics
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("do_metadynamics", params%do_metadynamics)
+         !> @kw metadynamics_dt
+         !> Well-tempering scale. A bias point visited N times has height
+         !> metadynamics_xi*ln(1 + N/metadynamics_dt), so a larger value makes the heights grow
+         !> faster with repeated visits and saturate later.
+         !> @modes md
+         !> @needs do_metadynamics
+         !> @see metadynamics_xi
+      else if (keyword == "metadynamics_dt") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%metadynamics_dT
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("metadynamics_dT", params%metadynamics_dT)
+         !> @kw metadynamics_xi
+         !> Height scale of the bias. See metadynamics_dt for how heights grow with revisits.
+         !> @units eV
+         !> @modes md
+         !> @needs do_metadynamics
+         !> @see metadynamics_dt
+      else if (keyword == "metadynamics_xi") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%metadynamics_xi
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("metadynamics_xi", params%metadynamics_xi)
+         !> @kw metadynamics_threshold
+         !> Two SOAP vectors whose dot product is above this count as the same environment: a new
+         !> environment that close to a stored one adds a visit to it instead of a new bias point.
+         !> @modes md
+         !> @needs do_metadynamics
+      else if (keyword == "metadynamics_threshold") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%metadynamics_threshold
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("metadynamics_threshold", params%metadynamics_threshold)
+         !> @kw metadynamics_reg
+         !> Added to the diagonal of the bias kernel matrix before the weights are solved for.
+         !> Increase it if the run warns that the kernel matrix is singular.
+         !> @modes md
+         !> @needs do_metadynamics
+      else if (keyword == "metadynamics_reg") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%metadynamics_reg
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("metadynamics_reg", params%metadynamics_reg)
+         !> @kw metadynamics_zeta
+         !> Exponent of the bias kernel (q_i.q_j)^zeta. Larger values make each bias point
+         !> narrower in SOAP space.
+         !> @modes md
+         !> @needs do_metadynamics
+      else if (keyword == "metadynamics_zeta") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%metadynamics_zeta
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("metadynamics_zeta", params%metadynamics_zeta)
+         !> @kw metadynamics_stride
+         !> Deposit the environments around the target atom into the bias every this many MD
+         !> steps, counted from the step the target was picked.
+         !> @modes md
+         !> @needs do_metadynamics
+         !> @see metadynamics_window
+      else if (keyword == "metadynamics_stride") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%metadynamics_stride
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("metadynamics_stride", params%metadynamics_stride)
+         !> @kw metadynamics_window
+         !> Number of MD steps spent on one target atom. After that a new target is drawn at random
+         !> and the bias restarts from zero.
+         !> @modes md
+         !> @needs do_metadynamics
+         !> @see metadynamics_stride
+      else if (keyword == "metadynamics_window") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%metadynamics_window
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("metadynamics_window", params%metadynamics_window)
+         !> @kw print_metadynamics_forces
+         !> Write the per-atom bias energies and forces of the latest step to
+         !> metadynamics_forces.dat, overwriting it every step.
+         !> @modes md
+         !> @needs do_metadynamics
+      else if (keyword == "print_metadynamics_forces") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%print_metadynamics_forces
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("print_metadynamics_forces", params%print_metadynamics_forces)
+      else
+         return
+      end if
+
+      keyword_found = .true.
+
+   end subroutine read_options_metadynamics
 
 !**************************************************************************
 

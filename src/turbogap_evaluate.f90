@@ -54,6 +54,7 @@ module turbogap_evaluate
    use exp_interface, only: get_write_condition, get_overwrite_condition, preprocess_exp_data
    use read_files, only: write_exp_data
    use soap_turbo_functions, only: cross_product
+   use enhanced_sampling, only: metad_state
 
    implicit none
 
@@ -63,7 +64,7 @@ module turbogap_evaluate
 contains
 
    subroutine evaluate(res, state, nl, dom, model, params, perform, loop, dyn, ir, vdw_ws, comm, &
-                       do_electrostatics, n_omp, time3, time)
+                       do_electrostatics, n_omp, time3, time, metad)
       type(results_t), target, intent(inout) :: res
       type(state_t), intent(inout) :: state
       type(neighbors_t), intent(inout) :: nl
@@ -76,6 +77,7 @@ contains
       type(ir_run_t), intent(inout) :: ir
       type(vdw_state), intent(inout) :: vdw_ws
       type(comm_t), intent(in) :: comm
+      type(metad_state), intent(inout) :: metad
       logical, intent(in) :: do_electrostatics
       integer, intent(inout) :: n_omp
       real(dp), intent(in) :: time3
@@ -124,7 +126,13 @@ contains
       !     Collect all energies
       call domain_complete_e0(dom, comm, res, state, time)
 
-      call compute_soap(res, state, nl, dom, model, params, loop, comm, time)
+      call compute_soap(res, state, nl, dom, model, params, loop, comm, time, metad)
+      ! Add bias contributions
+      if (metad%on) then
+         res%energies_metadynamics = metad%energies
+         res%forces_metadynamics = metad%forces
+         res%virial_metadynamics = metad%virial
+      endif
 
       call domain_complete_sites(dom, comm, res, state, params, model, time)
 
@@ -329,8 +337,7 @@ contains
          call time_end(time%gap)
          !       Communicate all energies and forces here for all
          !       terms
-         call domain_complete_contributions(dom, comm, res, state, params, model, time)
-
+         call domain_complete_contributions(dom, loop, comm, res, state, params, model, time, metad)
          !       Add up all the energy terms
          res%energies = res%energies + res%energies_soap + res%energies_2b +&
               & res%energies_3b + res%energies_core_pot + res%energies_vdw + res%energies_estat !+energies_lp

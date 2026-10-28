@@ -1000,6 +1000,28 @@ module types
       logical :: do_pair_distribution_explicit = .false.
       logical :: do_structure_factor_explicit = .false.
 
+!     METADYNAMICS 
+!     Master switch. Off: nothing in enhanced_sampling runs.
+      logical :: do_metadynamics = .false.
+!     Well-tempering scale: a sparse point visited N times has height
+!     xi*ln(1 + N/metadynamics_dT).
+      real(dp) :: metadynamics_dT = 1.d0
+!     Height scale [eV].
+      real(dp) :: metadynamics_xi = 2.d0
+!     Two SOAP vectors with q_i.q_j above this are the same environment.
+      real(dp) :: metadynamics_threshold = 0.99d0
+!     Diagonal regularisation of the bias kernel matrix.
+      real(dp) :: metadynamics_reg = 1.d-6
+!     Exponent of the bias kernel (q_i.q_j)^zeta.
+      integer :: metadynamics_zeta = 10
+!     Deposit into the bias every this many MD steps.
+      integer :: metadynamics_stride = 10
+!     MD steps spent on one target atom before a new one is drawn and the bias
+!     restarts from zero.
+      integer :: metadynamics_window = 400
+!     Write the per-atom bias energies and forces of every step.
+      logical :: print_metadynamics_forces = .false.
+
    end type input_parameters
 
 ! This is a container for atomic images

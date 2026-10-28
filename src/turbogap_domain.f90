@@ -41,6 +41,7 @@ module turbogap_domain
    use turbogap_results, only: results_t
    use read_files, only: read_xyz
    use neighbors, only: build_neighbors_list
+   use enhanced_sampling
 
    implicit none
 
@@ -74,7 +75,8 @@ module turbogap_domain
    integer, parameter :: C_2B = 9
    integer, parameter :: C_CP = 10
    integer, parameter :: C_3B = 11
-   integer, parameter :: N_CONTRIB = 11
+   integer, parameter :: C_METAD = 12  
+   integer, parameter :: N_CONTRIB = 12
 
    type, public :: neighbors_t
       real(dp), allocatable :: rjs(:)
@@ -432,14 +434,16 @@ contains
 !  Complete every contribution family: each rank holds partial sums for the
 !  sites it owns and the neighbours they touch. Replicated data: one packed
 !  reduce to rank 0, whose totals are the ones the rest of the step reads.
-   subroutine domain_complete_contributions(dom, comm, res, state, params, model, time)
+   subroutine domain_complete_contributions(dom, loop, comm, res, state, params, model, time, metad)
       type(domain_t), intent(inout) :: dom
+      type(loop_t), intent(inout) :: loop
       type(comm_t), intent(in) :: comm
       type(results_t), target, intent(inout) :: res
       type(state_t), intent(in) :: state
       type(input_parameters), intent(in) :: params
       type(model_t), intent(in) :: model
       type(times_t), intent(inout) :: time
+      type(metad_state), intent(inout) :: metad
       real(dp), allocatable :: all_energies(:, :)
       real(dp), allocatable :: all_forces(:, :, :)
       real(dp), allocatable :: all_virial(:, :, :)
@@ -470,6 +474,7 @@ contains
       contrib_on(C_2B) = (model%n_distance_2b > 0)
       contrib_on(C_CP) = (model%n_core_pot > 0)
       contrib_on(C_3B) = (model%n_angle_3b > 0)
+      contrib_on(C_METAD) = metad%on
 
       n_active = 0
       if (contrib_on(C_SOAP)) then
@@ -605,6 +610,20 @@ contains
          end if
       end if
 
+      ! Metadynamics bias. Like SOAP, each rank holds partial sums in the
+      ! same arrays the totals land in, so source and destination coincide.
+      if (contrib_on(C_METAD)) then
+         n_active = n_active + 1
+         contrib(n_active)%e_src => res%energies_metadynamics
+         contrib(n_active)%e_dst => res%energies_metadynamics
+         contrib(n_active)%forces = params%do_forces
+         if (contrib(n_active)%forces) then
+            contrib(n_active)%f_src => res%forces_metadynamics
+            contrib(n_active)%v_src => res%virial_metadynamics
+            contrib(n_active)%f_dst => res%forces_metadynamics
+            contrib(n_active)%v_dst => res%virial_metadynamics
+         end if
+      end if
       counter2 = n_active
 
       allocate (all_energies(1:state%n_sites, 1:counter2))
@@ -682,7 +701,13 @@ contains
          if (params%do_forces .and. params%exp_forces) deallocate (res%this_forces_nd)
       end if
 
-      !       Clean up
+      if (contrib_on(C_METAD)) then
+         !deallocate (res%this_energies_metadynamics)
+         !print *, "deallocation successful"
+         if (params%do_metadynamics) call metad_write_output(metad, loop%md_istep, comm%rank, params%print_metadynamics_forces)
+      end if
+
+      ! Clean up
       deallocate (all_energies, all_this_energies)
       if (params%do_forces) then
          deallocate (all_forces, all_this_forces, all_virial, all_this_virial)

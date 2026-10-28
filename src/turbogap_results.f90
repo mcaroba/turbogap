@@ -137,6 +137,13 @@ module turbogap_results
       real(dp), allocatable :: energies_dipole(:)
       real(dp), allocatable :: this_energies_dipole(:)
       real(dp) :: dipole(1:3)
+
+      real(dp), allocatable :: energies_metadynamics(:)
+      real(dp), allocatable :: this_energies_metadynamics(:)
+      real(dp), allocatable :: forces_metadynamics(:, :)
+      real(dp), allocatable :: this_forces_metadynamics(:, :)
+      real(dp) :: virial_metadynamics(1:3, 1:3)
+      real(dp) :: this_virial_metadynamics(1:3, 1:3)
    end type results_t
 
 contains

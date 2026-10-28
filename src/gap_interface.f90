@@ -575,6 +575,7 @@ contains
       use types
       use mad_ir, only: mad_ir_collect, mad_ir_dmu_dr, mad_ir_need_dmu
       use mad_ir_xl, only: mad_ir_xl_active, mad_ir_xl_collect, mad_ir_xl_site_w, mad_ir_xl_force
+      use enhanced_sampling, only: metad_state, metad_add_bias
    contains
 
       subroutine get_gap_soap(n_total_sites, n_sites0, n_neigh0, neighbors_list0, n_species, species_types, &
@@ -593,7 +594,7 @@ contains
                               & local_properties_cart_der0,&
                               & local_property_indexes, this_i_beg, this_i_end, this_j_beg,&
                               & this_j_end, virial, lp_index, is_dipole_model, local_dipoles0, &
-                              & energies_dipole0)
+                              & energies_dipole0, metad, i_metad)
 
          implicit none
 
@@ -664,6 +665,11 @@ contains
          real(dp), intent(inout) :: local_properties_cart_der0(:, :, :)
          real(dp), intent(inout) :: local_dipoles0(:, :)
          real(dp), intent(inout) :: energies_dipole0(:)
+
+!     Metadynamics Optional: turn on with metad%on
+!     i_metad is the index of this descriptor in soap_turbo_hypers
+         type(metad_state), intent(inout), optional :: metad
+         integer, intent(in), optional :: i_metad
 
          real(dp), allocatable :: rjs(:)
          real(dp), allocatable :: thetas(:)
@@ -976,6 +982,16 @@ contains
                deallocate (local_properties_cart_der)
             end if
 
+         end if
+
+!     Adds the bias energies/forces/virial of these sites to metad and keeps the
+!     SOAP vectors that are to be deposited. It works on the descriptors just
+!     computed, in this routine's internal numbering, so the bias adds no SOAP
+!     evaluations. It does nothing unless metadynamics is on and this
+!     descriptor is biased for the current target atom.
+         if (present(metad) .and. present(i_metad) .and. do_derivatives .and. n_sites > 0) then
+            call metad_add_bias(metad, i_metad, n_sites, n_neigh, neighbors_list, rjs, xyz, &
+                              in_to_out_site, rcut_max, soap, soap_cart_der)
          end if
 
          !###---      Dipole prediction        ---###!
