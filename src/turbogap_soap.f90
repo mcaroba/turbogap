@@ -49,6 +49,7 @@ module turbogap_soap
    use F_B_C, only: gpu_malloc_async, cpy_htod, gpu_free_async
    use neighbors, only: get_number_of_atom_pairs_batches
    use gpu_context, only: gpu_stream
+   use soap_turbo_desc, only: get_species_supercell
 #endif
 
    implicit none
@@ -107,6 +108,8 @@ contains
       integer :: n_sparse
       integer :: dim
       integer :: n_sp
+      integer, allocatable :: species_supercell(:, :)
+      integer, allocatable :: species_multiplicity_supercell(:)
 #endif
 
       !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
@@ -207,6 +210,13 @@ contains
                                        model%soap_turbo_hypers(i)%dim, model%soap_turbo_hypers(i)%n_species, &
                                        params%max_Gbytes_per_process, i_beg_list, i_end_list, j_beg_list, j_end_list)
 #endif
+#ifdef _GPU
+!        Every batch looks its neighbours' species up in this; built per batch,
+!        it cost more host time than the batch's own bookkeeping.
+         call get_species_supercell(model%soap_turbo_hypers(i)%species_types, state%xyz_species_supercell, &
+                                    model%soap_turbo_hypers(i)%n_species, species_supercell, &
+                                    species_multiplicity_supercell)
+#endif
 
          do j = 1, size(i_beg_list)
             this_i_beg = dom%i_beg - 1 + i_beg_list(j)
@@ -276,7 +286,8 @@ contains
                model%soap_turbo_hypers(i)%multiplicity_array_d, model%soap_turbo_hypers(i)%st_W_d, &
                model%soap_turbo_hypers(i)%st_S_d, model%soap_turbo_hypers(i)%st_multiplicity_array_d, &
                model%soap_turbo_hypers(i)%recompute_basis, time%local_prop, &
-               model%soap_turbo_hypers(i)%is_dipole_model, res%local_dipoles, res%energies_dipole)
+               model%soap_turbo_hypers(i)%is_dipole_model, res%local_dipoles, res%energies_dipole, &
+               species_supercell, species_multiplicity_supercell)
 #else
             call soap_backend_begin(model%soap_turbo_hypers(i))
             call get_gap_soap(state%n_sites, this_n_sites_mpi, nl%n_neigh(this_i_beg:this_i_end), &
@@ -372,6 +383,7 @@ contains
          call soap_backend_end()
 
          call get_time(time%soap_solo(2))
+         deallocate (species_supercell, species_multiplicity_supercell)
 #endif
          deallocate (i_beg_list, i_end_list, j_beg_list, j_end_list)
 #ifdef _GPU

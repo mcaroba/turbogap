@@ -63,7 +63,7 @@ contains
         time_get_soap, W_d, S_d, multiplicity_array_d,&
         & st_W_d, st_S_d, st_multiplicity_array_d,&
         & recompute_basis, time_local_prop, is_dipole_model, local_dipoles0,&
-        & energies_dipole0)
+        & energies_dipole0, species_supercell, species_multiplicity_supercell)
 
       implicit none
 
@@ -126,6 +126,10 @@ contains
       real(dp), intent(inout) :: local_properties_cart_der0(:, :, :)
       real(dp), intent(inout) :: local_dipoles0(:, :)
       real(dp), intent(inout) :: energies_dipole0(:)
+!     From get_species_supercell, once for all batches. Only the which_atom
+!     path below rebuilds the multiplicities, and then for itself.
+      integer, intent(in) :: species_supercell(:, :)
+      integer, allocatable, intent(inout) :: species_multiplicity_supercell(:)
 
       real(dp), allocatable :: rjs(:)
       real(dp), allocatable :: thetas(:)
@@ -150,7 +154,6 @@ contains
       integer, allocatable :: der_neighbors(:)
       integer, allocatable :: der_neighbors_list(:)
       integer, allocatable :: in_to_out_pairs(:)
-      integer, allocatable :: species_multiplicity_supercell(:)
       integer :: n_sites
       integer :: i
       integer :: j
@@ -237,13 +240,20 @@ contains
          end if
       end do
       n_atom_pairs = size(rjs0)
-      call assign_species_multiplicity(max_species_multiplicity, species_types, xyz_species, &
-                                       xyz_species_supercell, n_species, all_atoms, which_atom, &
-                                       indices, n_neigh0, n_atom_pairs, neighbors_list0, mask0, &
-                                       species0, species_multiplicity0, &
-                                       species_multiplicity_supercell)
+      if (all_atoms) then
+         call assign_species_multiplicity_batch(max_species_multiplicity, species_types, xyz_species, &
+                                                n_species, n_neigh0, n_atom_pairs, neighbors_list0, &
+                                                species_supercell, species_multiplicity_supercell, &
+                                                mask0, species0, species_multiplicity0)
+      else
+         call assign_species_multiplicity(max_species_multiplicity, species_types, xyz_species, &
+                                          xyz_species_supercell, n_species, all_atoms, which_atom, &
+                                          indices, n_neigh0, n_atom_pairs, neighbors_list0, mask0, &
+                                          species0, species_multiplicity0, &
+                                          species_multiplicity_supercell)
+      end if
 
-      !--- ALLOCATED mask0, species0,  species_multiplicity0, species_multiplicity_supercell ---!
+      !--- ALLOCATED mask0, species0,  species_multiplicity0 ---!
 
       !   We need to sort out which atoms from the general neighbors list we actually keep
       !
@@ -285,7 +295,7 @@ contains
       if (n_sites == 0) then
 
          deallocate (mask0, is_atom_seen)
-         deallocate (species0, species_multiplicity0, species_multiplicity_supercell)
+         deallocate (species0, species_multiplicity0)
 
          ! Assuming we arent writing the derivatives here at all so not allocating soap stuff
 
@@ -369,7 +379,8 @@ contains
 
          !   Get SOAP vectors and derivatives:
          allocate (soap(1:n_soap, 1:n_sites))
-         soap = 0.d0
+!        Device get_soap never fills the host copy; only write_soap reads it.
+         if (write_soap) soap = 0.d0
          st_soap = n_soap*n_sites*sizeof(soap(1, 1))
          call gpu_malloc_async(soap_d, st_soap, gpu_stream)
 
@@ -560,7 +571,7 @@ contains
          if (allocated(forces)) deallocate (forces)
 
          deallocate (neighbors_list, n_neigh, rjs, xyz, thetas, phis, mask, mask0, is_atom_seen)
-         deallocate (species0, species_multiplicity0, species, species_multiplicity, species_multiplicity_supercell)
+         deallocate (species0, species_multiplicity0, species, species_multiplicity)
          deallocate (in_to_out_site, out_to_in_site, in_to_out_pairs)
 
       end if
