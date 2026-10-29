@@ -149,14 +149,14 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  gpu_batch_gbytes                     [real, default 0.5]'
+         write (*, '(A)') '  gpu_batch_gbytes                     [real, default -1.0]'
          write (*, '(A)') '      Batch size the device SOAP loop aims for, in GB per rank.'
          write (*, '(A)') '      gpu_mem_fraction sets the ceiling, which is about what fits on the'
          write (*, '(A)') '      card; this sets the target under it, which is about what is fast.'
-         write (*, '(A)') '      Bigger batches are not faster: on an RTX A2000 a 125k-atom single'
-         write (*, '(A)') '      point ran ~8% slower with batches sized to the whole card than with'
-         write (*, '(A)') '      0.5 GB ones, and the curve is flat below that. Raise it on a card'
-         write (*, '(A)') '      with more memory; 0 turns the cap off.'
+         write (*, '(A)') '      Negative, the default, means an eighth of the per-rank budget: the'
+         write (*, '(A)') '      fastest size measured on both an RTX A2000 (0.5 of ~4.5 GB) and a'
+         write (*, '(A)') '      GH200 (8 of 75 GB), where batches sized to the whole card ran 8% and'
+         write (*, '(A)') '      15% slower. 0 turns the cap off.'
          write (*, '(A)') '      -> see gpu_mem_fraction, max_gbytes_per_process'
          write (*, '(A)') ''
       end if

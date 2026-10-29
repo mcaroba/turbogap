@@ -435,11 +435,23 @@ the right ceiling and the wrong target. `diamond_125k`, one rank:
 `diamond_14k` has the same shape (4.98 s at 0.25 against 5.30 at 4.15), and at
 16 GB the run dies in a 3.19 GB allocation on a 5.7 GB card -- which is what
 the ceiling is for. So the device now sizes from the card and then takes the
-smaller of that and `gpu_batch_gbytes` (default 0.5). The host is the opposite
+smaller of that and `gpu_batch_gbytes`. The host is the opposite
 and is left alone: there, bigger is better (15.21 s at 0.25 GB against 14.48 s
 at the 7.76 GB it sizes itself), and its budget is a fraction of *total*
 memory rather than free, so a batch split cannot depend on what else the
 machine happens to be running.
+
+A fixed 0.5 GB is wrong on a big card. One GH200 (75 GB budget), 307k-atom CO,
+`dd_type = rcb`, seconds per MD step:
+
+| gpu_batch_gbytes | 0.5 | 1 | 2 | 4 | 8 | 16 | 32 | 75 (no cap) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| s/step | 12.50 | 8.34 | 6.11 | 4.65 | **3.93** | 4.01 | 4.33 | 4.53 |
+| peak GB | 0.87 | 0.87 | 1.56 | 2.03 | 4.04 | 7.80 | 14.8 | 33.9 |
+
+Both cards are fastest at about an eighth of the budget, so that is the
+default (`gpu_batch_gbytes` negative); a positive value still sets it. The
+peak is about half the requested size, so the estimate is conservative.
 
 Together with section 8, `diamond_125k` on this box went 48.78 s to 35.88 s.
 

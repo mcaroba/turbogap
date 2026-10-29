@@ -2391,9 +2391,9 @@ contains
          !> @kw gpu_batch_gbytes
          !> Batch size the device SOAP loop aims for, in GB per rank. gpu_mem_fraction sets the
          !> ceiling, which is about what fits on the card; this sets the target under it, which is
-         !> about what is fast. Bigger batches are not faster: on an RTX A2000 a 125k-atom single
-         !> point ran ~8% slower with batches sized to the whole card than with 0.5 GB ones, and the
-         !> curve is flat below that. Raise it on a card with more memory; 0 turns the cap off.
+         !> about what is fast. Negative, the default, means an eighth of the per-rank budget: the
+         !> fastest size measured on both an RTX A2000 (0.5 of ~4.5 GB) and a GH200 (8 of 75 GB),
+         !> where batches sized to the whole card ran 8% and 15% slower. 0 turns the cap off.
          !> @see gpu_mem_fraction, max_gbytes_per_process
       else if (keyword == 'gpu_batch_gbytes') then
          backspace (unit)

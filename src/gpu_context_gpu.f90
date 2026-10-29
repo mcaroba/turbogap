@@ -132,11 +132,14 @@ contains
 !        card 80x. Overwriting it here is the whole point of the keyword -- unless
 !        the input named it, which wins here as it does on the host.
 !        ... but not more than gpu_batch_gbytes. The ceiling above is about what
-!        fits; this is about what is fast. Batches sized to most of the card
-!        measured about 8% slower than 0.5 GB ones on a 125k-atom single point,
-!        and the curve is flat below that -- see docs/PROFILING.md.
+!        fits; this is about what is fast. Negative means auto, an eighth of the
+!        budget: fastest on both an RTX A2000 (0.5 of ~4.5 GB) and a GH200 (8 of
+!        75 GB) -- see docs/PROFILING.md.
          if (.not. params%max_Gbytes_set) then
             params%max_Gbytes_per_process = budget_gb
+            if (params%gpu_batch_gbytes < 0.d0) then
+               params%gpu_batch_gbytes = budget_gb/8.d0
+            end if
             if (params%gpu_batch_gbytes > 0.d0) then
                params%max_Gbytes_per_process = min(budget_gb, params%gpu_batch_gbytes)
             end if
