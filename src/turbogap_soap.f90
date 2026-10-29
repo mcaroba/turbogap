@@ -235,8 +235,11 @@ contains
                res%this_local_properties = 0.d0
                if (params%do_forces) then
 !                 Pair-wide, and the backend gets a pointer to this batch's
-!                 slice of it, so only that slice can have been written.
-                  res%this_local_properties_cart_der(:, this_j_beg:this_j_end, :) = 0.d0
+!                 slice of it, so only that slice can have been written. Read
+!                 back only under the same condition as here.
+                  if (any(model%soap_turbo_hypers(i)%local_property_models(:)%do_derivatives)) then
+                     res%this_local_properties_cart_der(:, this_j_beg:this_j_end, :) = 0.d0
+                  end if
                   !             I don't remember why this needs a pointer <----------------------------------------- CHECK
                   nullify (res%this_local_properties_cart_der_pt)
                   res%this_local_properties_cart_der_pt =>&

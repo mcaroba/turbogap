@@ -7017,7 +7017,7 @@ contains
                      do k2 = 1, n_soap_turbo
                         do k = 1, soap_turbo_hypers(k2)%n_local_properties
                            if (trim(soap_turbo_hypers(k2)%local_property_models(k)%label) == "hirshfeld_v") then
-                              if (params%do_derivatives .or. params%do_forces) then
+                              if ((params%do_derivatives .or. params%do_forces) .and. params%vdw_type /= "none") then
                                  soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .true.
                               else
                                  soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .false.
@@ -7035,7 +7035,8 @@ contains
                         do k = 1, soap_turbo_hypers(k2)%n_local_properties
                            if (trim(soap_turbo_hypers(k2)%local_property_models(k)%label) == "atomic_charge") then
                               soap_turbo_hypers(k2)%has_charges = .true.
-                              if (params%do_derivatives .or. params%do_forces) then
+                              if ((params%do_derivatives .or. params%do_forces) .and. &
+                                  (trim(params%estat_method) /= "none" .or. params%print_estat_forces)) then
                                  soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .true.
                               else
                                  soap_turbo_hypers(k2)%local_property_models(k)%do_derivatives = .false.

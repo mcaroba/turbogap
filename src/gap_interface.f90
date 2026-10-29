@@ -164,6 +164,7 @@ contains
       integer :: i3
       integer :: n_all_sites
       integer :: i4
+      logical :: lp_der
       integer :: n_sites_supercell
       integer :: j3
       integer :: ierr
@@ -477,6 +478,7 @@ contains
 
             ! We need to iterate over the number of local properties
             do i4 = 1, n_local_properties
+               lp_der = do_derivatives .and. local_property_models(i4)%do_derivatives
 
                call gpu_local_property_predict(local_property_models(i4)%n_sparse, soap,&
                     & soap_d, local_property_models(i4)%Qs_d,&
@@ -484,7 +486,7 @@ contains
                     & local_property_models(i4)%V0,&
                     & local_property_models(i4)%delta,&
                     & local_property_models(i4)%zeta, local_properties, local_properties_d,&
-                    & do_derivatives, soap_cart_der_d,&
+                    & lp_der, soap_cart_der_d,&
                     & local_properties_cart_der,&
                     & local_properties_cart_der_d, n_pairs, l_index_d,&
                     & cublas_handle, gpu_stream,&
@@ -497,7 +499,7 @@ contains
                   local_properties0(i2, local_property_indexes(lp_index + i4)) = &
                      local_properties0(i2, local_property_indexes(lp_index + i4)) + local_properties(i)
                end do
-               if (do_derivatives) then
+               if (lp_der) then
                   do k = 1, n_atom_pairs
                      k2 = in_to_out_pairs(k)
                      local_properties_cart_der0(1:3, k2, local_property_indexes(lp_index + i4)) &
@@ -709,6 +711,7 @@ contains
          integer :: i3
          integer :: n_all_sites
          integer :: i4
+         logical :: lp_der
          integer :: n_sites_supercell
          integer :: j3
          logical, allocatable :: mask(:, :)
@@ -945,8 +948,9 @@ contains
             end if
 
             do i4 = 1, n_local_properties
+               lp_der = do_derivatives .and. local_property_models(i4)%do_derivatives
                local_properties = 0.d0
-               if (do_derivatives) then
+               if (lp_der) then
                   local_properties_cart_der = 0.d0
                end if
 
@@ -956,7 +960,7 @@ contains
                     & local_property_models(i4)%V0,&
                     & local_property_models(i4)%delta,&
                     & local_property_models(i4)%zeta, local_properties,&
-                    & do_derivatives, soap_cart_der, n_neigh,&
+                    & lp_der, soap_cart_der, n_neigh,&
                     & local_properties_cart_der,&
                     & local_property_models(i4)%zero_trunc,&
                     & trim(local_property_models(i4)%label))
@@ -971,7 +975,7 @@ contains
                      local_properties0(i2, local_property_indexes(lp_index + i4)) + &
                      local_properties(i)
                end do
-               if (do_derivatives) then
+               if (lp_der) then
                   do k = 1, n_atom_pairs
                      k2 = in_to_out_pairs(k)
                      local_properties_cart_der0(1:3, k2, local_property_indexes(lp_index + i4)) &
