@@ -43,6 +43,34 @@ module gap_interface
 
    private :: cublas_handle, gpu_stream
 
+!  One batch's sites and pairs, renumbered for the descriptor: everything
+!  get_gap_soap works out on the host before the device is involved, so a
+!  second thread can do it for the next batch while this one runs.
+   type, public :: soap_batch_t
+      logical :: ready = .false.
+      integer :: n_sites = 0
+      integer :: n_all_sites = 0
+      integer :: n_atom_pairs = 0
+      integer :: max_species_multiplicity = 0
+      integer :: n_sites_supercell = 0
+      integer, allocatable :: n_neigh(:)
+      integer, allocatable :: neighbors_list(:)
+      integer, allocatable :: species_multiplicity(:)
+      integer, allocatable :: in_to_out_site(:)
+      integer, allocatable :: in_to_out_pairs(:)
+      integer, allocatable :: out_to_in_site(:)
+      integer, allocatable :: species_multiplicity0(:)
+      integer, allocatable :: species(:, :)
+      integer, allocatable :: species0(:, :)
+      real(dp), allocatable :: rjs(:)
+      real(dp), allocatable :: thetas(:)
+      real(dp), allocatable :: phis(:)
+      real(dp), allocatable :: xyz(:, :)
+      logical, allocatable :: is_atom_seen(:)
+      logical, allocatable :: mask(:, :)
+      logical, allocatable :: mask0(:, :)
+   end type soap_batch_t
+
 contains
 
    subroutine get_gap_soap(n_sparse, n_total_sites, n_sites0, n_neigh0, neighbors_list0, n_species, species_types, &
@@ -63,7 +91,7 @@ contains
         time_get_soap, W_d, S_d, multiplicity_array_d,&
         & st_W_d, st_S_d, st_multiplicity_array_d,&
         & recompute_basis, time_local_prop, is_dipole_model, local_dipoles0,&
-        & energies_dipole0, species_supercell, species_multiplicity_supercell)
+        & energies_dipole0, species_supercell, species_multiplicity_supercell, prepared)
 
       implicit none
 
@@ -130,6 +158,9 @@ contains
 !     path below rebuilds the multiplicities, and then for itself.
       integer, intent(in) :: species_supercell(:, :)
       integer, allocatable, intent(inout) :: species_multiplicity_supercell(:)
+!     Prepared by prepare_gap_soap_batch, possibly on another thread; prepared here if not.
+      type(soap_batch_t), optional, intent(inout) :: prepared
+      type(soap_batch_t) :: own
 
       real(dp), allocatable :: rjs(:)
       real(dp), allocatable :: thetas(:)
@@ -223,159 +254,26 @@ contains
 
       call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
 
-      n_sites_supercell = size(xyz_species_supercell)
-
-      !   Work out the multiplicity stuff
-      !   Check if the user wants to represent one or more of the species more than once
-      max_species_multiplicity = 0
-      do i = 1, n_species
-         k = 1
-         do j = i + 1, n_species
-            if (species_types(i) == species_types(j)) then
-               k = k + 1
-            end if
-         end do
-         if (k > max_species_multiplicity) then
-            max_species_multiplicity = k
-         end if
-      end do
-      n_atom_pairs = size(rjs0)
-      if (all_atoms) then
-         call assign_species_multiplicity_batch(max_species_multiplicity, species_types, xyz_species, &
-                                                n_species, n_neigh0, n_atom_pairs, neighbors_list0, &
-                                                species_supercell, species_multiplicity_supercell, &
-                                                mask0, species0, species_multiplicity0)
+      if (present(prepared)) then
+         if (.not. prepared%ready) call prepare_gap_soap_batch(n_total_sites, n_sites0, n_neigh0, neighbors_list0, n_species, species_types, &
+                                                               rjs0, thetas0, phis0, xyz0, rcut_hard, central_species, &
+                                                               xyz_species, xyz_species_supercell, all_atoms, which_atom, indices, &
+                                                               species_supercell, species_multiplicity_supercell, prepared)
+         call take_batch(prepared)
       else
-         call assign_species_multiplicity(max_species_multiplicity, species_types, xyz_species, &
-                                          xyz_species_supercell, n_species, all_atoms, which_atom, &
-                                          indices, n_neigh0, n_atom_pairs, neighbors_list0, mask0, &
-                                          species0, species_multiplicity0, &
-                                          species_multiplicity_supercell)
+         call prepare_gap_soap_batch(n_total_sites, n_sites0, n_neigh0, neighbors_list0, n_species, species_types, &
+                                     rjs0, thetas0, phis0, xyz0, rcut_hard, central_species, &
+                                     xyz_species, xyz_species_supercell, all_atoms, which_atom, indices, &
+                                     species_supercell, species_multiplicity_supercell, own)
+         call take_batch(own)
       end if
-
-      !--- ALLOCATED mask0, species0,  species_multiplicity0 ---!
-
-      !   We need to sort out which atoms from the general neighbors list we actually keep
-      !
-      !   First, we just count the number of sites to keep and the number of atom pairs for allocation purposes
-      n_sites = 0
-      !   n_all_sites are all the sites (central or else) to which this descriptor is not blind (including neighbors)
-      !   and on which forces might be acting
-      n_all_sites = 0
-      n_atom_pairs = 0
-      k = 0
-      allocate (is_atom_seen(1:n_total_sites))
-      is_atom_seen = .false.
-      rcut_max = maxval(rcut_hard)
-      do i = 1, n_sites0
-         if (species0(1, i) == central_species .or. central_species == 0) then
-            n_sites = n_sites + 1
-            do j = 1, n_neigh0(i)
-               k = k + 1
-               j2 = mod(neighbors_list0(k) - 1, n_total_sites) + 1
-               if (rjs0(k) < rcut_max .and. species_multiplicity_supercell(j2) > 0) then
-                  n_atom_pairs = n_atom_pairs + 1
-                  is_atom_seen(j2) = .true.
-               end if
-            end do
-         else
-            k = k + n_neigh0(i)
-         end if
-      end do
-      do i = 1, n_total_sites
-         if (is_atom_seen(i)) then
-            n_all_sites = n_all_sites + 1
-         end if
-      end do
-
-      ! We may not have the sites for a calculation here!
-      ! - If we have a multispecies GAP, then we could be simulating something without a specific species.
-      ! - Therefore, if the species does not exist in the system, we can ignore everything else
 
       if (n_sites == 0) then
 
          deallocate (mask0, is_atom_seen)
          deallocate (species0, species_multiplicity0)
 
-         ! Assuming we arent writing the derivatives here at all so not allocating soap stuff
-
       else
-
-         !   Second, we build all the new neighbors list stuff with the correct subset of information
-         allocate (n_neigh(1:n_sites))
-         allocate (species_multiplicity(1:n_sites))
-         allocate (species(1:max_species_multiplicity, 1:n_sites))
-         allocate (neighbors_list(1:n_atom_pairs))
-         allocate (rjs(1:n_atom_pairs))
-         allocate (thetas(1:n_atom_pairs))
-         allocate (phis(1:n_atom_pairs))
-         allocate (xyz(1:3, 1:n_atom_pairs))
-         allocate (mask(1:n_atom_pairs, 1:n_species))
-         allocate (in_to_out_site(1:n_all_sites))
-         allocate (in_to_out_pairs(1:n_atom_pairs))
-         allocate (out_to_in_site(1:n_total_sites))
-         in_to_out_site = 0
-         in_to_out_pairs = 0
-         out_to_in_site = 0
-         k2 = 0
-         i4 = 0
-         k = 0
-         i2 = 0
-         !   The first n_sites sites are assigned to the central sites
-         do i = 1, n_sites0
-            k = k + 1
-            j = mod(neighbors_list0(k) - 1, n_total_sites) + 1
-            if (species0(1, i) == central_species .or. central_species == 0) then
-               i2 = i2 + 1
-               in_to_out_site(i2) = j
-               out_to_in_site(j) = i2
-               species_multiplicity(i2) = species_multiplicity0(i)
-               species(:, i2) = species0(:, i)
-               k = k + n_neigh0(i) - 1
-            else
-               k = k + n_neigh0(i) - 1
-            end if
-         end do
-         k = 0
-         i2 = 0
-         !   Now we loop over neighbors and make sure that if a neighbor has already been registered, which
-         !   means its out_to_in_site /= 0, we do not update the out_to_in_site variable further
-         do i = 1, n_sites0
-            if (species0(1, i) == central_species .or. central_species == 0) then
-               i2 = i2 + 1
-               j2 = 0
-               do j = 1, n_neigh0(i)
-                  k = k + 1
-                  !         We fold neighbors in the supercell back to the central unit cell
-                  j3 = mod(neighbors_list0(k) - 1, n_total_sites) + 1
-                  if (rjs0(k) < rcut_max .and. species_multiplicity_supercell(j3) > 0) then
-                     j2 = j2 + 1
-                     k2 = k2 + 1
-                     rjs(k2) = rjs0(k)
-                     phis(k2) = phis0(k)
-                     thetas(k2) = thetas0(k)
-                     xyz(1:3, k2) = xyz0(1:3, k)
-                     in_to_out_pairs(k2) = k
-                     do i3 = 1, n_species
-                        mask(k2, i3) = mask0(k, i3)
-                     end do
-                     if (j > 1 .and. out_to_in_site(j3) == 0) then
-                        i4 = i4 + 1
-                        in_to_out_site(n_sites + i4) = j3
-                        out_to_in_site(j3) = n_sites + i4
-                        neighbors_list(k2) = out_to_in_site(j3)
-                     else if (j > 1 .and. out_to_in_site(j3) /= 0) then
-                        neighbors_list(k2) = out_to_in_site(j3)
-                     else if (j == 1) then
-                        neighbors_list(k2) = i2
-                     end if
-                  end if
-               end do
-               n_neigh(i2) = j2
-            else
-               k = k + n_neigh0(i)
-            end if
-         end do
 
          !   Get SOAP vectors and derivatives:
          allocate (soap(1:n_soap, 1:n_sites))
@@ -575,7 +473,269 @@ contains
          deallocate (in_to_out_site, out_to_in_site, in_to_out_pairs)
 
       end if
+   contains
+
+      subroutine take_batch(b)
+         type(soap_batch_t), intent(inout) :: b
+         n_sites = b%n_sites
+         n_all_sites = b%n_all_sites
+         n_atom_pairs = b%n_atom_pairs
+         max_species_multiplicity = b%max_species_multiplicity
+         n_sites_supercell = b%n_sites_supercell
+         call move_alloc(b%n_neigh, n_neigh)
+         call move_alloc(b%neighbors_list, neighbors_list)
+         call move_alloc(b%species_multiplicity, species_multiplicity)
+         call move_alloc(b%in_to_out_site, in_to_out_site)
+         call move_alloc(b%in_to_out_pairs, in_to_out_pairs)
+         call move_alloc(b%out_to_in_site, out_to_in_site)
+         call move_alloc(b%species_multiplicity0, species_multiplicity0)
+         call move_alloc(b%species, species)
+         call move_alloc(b%species0, species0)
+         call move_alloc(b%rjs, rjs)
+         call move_alloc(b%thetas, thetas)
+         call move_alloc(b%phis, phis)
+         call move_alloc(b%xyz, xyz)
+         call move_alloc(b%is_atom_seen, is_atom_seen)
+         call move_alloc(b%mask, mask)
+         call move_alloc(b%mask0, mask0)
+         b%ready = .false.
+      end subroutine take_batch
+
    end subroutine get_gap_soap
+
+   subroutine prepare_gap_soap_batch(n_total_sites, n_sites0, n_neigh0, neighbors_list0, n_species, species_types, &
+                                     rjs0, thetas0, phis0, xyz0, rcut_hard, central_species, &
+                                     xyz_species, xyz_species_supercell, all_atoms, which_atom, indices, &
+                                     species_supercell, species_multiplicity_supercell, b)
+
+      implicit none
+
+      integer, intent(in) :: n_total_sites
+      integer, intent(in) :: n_sites0
+      integer, intent(in) :: n_neigh0(:)
+      integer, intent(in) :: neighbors_list0(:)
+      integer, intent(in) :: n_species
+      character*8, intent(in) :: species_types(:)
+      real(dp), intent(in) :: rjs0(:)
+      real(dp), intent(in) :: thetas0(:)
+      real(dp), intent(in) :: phis0(:)
+      real(dp), intent(in) :: xyz0(:, :)
+      real(dp), intent(in) :: rcut_hard(:)
+      integer, intent(in) :: central_species
+      character*8, intent(in) :: xyz_species(:)
+      character*8, intent(in) :: xyz_species_supercell(:)
+      logical, intent(in) :: all_atoms
+      integer, intent(in) :: which_atom
+      integer, intent(in) :: indices(1:3)
+      integer, intent(in) :: species_supercell(:, :)
+      integer, allocatable, intent(inout) :: species_multiplicity_supercell(:)
+      type(soap_batch_t), intent(inout) :: b
+
+      integer, allocatable :: n_neigh(:)
+      integer, allocatable :: neighbors_list(:)
+      integer, allocatable :: species_multiplicity(:)
+      integer, allocatable :: in_to_out_site(:)
+      integer, allocatable :: in_to_out_pairs(:)
+      integer, allocatable :: out_to_in_site(:)
+      integer, allocatable :: species_multiplicity0(:)
+      integer, allocatable :: species(:, :)
+      integer, allocatable :: species0(:, :)
+      real(dp), allocatable :: rjs(:)
+      real(dp), allocatable :: thetas(:)
+      real(dp), allocatable :: phis(:)
+      real(dp), allocatable :: xyz(:, :)
+      logical, allocatable :: is_atom_seen(:)
+      logical, allocatable :: mask(:, :)
+      logical, allocatable :: mask0(:, :)
+      integer :: n_sites
+      integer :: n_all_sites
+      integer :: n_atom_pairs
+      integer :: max_species_multiplicity
+      integer :: n_sites_supercell
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: k2
+      integer :: i2
+      integer :: j2
+      integer :: i3
+      integer :: i4
+      integer :: j3
+      real(dp) :: rcut_max
+
+      n_sites_supercell = size(xyz_species_supercell)
+
+      !   Work out the multiplicity stuff
+      !   Check if the user wants to represent one or more of the species more than once
+      max_species_multiplicity = 0
+      do i = 1, n_species
+         k = 1
+         do j = i + 1, n_species
+            if (species_types(i) == species_types(j)) then
+               k = k + 1
+            end if
+         end do
+         if (k > max_species_multiplicity) then
+            max_species_multiplicity = k
+         end if
+      end do
+      n_atom_pairs = size(rjs0)
+      if (all_atoms) then
+         call assign_species_multiplicity_batch(max_species_multiplicity, species_types, xyz_species, &
+                                                n_species, n_neigh0, n_atom_pairs, neighbors_list0, &
+                                                species_supercell, species_multiplicity_supercell, &
+                                                mask0, species0, species_multiplicity0)
+      else
+         call assign_species_multiplicity(max_species_multiplicity, species_types, xyz_species, &
+                                          xyz_species_supercell, n_species, all_atoms, which_atom, &
+                                          indices, n_neigh0, n_atom_pairs, neighbors_list0, mask0, &
+                                          species0, species_multiplicity0, &
+                                          species_multiplicity_supercell)
+      end if
+
+      !--- ALLOCATED mask0, species0,  species_multiplicity0 ---!
+
+      !   We need to sort out which atoms from the general neighbors list we actually keep
+      !
+      !   First, we just count the number of sites to keep and the number of atom pairs for allocation purposes
+      n_sites = 0
+      !   n_all_sites are all the sites (central or else) to which this descriptor is not blind (including neighbors)
+      !   and on which forces might be acting
+      n_all_sites = 0
+      n_atom_pairs = 0
+      k = 0
+      allocate (is_atom_seen(1:n_total_sites))
+      is_atom_seen = .false.
+      rcut_max = maxval(rcut_hard)
+      do i = 1, n_sites0
+         if (species0(1, i) == central_species .or. central_species == 0) then
+            n_sites = n_sites + 1
+            do j = 1, n_neigh0(i)
+               k = k + 1
+               j2 = mod(neighbors_list0(k) - 1, n_total_sites) + 1
+               if (rjs0(k) < rcut_max .and. species_multiplicity_supercell(j2) > 0) then
+                  n_atom_pairs = n_atom_pairs + 1
+                  is_atom_seen(j2) = .true.
+               end if
+            end do
+         else
+            k = k + n_neigh0(i)
+         end if
+      end do
+      do i = 1, n_total_sites
+         if (is_atom_seen(i)) then
+            n_all_sites = n_all_sites + 1
+         end if
+      end do
+
+      ! We may not have the sites for a calculation here!
+      ! - If we have a multispecies GAP, then we could be simulating something without a specific species.
+      ! - Therefore, if the species does not exist in the system, we can ignore everything else
+
+      if (n_sites > 0) then
+         !   Second, we build all the new neighbors list stuff with the correct subset of information
+         allocate (n_neigh(1:n_sites))
+         allocate (species_multiplicity(1:n_sites))
+         allocate (species(1:max_species_multiplicity, 1:n_sites))
+         allocate (neighbors_list(1:n_atom_pairs))
+         allocate (rjs(1:n_atom_pairs))
+         allocate (thetas(1:n_atom_pairs))
+         allocate (phis(1:n_atom_pairs))
+         allocate (xyz(1:3, 1:n_atom_pairs))
+         allocate (mask(1:n_atom_pairs, 1:n_species))
+         allocate (in_to_out_site(1:n_all_sites))
+         allocate (in_to_out_pairs(1:n_atom_pairs))
+         allocate (out_to_in_site(1:n_total_sites))
+         in_to_out_site = 0
+         in_to_out_pairs = 0
+         out_to_in_site = 0
+         k2 = 0
+         i4 = 0
+         k = 0
+         i2 = 0
+         !   The first n_sites sites are assigned to the central sites
+         do i = 1, n_sites0
+            k = k + 1
+            j = mod(neighbors_list0(k) - 1, n_total_sites) + 1
+            if (species0(1, i) == central_species .or. central_species == 0) then
+               i2 = i2 + 1
+               in_to_out_site(i2) = j
+               out_to_in_site(j) = i2
+               species_multiplicity(i2) = species_multiplicity0(i)
+               species(:, i2) = species0(:, i)
+               k = k + n_neigh0(i) - 1
+            else
+               k = k + n_neigh0(i) - 1
+            end if
+         end do
+         k = 0
+         i2 = 0
+         !   Now we loop over neighbors and make sure that if a neighbor has already been registered, which
+         !   means its out_to_in_site /= 0, we do not update the out_to_in_site variable further
+         do i = 1, n_sites0
+            if (species0(1, i) == central_species .or. central_species == 0) then
+               i2 = i2 + 1
+               j2 = 0
+               do j = 1, n_neigh0(i)
+                  k = k + 1
+                  !         We fold neighbors in the supercell back to the central unit cell
+                  j3 = mod(neighbors_list0(k) - 1, n_total_sites) + 1
+                  if (rjs0(k) < rcut_max .and. species_multiplicity_supercell(j3) > 0) then
+                     j2 = j2 + 1
+                     k2 = k2 + 1
+                     rjs(k2) = rjs0(k)
+                     phis(k2) = phis0(k)
+                     thetas(k2) = thetas0(k)
+                     xyz(1:3, k2) = xyz0(1:3, k)
+                     in_to_out_pairs(k2) = k
+                     do i3 = 1, n_species
+                        mask(k2, i3) = mask0(k, i3)
+                     end do
+                     if (j > 1 .and. out_to_in_site(j3) == 0) then
+                        i4 = i4 + 1
+                        in_to_out_site(n_sites + i4) = j3
+                        out_to_in_site(j3) = n_sites + i4
+                        neighbors_list(k2) = out_to_in_site(j3)
+                     else if (j > 1 .and. out_to_in_site(j3) /= 0) then
+                        neighbors_list(k2) = out_to_in_site(j3)
+                     else if (j == 1) then
+                        neighbors_list(k2) = i2
+                     end if
+                  end if
+               end do
+               n_neigh(i2) = j2
+            else
+               k = k + n_neigh0(i)
+            end if
+         end do
+
+      end if
+
+      b%n_sites = n_sites
+      b%n_all_sites = n_all_sites
+      b%n_atom_pairs = n_atom_pairs
+      b%max_species_multiplicity = max_species_multiplicity
+      b%n_sites_supercell = n_sites_supercell
+      call move_alloc(n_neigh, b%n_neigh)
+      call move_alloc(neighbors_list, b%neighbors_list)
+      call move_alloc(species_multiplicity, b%species_multiplicity)
+      call move_alloc(in_to_out_site, b%in_to_out_site)
+      call move_alloc(in_to_out_pairs, b%in_to_out_pairs)
+      call move_alloc(out_to_in_site, b%out_to_in_site)
+      call move_alloc(species_multiplicity0, b%species_multiplicity0)
+      call move_alloc(species, b%species)
+      call move_alloc(species0, b%species0)
+      call move_alloc(rjs, b%rjs)
+      call move_alloc(thetas, b%thetas)
+      call move_alloc(phis, b%phis)
+      call move_alloc(xyz, b%xyz)
+      call move_alloc(is_atom_seen, b%is_atom_seen)
+      call move_alloc(mask, b%mask)
+      call move_alloc(mask0, b%mask0)
+      b%ready = .true.
+
+   end subroutine prepare_gap_soap_batch
+
 #else
    module gap_interface
 

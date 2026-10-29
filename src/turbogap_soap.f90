@@ -50,6 +50,8 @@ module turbogap_soap
    use neighbors, only: get_number_of_atom_pairs_batches
    use gpu_context, only: gpu_stream
    use soap_turbo_desc, only: get_species_supercell
+   use gap_interface, only: soap_batch_t, prepare_gap_soap_batch
+!$ use omp_lib, only: omp_get_thread_num
 #endif
 
    implicit none
@@ -110,6 +112,10 @@ contains
       integer :: n_sp
       integer, allocatable :: species_supercell(:, :)
       integer, allocatable :: species_multiplicity_supercell(:)
+      type(soap_batch_t) :: batch(2)
+      integer :: cur
+      integer :: tid
+      logical :: overlap
 #endif
 
       !     Loop through soap_turbo descriptors - we always call this routine, even if we don't want to do prediction
@@ -216,6 +222,9 @@ contains
          call get_species_supercell(model%soap_turbo_hypers(i)%species_types, state%xyz_species_supercell, &
                                     model%soap_turbo_hypers(i)%n_species, species_supercell, &
                                     species_multiplicity_supercell)
+!        which_atom rebuilds the multiplicities as it goes, so it cannot share them.
+         overlap = params%all_atoms .and. size(i_beg_list) > 1
+         cur = 1
 #endif
 
          do j = 1, size(i_beg_list)
@@ -261,33 +270,45 @@ contains
             call time_end(time%soap_solo)
 
 #ifdef _GPU
-            call get_gap_soap( &
-               n_sparse, state%n_sites, this_n_sites_mpi, nl%n_neigh(this_i_beg:this_i_end), &
-               nl%neighbors_list(this_j_beg:this_j_end), model%soap_turbo_hypers(i)%n_species, &
-               model%soap_turbo_hypers(i)%species_types, nl%rjs(this_j_beg:this_j_end), nl%thetas(this_j_beg:this_j_end), &
-               nl%phis(this_j_beg:this_j_end), nl%xyz(1:3, this_j_beg:this_j_end), alpha_max_d, &
-               model%soap_turbo_hypers(i)%alpha_max, model%soap_turbo_hypers(i)%l_max, model%soap_turbo_hypers(i)%dim, &
-               rcut_hard_d, &
-               model%soap_turbo_hypers(i)%rcut_hard, rcut_soft_d, nf_d, global_scaling_d, atom_sigma_r_d, &
-               model%soap_turbo_hypers(i)%atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
-               amplitude_scaling_d, model%soap_turbo_hypers(i)%radial_enhancement, central_weight_d, &
-               model%soap_turbo_hypers(i)%central_weight, model%soap_turbo_hypers(i)%basis, &
-               model%soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
-               params%do_prediction, params%write_soap, params%write_derivatives, &
-               model%soap_turbo_hypers(i)%compress_soap, model%soap_turbo_hypers(i)%compress_soap_indices, &
-               model%soap_turbo_hypers(i)%delta, model%soap_turbo_hypers(i)%zeta, model%soap_turbo_hypers(i)%central_species, &
-               state%xyz_species(this_i_beg:this_i_end), state%xyz_species_supercell, params%all_atoms, &
-               params%which_atom, state%indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
-               model%soap_turbo_hypers(i)%has_local_properties, model%soap_turbo_hypers(i)%n_local_properties, &
-               model%soap_turbo_hypers(i)%local_property_models, n_lp_count, res%energies_soap, res%forces_soap, &
-               res%this_local_properties_pt, res%this_local_properties_cart_der_pt, model%local_property_indexes, &
-               res%this_virial, &
-               time%soap_lin(3), time%get_soap(3), model%soap_turbo_hypers(i)%W_d, model%soap_turbo_hypers(i)%S_d, &
-               model%soap_turbo_hypers(i)%multiplicity_array_d, model%soap_turbo_hypers(i)%st_W_d, &
-               model%soap_turbo_hypers(i)%st_S_d, model%soap_turbo_hypers(i)%st_multiplicity_array_d, &
-               model%soap_turbo_hypers(i)%recompute_basis, time%local_prop, &
-               model%soap_turbo_hypers(i)%is_dipole_model, res%local_dipoles, res%energies_dipole, &
-               species_supercell, species_multiplicity_supercell)
+!           Thread 0, which holds the device and MPI, runs this batch; thread 1
+!           meanwhile does the next batch's host-side preparation, which the
+!           device would otherwise wait for.
+!$omp parallel num_threads(2) if (overlap) default(shared) private(tid)
+            tid = 0
+!$          tid = omp_get_thread_num()
+            if (tid == 0) then
+               call get_gap_soap( &
+                  n_sparse, state%n_sites, this_n_sites_mpi, nl%n_neigh(this_i_beg:this_i_end), &
+                  nl%neighbors_list(this_j_beg:this_j_end), model%soap_turbo_hypers(i)%n_species, &
+                  model%soap_turbo_hypers(i)%species_types, nl%rjs(this_j_beg:this_j_end), nl%thetas(this_j_beg:this_j_end), &
+                  nl%phis(this_j_beg:this_j_end), nl%xyz(1:3, this_j_beg:this_j_end), alpha_max_d, &
+                  model%soap_turbo_hypers(i)%alpha_max, model%soap_turbo_hypers(i)%l_max, model%soap_turbo_hypers(i)%dim, &
+                  rcut_hard_d, &
+                  model%soap_turbo_hypers(i)%rcut_hard, rcut_soft_d, nf_d, global_scaling_d, atom_sigma_r_d, &
+                  model%soap_turbo_hypers(i)%atom_sigma_r, atom_sigma_r_scaling_d, atom_sigma_t_d, atom_sigma_t_scaling_d, &
+                  amplitude_scaling_d, model%soap_turbo_hypers(i)%radial_enhancement, central_weight_d, &
+                  model%soap_turbo_hypers(i)%central_weight, model%soap_turbo_hypers(i)%basis, &
+                  model%soap_turbo_hypers(i)%scaling_mode, params%do_timing, params%do_derivatives, params%do_forces, &
+                  params%do_prediction, params%write_soap, params%write_derivatives, &
+                  model%soap_turbo_hypers(i)%compress_soap, model%soap_turbo_hypers(i)%compress_soap_indices, &
+                  model%soap_turbo_hypers(i)%delta, model%soap_turbo_hypers(i)%zeta, model%soap_turbo_hypers(i)%central_species, &
+                  state%xyz_species(this_i_beg:this_i_end), state%xyz_species_supercell, params%all_atoms, &
+                  params%which_atom, state%indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
+                  model%soap_turbo_hypers(i)%has_local_properties, model%soap_turbo_hypers(i)%n_local_properties, &
+                  model%soap_turbo_hypers(i)%local_property_models, n_lp_count, res%energies_soap, res%forces_soap, &
+                  res%this_local_properties_pt, res%this_local_properties_cart_der_pt, model%local_property_indexes, &
+                  res%this_virial, &
+                  time%soap_lin(3), time%get_soap(3), model%soap_turbo_hypers(i)%W_d, model%soap_turbo_hypers(i)%S_d, &
+                  model%soap_turbo_hypers(i)%multiplicity_array_d, model%soap_turbo_hypers(i)%st_W_d, &
+                  model%soap_turbo_hypers(i)%st_S_d, model%soap_turbo_hypers(i)%st_multiplicity_array_d, &
+                  model%soap_turbo_hypers(i)%recompute_basis, time%local_prop, &
+                  model%soap_turbo_hypers(i)%is_dipole_model, res%local_dipoles, res%energies_dipole, &
+                  species_supercell, species_multiplicity_supercell, batch(cur))
+            else if (j < size(i_beg_list)) then
+               call prepare_batch(j + 1, batch(3 - cur))
+            end if
+!$omp end parallel
+            cur = 3 - cur
 #else
             call soap_backend_begin(model%soap_turbo_hypers(i))
             call get_gap_soap(state%n_sites, this_n_sites_mpi, nl%n_neigh(this_i_beg:this_i_end), &
@@ -464,6 +485,33 @@ contains
 
       end do
       call time_end(time%gap)
+#ifdef _GPU
+
+   contains
+
+!     The host-side preparation of batch jb of descriptor i.
+      subroutine prepare_batch(jb, b)
+         integer, intent(in) :: jb
+         type(soap_batch_t), intent(inout) :: b
+         integer :: i_beg
+         integer :: i_end
+         integer :: j_beg
+         integer :: j_end
+
+         i_beg = dom%i_beg - 1 + i_beg_list(jb)
+         i_end = dom%i_beg - 1 + i_end_list(jb)
+         j_beg = dom%j_beg - 1 + j_beg_list(jb)
+         j_end = dom%j_beg - 1 + j_end_list(jb)
+         call prepare_gap_soap_batch(state%n_sites, i_end - i_beg + 1, nl%n_neigh(i_beg:i_end), &
+                                     nl%neighbors_list(j_beg:j_end), model%soap_turbo_hypers(i)%n_species, &
+                                     model%soap_turbo_hypers(i)%species_types, nl%rjs(j_beg:j_end), &
+                                     nl%thetas(j_beg:j_end), nl%phis(j_beg:j_end), nl%xyz(1:3, j_beg:j_end), &
+                                     model%soap_turbo_hypers(i)%rcut_hard, model%soap_turbo_hypers(i)%central_species, &
+                                     state%xyz_species(i_beg:i_end), state%xyz_species_supercell, params%all_atoms, &
+                                     params%which_atom, state%indices, species_supercell, &
+                                     species_multiplicity_supercell, b)
+      end subroutine prepare_batch
+#endif
    end subroutine compute_soap
 
 !  Release the device copies of the compression basis that outlive a step.
