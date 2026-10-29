@@ -16,7 +16,8 @@
 //   cuda_get_soap_der_two_two, _thr_one, _thr_two, cuda_soap_normalize,
 //   cuda_get_derivatives_new_new
 //       the block index is part of the addressing rather than a tiling of one
-//       range. MDRangePolicy, or an explicit flattening.
+//       range. MDRangePolicy, or an explicit flattening. The last now runs
+//       only for the TURBOGAP_DUMP_CNK dump: _der_one forms the same values.
 //
 // See docs/LAMMPS_KOKKOS.md.
 #include "gpu_backend.h"
@@ -114,17 +115,50 @@ extern "C" void gpu_get_sqrt_dot_p(double* sqrt_dot_d, double* soap_d, double* m
 }
 
 
+// cnk_rad_der and cnk_azi_der/cnk_pol_der of one pair, n and k, from the
+// radial and angular expansion coefficients they are the product of. Spelled
+// as the operations the stand-alone kernel compiled to, so that inlined into
+// another kernel they cannot be contracted differently. The rounding
+// intrinsics are device-only; Kokkos also compiles these for the host.
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+#define CNK_MUL(a, b) __dmul_rn(a, b)
+#define CNK_FMA(a, b, c) __fma_rn(a, b, c)
+#else
+#define CNK_MUL(a, b) ((a) * (b))
+#define CNK_FMA(a, b, c) fma(a, b, c)
+#endif
+
+TG_INLINE_FUNCTION hipDoubleComplex cnk_rad_der_of(hipDoubleComplex ang, hipDoubleComplex ang_rad_der, double rad, double rad_der,
+                                                   double Pi) {
+  hipDoubleComplex c;
+  c.x = CNK_MUL(Pi, CNK_FMA(ang.x, rad_der, CNK_MUL(ang_rad_der.x, rad)));
+  c.y = CNK_MUL(Pi, CNK_FMA(ang.y, rad_der, CNK_MUL(ang_rad_der.y, rad)));
+  return c;
+}
+
+TG_INLINE_FUNCTION hipDoubleComplex cnk_ang_der_of(hipDoubleComplex ang_der, double rad, double Pi) {
+  hipDoubleComplex c;
+  c.x = CNK_MUL(Pi, CNK_MUL(ang_der.x, rad));
+  c.y = CNK_MUL(Pi, CNK_MUL(ang_der.y, rad));
+  return c;
+}
+
 // One thread per (pair, n, l) rather than per pair: one per pair left about ten
 // warps on an SM and the kernel waited on its loads. Each output sums over m in
 // the same order and with the same expression as before, so it is
 // bit-identical; the n-side coefficients are loaded once per block of
-// DER_ONE_NP np values instead of once per np.
+// DER_ONE_NP np values instead of once per np. cnk_*_der are formed here from
+// the expansion coefficients rather than read from arrays three times the
+// size of the descriptor derivatives.
 #define DER_ONE_NP 4
 
 static void cuda_get_soap_der_one(double* multiplicity_array_d, double* trans_soap_rad_der_d, double* trans_soap_azi_der_d,
-                                  double* trans_soap_pol_der_d, hipDoubleComplex* cnk_d, hipDoubleComplex* cnk_rad_der_d,
-                                  hipDoubleComplex* cnk_azi_der_d, hipDoubleComplex* cnk_pol_der_d, int* k2_i_site_d, int2* index_d,
-                                  int n_sites, int n_atom_pairs, int k_max, int n_max, int l_max, hipStream_t* stream) {
+                                  double* trans_soap_pol_der_d, hipDoubleComplex* cnk_d, double* radial_exp_coeff_d,
+                                  double* radial_exp_coeff_der_d, hipDoubleComplex* angular_exp_coeff_d,
+                                  hipDoubleComplex* angular_exp_coeff_rad_der_d, hipDoubleComplex* angular_exp_coeff_azi_der_d,
+                                  hipDoubleComplex* angular_exp_coeff_pol_der_d, double* rjs_d, double rcut_max, int* k2_i_site_d,
+                                  int2* index_d, int n_sites, int n_atom_pairs, int k_max, int n_max, int l_max,
+                                  hipStream_t* stream) {
   tg_parallel_for(
       "turbogap_soap_soap_der_one", n_atom_pairs * n_max * (l_max + 1), stream,
       TG_LAMBDA(const int t) {
@@ -133,27 +167,43 @@ static void cuda_get_soap_der_one(double* multiplicity_array_d, double* trans_so
         int n = t / n_atom_pairs / (l_max + 1) + 1;
         int i_site = k2_i_site_d[k2] - 1;
         int k0 = l * (l + 1) / 2;
+        double Pi = 4.0 * acos(-1.0);
+        bool in_cut = rjs_d[k2] < rcut_max;
+        double rad_n = radial_exp_coeff_d[n - 1 + k2 * n_max];
+        double rad_der_n = radial_exp_coeff_der_d[n - 1 + k2 * n_max];
         for (int np0 = n; np0 <= n_max; np0 += DER_ONE_NP) {
           int2 idx[DER_ONE_NP];
           double rad[DER_ONE_NP];
           double azi[DER_ONE_NP];
           double pol[DER_ONE_NP];
+          double rad_np[DER_ONE_NP];
+          double rad_der_np[DER_ONE_NP];
 #pragma unroll
           for (int b = 0; b < DER_ONE_NP; b++) {
             int np = np0 + b;
             idx[b] = make_int2(-1, 0);
-            if (np <= n_max)
+            rad_np[b] = 0;
+            rad_der_np[b] = 0;
+            if (np <= n_max) {
               idx[b] = index_d[l + (l_max + 1) * (np - 1 + (n - 1) * n_max)];
+              rad_np[b] = radial_exp_coeff_d[np - 1 + k2 * n_max];
+              rad_der_np[b] = radial_exp_coeff_der_d[np - 1 + k2 * n_max];
+            }
             rad[b] = 0;
             azi[b] = 0;
             pol[b] = 0;
           }
           for (int m = 0; m <= l; m++) {
             int k = 1 + k0 + m;
+            hipDoubleComplex zero = make_hipDoubleComplex(0.0, 0.0);
+            hipDoubleComplex ang = angular_exp_coeff_d[k2 + n_atom_pairs * (k - 1)];
+            hipDoubleComplex ang_rad = angular_exp_coeff_rad_der_d[k2 + n_atom_pairs * (k - 1)];
+            hipDoubleComplex ang_azi = angular_exp_coeff_azi_der_d[k2 + n_atom_pairs * (k - 1)];
+            hipDoubleComplex ang_pol = angular_exp_coeff_pol_der_d[k2 + n_atom_pairs * (k - 1)];
             hipDoubleComplex tmp_1_cnk_d = cnk_d[i_site + n_sites * (k - 1 + (n - 1) * k_max)];
-            hipDoubleComplex tmp_1_cnk_rad_d = cnk_rad_der_d[k2 + n_atom_pairs * (k - 1 + (n - 1) * k_max)];
-            hipDoubleComplex tmp_1_cnk_azi_d = cnk_azi_der_d[k2 + n_atom_pairs * (k - 1 + (n - 1) * k_max)];
-            hipDoubleComplex tmp_1_cnk_pol_d = cnk_pol_der_d[k2 + n_atom_pairs * (k - 1 + (n - 1) * k_max)];
+            hipDoubleComplex tmp_1_cnk_rad_d = in_cut ? cnk_rad_der_of(ang, ang_rad, rad_n, rad_der_n, Pi) : zero;
+            hipDoubleComplex tmp_1_cnk_azi_d = in_cut ? cnk_ang_der_of(ang_azi, rad_n, Pi) : zero;
+            hipDoubleComplex tmp_1_cnk_pol_d = in_cut ? cnk_ang_der_of(ang_pol, rad_n, Pi) : zero;
 #pragma unroll
             for (int b = 0; b < DER_ONE_NP; b++) {
               if (idx[b].x < 0)
@@ -161,9 +211,9 @@ static void cuda_get_soap_der_one(double* multiplicity_array_d, double* trans_so
               int np = np0 + b;
               double mult = multiplicity_array_d[idx[b].y + m];
               hipDoubleComplex tmp_2_cnk_d = cnk_d[i_site + n_sites * (k - 1 + (np - 1) * k_max)];
-              hipDoubleComplex tmp_2_cnk_rad_d = cnk_rad_der_d[k2 + n_atom_pairs * (k - 1 + (np - 1) * k_max)];
-              hipDoubleComplex tmp_2_cnk_azi_d = cnk_azi_der_d[k2 + n_atom_pairs * (k - 1 + (np - 1) * k_max)];
-              hipDoubleComplex tmp_2_cnk_pol_d = cnk_pol_der_d[k2 + n_atom_pairs * (k - 1 + (np - 1) * k_max)];
+              hipDoubleComplex tmp_2_cnk_rad_d = in_cut ? cnk_rad_der_of(ang, ang_rad, rad_np[b], rad_der_np[b], Pi) : zero;
+              hipDoubleComplex tmp_2_cnk_azi_d = in_cut ? cnk_ang_der_of(ang_azi, rad_np[b], Pi) : zero;
+              hipDoubleComplex tmp_2_cnk_pol_d = in_cut ? cnk_ang_der_of(ang_pol, rad_np[b], Pi) : zero;
               rad[b] += mult * (tmp_1_cnk_rad_d.x * tmp_2_cnk_d.x + tmp_1_cnk_rad_d.y * tmp_2_cnk_d.y +
                                 tmp_1_cnk_d.x * tmp_2_cnk_rad_d.x + tmp_1_cnk_d.y * tmp_2_cnk_rad_d.y);
               azi[b] += mult * (tmp_1_cnk_azi_d.x * tmp_2_cnk_d.x + tmp_1_cnk_azi_d.y * tmp_2_cnk_d.y +
@@ -337,10 +387,12 @@ __global__ void naive_transpose_soap_rad_azi_pol(double* soap_rad_der_d, double*
 
 extern "C" void gpu_get_soap_der(double* soap_d, double* sqrt_dot_d, double3* soap_cart_der_d, double* soap_rad_der_d,
                                  double* soap_azi_der_d, double* soap_pol_der_d, double* thetas_d, double* phis_d, double* rjs_d,
-                                 double* multiplicity_array_d, hipDoubleComplex* cnk_d, hipDoubleComplex* cnk_rad_der_d,
-                                 hipDoubleComplex* cnk_azi_der_d, hipDoubleComplex* cnk_pol_der_d, int* n_neigh_d,
-                                 int* i_k2_start_d, int* k2_i_site_d, int* k3_index_d, bool* skip_soap_component_d, int n_sites,
-                                 int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max, int maxneigh, hipStream_t* stream) {
+                                 double* multiplicity_array_d, hipDoubleComplex* cnk_d, double* radial_exp_coeff_d,
+                                 double* radial_exp_coeff_der_d, hipDoubleComplex* angular_exp_coeff_d,
+                                 hipDoubleComplex* angular_exp_coeff_rad_der_d, hipDoubleComplex* angular_exp_coeff_azi_der_d,
+                                 hipDoubleComplex* angular_exp_coeff_pol_der_d, double rcut_max, int* n_neigh_d, int* i_k2_start_d,
+                                 int* k2_i_site_d, int* k3_index_d, bool* skip_soap_component_d, int n_sites, int n_atom_pairs,
+                                 int n_soap, int k_max, int n_max, int l_max, int maxneigh, hipStream_t* stream) {
   dim3 nblocks = dim3((n_atom_pairs - 1 + tpb) / tpb, 1, 1);
   dim3 nthreads = dim3(tpb, 1, 1);
 
@@ -365,8 +417,9 @@ extern "C" void gpu_get_soap_der(double* soap_d, double* sqrt_dot_d, double3* so
   hipMallocAsync((void**) &der_one_index_d, sizeof(int2) * n_max * n_max * (l_max + 1), stream[0]);
   cuda_get_soap_index(der_one_index_d, skip_soap_component_d, n_max, l_max, stream);
   cuda_get_soap_der_one(multiplicity_array_d, trans_soap_rad_der_d, trans_soap_azi_der_d, trans_soap_pol_der_d, cnk_d,
-                        cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d, k2_i_site_d, der_one_index_d, n_sites, n_atom_pairs, k_max,
-                        n_max, l_max, stream);
+                        radial_exp_coeff_d, radial_exp_coeff_der_d, angular_exp_coeff_d, angular_exp_coeff_rad_der_d,
+                        angular_exp_coeff_azi_der_d, angular_exp_coeff_pol_der_d, rjs_d, rcut_max, k2_i_site_d, der_one_index_d,
+                        n_sites, n_atom_pairs, k_max, n_max, l_max, stream);
   hipFreeAsync(der_one_index_d, stream[0]);
 
   dim3 transpose_block(TRANSPOSE_TILE_DIM, TRANSPOSE_BLOCK_ROWS, 1);
@@ -463,14 +516,9 @@ __global__ void cuda_get_derivatives_new_new(double* radial_exp_coeff_d, hipDoub
       hipDoubleComplex my_ang_exp_c_pol_der;
       my_ang_exp_c_pol_der = angular_exp_coeff_pol_der_d[k2 + (k - 1) * n_atom_pairs]; //angular_exp_coeff_pol_der_d[k-1+k2*k_max];
 
-      my_cnk_rad_der.x = Pi * (my_ang_exp_c.x * my_radial_exp_c_der + my_ang_exp_c_rad_der.x * my_radial_exp_c);
-      my_cnk_rad_der.y = Pi * (my_ang_exp_c.y * my_radial_exp_c_der + my_ang_exp_c_rad_der.y * my_radial_exp_c);
-
-      my_cnk_azi_der.x = Pi * (my_ang_exp_c_azi_der.x * my_radial_exp_c);
-      my_cnk_azi_der.y = Pi * (my_ang_exp_c_azi_der.y * my_radial_exp_c);
-
-      my_cnk_pol_der.x = Pi * (my_ang_exp_c_pol_der.x * my_radial_exp_c);
-      my_cnk_pol_der.y = Pi * (my_ang_exp_c_pol_der.y * my_radial_exp_c);
+      my_cnk_rad_der = cnk_rad_der_of(my_ang_exp_c, my_ang_exp_c_rad_der, my_radial_exp_c, my_radial_exp_c_der, Pi);
+      my_cnk_azi_der = cnk_ang_der_of(my_ang_exp_c_azi_der, my_radial_exp_c, Pi);
+      my_cnk_pol_der = cnk_ang_der_of(my_ang_exp_c_pol_der, my_radial_exp_c, Pi);
 
       //i_site+n_sites*(i_k+i_n*k_max);
       cnk_rad_der_d[k2 + n_atom_pairs * (k - 1 + (n - 1) * k_max)] =

@@ -1,8 +1,12 @@
-// cuda_get_soap_p and cuda_get_soap_der_one against the loop orders they
-// replaced, kept below, on random input: every output must be bit-identical,
-// with and without skipped components. Prints the time of each on the same data.
+// cuda_get_soap_p and cuda_get_soap_der_one against the kernels they replaced,
+// kept below, on random input: every output must be bit-identical, with and
+// without skipped components and with pairs past the cutoff. The der_one
+// reference is the old pair of kernels, cnk_*_der written then read. Prints the
+// time of each on the same data.
 #include "../../src/gpu/gap_soap_descriptor.cu"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -166,6 +170,54 @@ static void cuda_get_soap_p(double* soap_d, double* sqrt_dot_p_d, double* multip
 #undef cuda_get_soap_der_one
 #undef cuda_get_soap_p
 
+__global__ void reference_get_derivatives(double* radial_exp_coeff_d, hipDoubleComplex* angular_exp_coeff_d,
+                                          double* radial_exp_coeff_der_d, hipDoubleComplex* angular_exp_coeff_rad_der_d,
+                                          hipDoubleComplex* angular_exp_coeff_azi_der_d,
+                                          hipDoubleComplex* angular_exp_coeff_pol_der_d, hipDoubleComplex* cnk_rad_der_d,
+                                          hipDoubleComplex* cnk_azi_der_d, hipDoubleComplex* cnk_pol_der_d, double* rjs_d,
+                                          double rcut_max, int n_atom_pairs, int n_sites, int n_soap, int k_max, int n_max,
+                                          int l_max) {
+  int k2 = threadIdx.x + blockDim.x * blockIdx.x;
+  int n = blockIdx.y + 1;
+  int k = blockIdx.z + 1;
+  double Pi = 4.0 * acos(-1.0);
+  if (k2 < n_atom_pairs) {
+    double my_rjs = rjs_d[k2];
+    if (my_rjs < rcut_max) {
+      double my_radial_exp_c;
+      my_radial_exp_c = radial_exp_coeff_d[n - 1 + k2 * n_max];
+      double my_radial_exp_c_der;
+      my_radial_exp_c_der = radial_exp_coeff_der_d[n - 1 + k2 * n_max];
+      hipDoubleComplex my_cnk_rad_der;
+      hipDoubleComplex my_cnk_azi_der;
+      hipDoubleComplex my_cnk_pol_der;
+      hipDoubleComplex my_ang_exp_c;
+      my_ang_exp_c = angular_exp_coeff_d[k2 + n_atom_pairs * (k - 1)];
+      hipDoubleComplex my_ang_exp_c_rad_der;
+      my_ang_exp_c_rad_der = angular_exp_coeff_rad_der_d[k2 + (k - 1) * n_atom_pairs];
+      hipDoubleComplex my_ang_exp_c_azi_der;
+      my_ang_exp_c_azi_der = angular_exp_coeff_azi_der_d[k2 + (k - 1) * n_atom_pairs];
+      hipDoubleComplex my_ang_exp_c_pol_der;
+      my_ang_exp_c_pol_der = angular_exp_coeff_pol_der_d[k2 + (k - 1) * n_atom_pairs];
+
+      my_cnk_rad_der.x = Pi * (my_ang_exp_c.x * my_radial_exp_c_der + my_ang_exp_c_rad_der.x * my_radial_exp_c);
+      my_cnk_rad_der.y = Pi * (my_ang_exp_c.y * my_radial_exp_c_der + my_ang_exp_c_rad_der.y * my_radial_exp_c);
+
+      my_cnk_azi_der.x = Pi * (my_ang_exp_c_azi_der.x * my_radial_exp_c);
+      my_cnk_azi_der.y = Pi * (my_ang_exp_c_azi_der.y * my_radial_exp_c);
+
+      my_cnk_pol_der.x = Pi * (my_ang_exp_c_pol_der.x * my_radial_exp_c);
+      my_cnk_pol_der.y = Pi * (my_ang_exp_c_pol_der.y * my_radial_exp_c);
+
+      cnk_rad_der_d[k2 + n_atom_pairs * (k - 1 + (n - 1) * k_max)] = my_cnk_rad_der;
+      cnk_azi_der_d[k2 + n_atom_pairs * (k - 1 + (n - 1) * k_max)] = my_cnk_azi_der;
+      cnk_pol_der_d[k2 + n_atom_pairs * (k - 1 + (n - 1) * k_max)] = my_cnk_pol_der;
+    }
+  }
+}
+
+static const double rcut_max = 5.0;
+
 struct problem {
   int n_sites;
   int n_atom_pairs;
@@ -177,7 +229,10 @@ struct problem {
   std::vector<char> skip;
   std::vector<double> multiplicity;
   std::vector<hipDoubleComplex> cnk;
-  std::vector<hipDoubleComplex> der[3];
+  std::vector<double> rjs;
+  std::vector<double> rad;
+  std::vector<double> rad_der;
+  std::vector<hipDoubleComplex> ang[4];
 };
 
 static problem make_problem(int n_sites, int neigh, int n_max, int l_max, double skip_fraction, unsigned seed) {
@@ -207,10 +262,14 @@ static problem make_problem(int n_sites, int neigh, int n_max, int l_max, double
       }
   for (int i = 0; i < n_mult; i++) p.multiplicity.push_back(u(rng));
   size_t n_cnk = (size_t) n_sites * p.k_max * n_max;
-  size_t n_der = (size_t) p.n_atom_pairs * p.k_max * n_max;
+  size_t n_rad = (size_t) p.n_atom_pairs * n_max;
+  size_t n_ang = (size_t) p.n_atom_pairs * p.k_max;
   for (size_t i = 0; i < n_cnk; i++) p.cnk.push_back(make_hipDoubleComplex(u(rng), u(rng)));
-  for (int d = 0; d < 3; d++)
-    for (size_t i = 0; i < n_der; i++) p.der[d].push_back(make_hipDoubleComplex(u(rng), u(rng)));
+  for (int k2 = 0; k2 < p.n_atom_pairs; k2++) p.rjs.push_back(rcut_max * 1.1 * u01(rng));
+  for (size_t i = 0; i < n_rad; i++) p.rad.push_back(u(rng));
+  for (size_t i = 0; i < n_rad; i++) p.rad_der.push_back(u(rng));
+  for (int d = 0; d < 4; d++)
+    for (size_t i = 0; i < n_ang; i++) p.ang[d].push_back(make_hipDoubleComplex(u(rng), u(rng)));
   return p;
 }
 
@@ -226,6 +285,10 @@ struct device_problem {
   bool* skip;
   double* multiplicity;
   hipDoubleComplex* cnk;
+  double* rjs;
+  double* rad;
+  double* rad_der;
+  hipDoubleComplex* ang[4];
   hipDoubleComplex* der[3];
   double* out[3];
   double* soap;
@@ -239,8 +302,12 @@ static device_problem upload_problem(const problem& p) {
   d.skip = (bool*) upload(p.skip);
   d.multiplicity = upload(p.multiplicity);
   d.cnk = upload(p.cnk);
+  d.rjs = upload(p.rjs);
+  d.rad = upload(p.rad);
+  d.rad_der = upload(p.rad_der);
+  for (int i = 0; i < 4; i++) d.ang[i] = upload(p.ang[i]);
   for (int i = 0; i < 3; i++) {
-    d.der[i] = upload(p.der[i]);
+    gpuErrchk(hipMalloc((void**) &d.der[i], sizeof(hipDoubleComplex) * p.n_atom_pairs * p.k_max * p.n_max));
     gpuErrchk(hipMalloc((void**) &d.out[i], sizeof(double) * p.n_atom_pairs * p.n_soap));
   }
   gpuErrchk(hipMalloc((void**) &d.soap, sizeof(double) * p.n_sites * p.n_soap));
@@ -254,6 +321,10 @@ static void free_problem(device_problem& d) {
   hipFree(d.skip);
   hipFree(d.multiplicity);
   hipFree(d.cnk);
+  hipFree(d.rjs);
+  hipFree(d.rad);
+  hipFree(d.rad_der);
+  for (int i = 0; i < 4; i++) hipFree(d.ang[i]);
   for (int i = 0; i < 3; i++) {
     hipFree(d.der[i]);
     hipFree(d.out[i]);
@@ -263,15 +334,23 @@ static void free_problem(device_problem& d) {
   hipFree(d.index);
 }
 
+// Pairs past the cutoff are left unwritten by the old kernel; zeroed here so
+// they read as the zero the new one forms.
 static void reference_der(const problem& p, device_problem& d, hipStream_t* s) {
+  size_t n_der = (size_t) p.n_atom_pairs * p.k_max * p.n_max;
+  for (int i = 0; i < 3; i++) gpuErrchk(hipMemsetAsync(d.der[i], 0, sizeof(hipDoubleComplex) * n_der, *s));
+  reference_get_derivatives<<<dim3((p.n_atom_pairs + tpbcnk - 1) / tpbcnk, p.n_max, p.k_max), tpbcnk, 0, *s>>>(
+      d.rad, d.ang[0], d.rad_der, d.ang[1], d.ang[2], d.ang[3], d.der[0], d.der[1], d.der[2], d.rjs, rcut_max, p.n_atom_pairs,
+      p.n_sites, p.n_soap, p.k_max, p.n_max, p.l_max);
   reference_soap_der_one(nullptr, nullptr, nullptr, d.multiplicity, d.out[0], d.out[1], d.out[2], d.cnk, d.der[0], d.der[1],
                          d.der[2], d.k2_i_site, d.skip, p.n_sites, p.n_atom_pairs, p.n_soap, p.k_max, p.n_max, p.l_max, s);
 }
 
 static void new_der(const problem& p, device_problem& d, hipStream_t* s) {
   cuda_get_soap_index(d.index, d.skip, p.n_max, p.l_max, s);
-  cuda_get_soap_der_one(d.multiplicity, d.out[0], d.out[1], d.out[2], d.cnk, d.der[0], d.der[1], d.der[2], d.k2_i_site, d.index,
-                        p.n_sites, p.n_atom_pairs, p.k_max, p.n_max, p.l_max, s);
+  cuda_get_soap_der_one(d.multiplicity, d.out[0], d.out[1], d.out[2], d.cnk, d.rad, d.rad_der, d.ang[0], d.ang[1], d.ang[2],
+                        d.ang[3], d.rjs, rcut_max, d.k2_i_site, d.index, p.n_sites, p.n_atom_pairs, p.k_max, p.n_max, p.l_max,
+                        s);
 }
 
 static void reference_p(const problem& p, device_problem& d, hipStream_t* s) {
@@ -348,10 +427,15 @@ static long compare_kernel(const char* name, kernel_fn ref_fn, kernel_fn new_fn,
   gpuErrchk(hipStreamSynchronize(*s));
   std::vector<double> got = out(p, d);
   long n_diff = differing_words(ref, got);
+  double max_rel = 0.0;
+  for (size_t i = 0; i < ref.size(); i++) {
+    double scale = std::max(std::fabs(ref[i]), 1e-300);
+    max_rel = std::max(max_rel, std::fabs(got[i] - ref[i]) / scale);
+  }
   float t_ref = time_ms(ref_fn, p, d, s, reps);
   float t_new = time_ms(new_fn, p, d, s, reps);
-  std::printf("      %-8s differing %ld of %zu  ref %8.3f ms  new %8.3f ms  x%.2f\n", name, n_diff, ref.size(), t_ref, t_new,
-              t_ref / t_new);
+  std::printf("      %-8s differing %ld of %zu (max rel %.1e)  ref %8.3f ms  new %8.3f ms  x%.2f\n", name, n_diff, ref.size(),
+              max_rel, t_ref, t_new, t_ref / t_new);
   return n_diff;
 }
 

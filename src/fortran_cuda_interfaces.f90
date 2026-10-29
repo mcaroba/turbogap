@@ -308,7 +308,9 @@ MODULE F_B_C
                                   soap_rad_der_d, soap_azi_der_d, soap_pol_der_d, &
                                   thetas_d, phis_d, rjs_d, &
                                   multiplicity_array_d, &
-                                  cnk_d, cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d, &
+                                  cnk_d, radial_exp_coeff_d, radial_exp_coeff_der_d, angular_exp_coeff_d, &
+                                  angular_exp_coeff_rad_der_d, angular_exp_coeff_azi_der_d, angular_exp_coeff_pol_der_d, &
+                                  rcut_max, &
                                   n_neigh_d, i_k2_start_d, k2_i_site_d, k3_index_d, skip_soap_component_d, &
                                   n_sites, n_atom_pairs, n_soap, k_max, n_max, l_max, maxneigh, gpu_stream) &
          bind(C, name="gpu_get_soap_der")
@@ -329,9 +331,13 @@ MODULE F_B_C
          type(c_ptr), value :: k3_index_d
          type(c_ptr), value :: skip_soap_component_d
          type(c_ptr), value :: cnk_d
-         type(c_ptr), value :: cnk_rad_der_d
-         type(c_ptr), value :: cnk_azi_der_d
-         type(c_ptr), value :: cnk_pol_der_d
+         type(c_ptr), value :: radial_exp_coeff_d
+         type(c_ptr), value :: radial_exp_coeff_der_d
+         type(c_ptr), value :: angular_exp_coeff_d
+         type(c_ptr), value :: angular_exp_coeff_rad_der_d
+         type(c_ptr), value :: angular_exp_coeff_azi_der_d
+         type(c_ptr), value :: angular_exp_coeff_pol_der_d
+         real(c_double), value :: rcut_max
          type(c_ptr), value :: multiplicity_array_d
          integer(c_int), value :: n_sites
          integer(c_int), value :: n_atom_pairs

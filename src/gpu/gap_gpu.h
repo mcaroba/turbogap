@@ -66,10 +66,12 @@ void gpu_get_sqrt_dot_p(double* sqrt_dot_d, double* soap_d, double* multiplicity
                         bool* skip_soap_component_d, int n_sites, int n_soap, int n_max, int l_max, hipStream_t* stream);
 void gpu_get_soap_der(double* soap_d, double* sqrt_dot_d, double3* soap_cart_der_d, double* soap_rad_der_d, double* soap_azi_der_d,
                       double* soap_pol_der_d, double* thetas_d, double* phis_d, double* rjs_d, double* multiplicity_array_d,
-                      hipDoubleComplex* cnk_d, hipDoubleComplex* cnk_rad_der_d, hipDoubleComplex* cnk_azi_der_d,
-                      hipDoubleComplex* cnk_pol_der_d, int* n_neigh_d, int* i_k2_start_d, int* k2_i_site_d, int* k3_index_d,
-                      bool* skip_soap_component_d, int n_sites, int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max,
-                      int maxneigh, hipStream_t* stream);
+                      hipDoubleComplex* cnk_d, double* radial_exp_coeff_d, double* radial_exp_coeff_der_d,
+                      hipDoubleComplex* angular_exp_coeff_d, hipDoubleComplex* angular_exp_coeff_rad_der_d,
+                      hipDoubleComplex* angular_exp_coeff_azi_der_d, hipDoubleComplex* angular_exp_coeff_pol_der_d, double rcut_max,
+                      int* n_neigh_d, int* i_k2_start_d, int* k2_i_site_d, int* k3_index_d, bool* skip_soap_component_d,
+                      int n_sites, int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max, int maxneigh,
+                      hipStream_t* stream);
 void gpu_soap_normalize(double* soap_d, double* sqrt_dot_d, int n_soap, int n_sites, hipStream_t* stream);
 void gpu_get_derivatives(double* radial_exp_coeff_d, hipDoubleComplex* angular_exp_coeff_d, double* radial_exp_coeff_der_d,
                          hipDoubleComplex* angular_exp_coeff_rad_der_d, hipDoubleComplex* angular_exp_coeff_azi_der_d,
