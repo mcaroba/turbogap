@@ -479,6 +479,17 @@ extern "C" int gpu_device_count() {
   return n > 0 ? n : 1;
 }
 
+// The physical card this rank drives, as one number, or -1. Ranks bound with
+// --gpu-bind each see their own card as device 0, so the ordinal cannot say
+// which of them share one.
+extern "C" int gpu_device_pci_key() {
+  int dev = 0;
+  hipDeviceProp_t prop;
+  if (hipGetDevice(&dev) != hipSuccess || hipGetDeviceProperties(&prop, dev) != hipSuccess)
+    return -1;
+  return (prop.pciDomainID * 256 + prop.pciBusID) * 32 + prop.pciDeviceID;
+}
+
 extern "C" void cuda_set_device(int my_rank) {
   int num_gpus = 0;
   int mygpuid;

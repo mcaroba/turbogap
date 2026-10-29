@@ -819,6 +819,12 @@ MODULE F_B_C
          implicit none
       end function
 
+!     The card this rank drives, as a number equal across the ranks sharing it.
+      integer(c_int) function gpu_device_pci_key() bind(C, name="gpu_device_pci_key")
+         use iso_c_binding
+         implicit none
+      end function
+
       subroutine gpu_check_error() bind(C, name="gpu_check_error")
          use iso_c_binding
          implicit none

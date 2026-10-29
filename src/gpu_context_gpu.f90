@@ -103,11 +103,11 @@ contains
       call gpu_mem_stats(dev_free, dev_total, live, peak)
       free_gb = real(dev_free, dp)/1024.d0**3
 
-!     cuda_set_device assigns devices round-robin (rank mod n_devices), so this
-!     many ranks are looking at the same free memory and would each budget all
-!     of it. One rank per GPU is the usual slurm arrangement and makes this 1.
+!     This many ranks are looking at the same free memory and would each
+!     budget all of it. One rank per GPU is the usual slurm arrangement and
+!     makes this 1.
       n_devices = max(1, int(gpu_device_count()))
-      n_ranks_on_device = max(1, (ntasks + n_devices - 1)/n_devices)
+      n_ranks_on_device = ranks_sharing_device(ntasks, n_devices)
 
       if (params%gpu_mem_fraction <= 0.d0) then
 !        Opted out: the input's own max_Gbytes_per_process and gpu_n_batches
@@ -171,6 +171,42 @@ contains
       call gpu_mem_set_hint(params%max_Gbytes_per_process, params%gpu_n_batches)
 
    end subroutine gpu_memory_budget_init
+
+!  The ranks on this node driving the same card as this one. Dividing the rank
+!  count by the visible devices is right only when every rank sees every card:
+!  under --gpu-bind each sees just its own, and that count made 4 ranks on 4
+!  GH200s budget a quarter of a card each. Falls back to that count when the
+!  card cannot be identified.
+   integer function ranks_sharing_device(ntasks, n_devices)
+#ifdef _MPIF90
+      use mpi
+#endif
+      integer, intent(in) :: ntasks
+      integer, intent(in) :: n_devices
+#ifdef _MPIF90
+      integer, allocatable :: keys(:)
+      integer :: key
+      integer :: shared_comm
+      integer :: n
+      integer :: ierr
+#endif
+
+      ranks_sharing_device = max(1, (ntasks + n_devices - 1)/n_devices)
+
+#ifdef _MPIF90
+      key = gpu_device_pci_key()
+      call mpi_comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, &
+                               MPI_INFO_NULL, shared_comm, ierr)
+      if (ierr /= MPI_SUCCESS) return
+      call mpi_comm_size(shared_comm, n, ierr)
+      allocate (keys(1:n))
+      call mpi_allgather(key, 1, MPI_INTEGER, keys, 1, MPI_INTEGER, shared_comm, ierr)
+      if (ierr == MPI_SUCCESS .and. all(keys >= 0)) ranks_sharing_device = max(1, count(keys == key))
+      deallocate (keys)
+      call mpi_comm_free(shared_comm, ierr)
+#endif
+
+   end function ranks_sharing_device
 
 !  How many batches a loop needs, given what one unbatched pass would cost.
 !
