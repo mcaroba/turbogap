@@ -189,7 +189,7 @@ def main():
                         "energy, forces and virial from one run instead of "
                         "differencing two energy scales")
     p.add_argument("--family", default="xrd",
-                   choices=("xrd", "nd", "pdf", "sf", "soap", "2b", "3b", "core_pot", "estat", "vdw"),
+                   choices=("xrd", "nd", "pdf", "sf", "xps", "soap", "2b", "3b", "core_pot", "estat", "vdw"),
                    help="which energy_* in the output frame the deck drives")
     p.add_argument("--ranks", type=int, default=1, help="MPI ranks per run")
     p.add_argument("--h", type=float, default=1e-3, help="displacement, Angstrom")

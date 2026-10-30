@@ -182,7 +182,7 @@ contains
               & y_i_pred_all(site_ids(i_beg:i_end), 1:params &
               &%exp_data(xps_idx)%n_samples), params%do_forces, &
               & xyz(1:3, j_beg:j_end),&
-              & energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank)
+              & energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank, size(be_all))
 
          ! if (rank == 0)then
          !    open(unit=11, file="tg_xps.dat", status="unknown")

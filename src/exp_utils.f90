@@ -3781,9 +3781,11 @@ contains
         & n_neigh, neighbors_list, &
         & sigma, n_samples, norm, &
         & x, y_exp, y, y_all, do_forces, xyz,&
-        &  energies_lp, forces0, virial, exp_similarity_type, rank)
+        &  energies_lp, forces0, virial, exp_similarity_type, rank, n_spectrum_sites)
       implicit none
       integer, intent(in) :: n_neigh(:)
+!     Atoms the spectrum is built from, on all ranks and domains.
+      integer, intent(in) :: n_spectrum_sites
       integer, intent(in) :: neighbors_list(:)
       real(dp), intent(in) :: sigma
       real(dp), intent(in) :: core_electron_be(:)
@@ -3800,10 +3802,8 @@ contains
       real(dp), intent(inout) :: virial(1:3, 1:3)
       real(dp) :: this_force(1:3)
       real(dp), allocatable :: y_der(:, :)
-      real(dp), allocatable :: der_factor(:, :)
-      real(dp), allocatable :: der_vec(:, :, :)
+      real(dp), allocatable :: c_site(:)
       real(dp), allocatable :: prefactor(:)
-      real(dp), allocatable :: dxa(:)
       integer, intent(in) :: n_samples
       integer, intent(in) :: rank
       logical, intent(in) :: do_forces
@@ -3812,21 +3812,20 @@ contains
       integer :: n_sites0
       integer :: i
       integer :: j
-      integer :: i2
       integer :: j2
       integer :: k
       integer :: l
       integer :: k1
       integer :: k2
-      integer :: mag_force_i
       logical :: vector_norm = .true.
-      real(dp) :: mag_force
-      real(dp) :: max_mag_force
       real(dp) :: dx
-      real(dp) :: sum_d1
-      real(dp) :: sum_d2
-      real(dp) :: sum_d3
+      real(dp) :: e_site
+      real(dp) :: yp
       real(dp) :: yv
+      real(dp) :: g
+      real(dp) :: s_g
+      real(dp) :: s_y
+      real(dp) :: s_p
       character*32, intent(in) :: exp_similarity_type
 
       n_sites = size(n_neigh)
@@ -3844,12 +3843,14 @@ contains
             energies_lp(i) = -energy_scale*(dot_product(y_all(i, :), y_exp))
          end do
       else if (exp_similarity_type == 'squared_diff') then
+!        One energy for the whole spectrum, shared out over the atoms it is
+!        built from. Each used to carry all of it, making the total that many
+!        times what the forces are the gradient of.
+         e_site = 0.5d0*energy_scale*dot_product(y - y_exp, y - y_exp)/dfloat(n_spectrum_sites)
          do i = 1, n_sites
-            !energies_lp(i) =  energy_scale * ( 1.d0 / dfloat( n_sites0 ) -  dot_product( y_all(i,:), y_exp ))
-            energies_lp(i) = 0.5d0*energy_scale*(dot_product(y - y_exp, y - y_exp))
+            energies_lp(i) = e_site
          end do
 
-         !energies_lp = + energy_scale / n_sites0 * ( dot_product( (y - y_exp), (y - y_exp) ) )
          ! Get the other terms for the squared_diff expression
 
          allocate (prefactor(1:n_samples))
@@ -3871,153 +3872,71 @@ contains
 
       !   Compute xps forces
       if (do_forces) then
-         max_mag_force = 0.0
-         mag_force_i = 0
          forces0 = 0.d0
          virial = 0.d0
 
-         allocate (y_der(1:3, 1:n_samples))
-         allocate (der_factor(1:n_samples, 1:n_sites))
-
-         ! This is the vector which has all the derivatives in for all the betas
-         allocate (der_vec(1:3, 1:n_pairs, 1:n_samples))
-
-         ! First get the derivative factors, to reduce multiplications
-
-         der_factor = 0.d0
-
-         do j = 1, n_sites
-            do i = 1, n_samples
-               yv = (x(i) - core_electron_be(j))
-               der_factor(i, j) = yv*exp(-yv**2/(2.d0*sigma**2))/sigma**2
-            end do
-         end do
-
-         !     First, we compute the forces acting on all the "SOAP-neighbors" of atom i
-         !     (including i itself) due to the gradients of i's Hirshfeld volume wrt the
-         !     positions of its neighbors
-
-         ! First, have the derivatives of the normalisation factor in place
-
-         der_vec = 0.d0
-
-         do l = 1, n_samples
-            k = 0
+!        For squared_diff, a pair of site i moves the spectrum only through
+!        be(i), so its force is c(i) times its own core_electron_be gradient,
+!        with c(i) the spectral factor of site i: sum over samples of the
+!        derivative of the normalised spectrum, weighted by y - y_exp. Formed
+!        once per site; it used to be spread over a pairs x samples array.
+         if (exp_similarity_type == 'squared_diff') then
+            allocate (c_site(1:n_sites))
+            yp = dot_product(y, prefactor)
+            !$omp parallel do default(shared) schedule(static) private(i, l, yv, g, s_g, s_y, s_p)
             do i = 1, n_sites
-               i2 = modulo(neighbors_list(k + 1) - 1, n_sites0) + 1
-               do j = 1, n_neigh(i)
-                  k = k + 1
-                  j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
-                  if (.not. all(core_electron_be_der(1:3, k) == 0.d0)) then
-                     if (exp_similarity_type == 'squared_diff') then
-                        ! (xi - cb(i)) * dxi_drka * exp( -(xi-cb(i))/2/sigma^2 )
-                        der_vec(1:3, k, l) = der_vec(1:3, k, l) + der_factor(l, i)*core_electron_be_der(1:3, k)
-                        !                         if (l==1) print *, "i2=", i2, " j2=", j2, " cb(1:3,k)=", core_electron_be_der(1:3, k)
-                     end if
-                  end if
+               s_g = 0.d0
+               s_y = 0.d0
+               s_p = 0.d0
+               do l = 1, n_samples
+                  yv = x(l) - core_electron_be(i)
+                  g = yv*exp(-yv**2/(2.d0*sigma**2))/sigma**2
+                  s_g = s_g + g
+                  s_y = s_y + y(l)*g
+                  s_p = s_p + prefactor(l)*g
                end do
+               if (vector_norm) then
+                  c_site(i) = (s_p - s_y*yp)/norm
+               else
+                  c_site(i) = (s_p - s_g*yp)/norm
+               end if
             end do
-         end do
+            !$omp end parallel do
+         else
+            allocate (y_der(1:3, 1:n_samples))
+         end if
 
          k = 0
          do i = 1, n_sites
-            ! k is the index which keeps a number of the atom pairs
-            ! i2 is the index of a particular atom
-            i2 = modulo(neighbors_list(k + 1) - 1, n_sites0) + 1
             do j = 1, n_neigh(i)
-               ! Loop through the neighbors of atom i
-               ! j2 is the index of a neighboring atom to i
                k = k + 1
                j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
-               !             SOAP neighbors
-               ! MAY NEED TO CHANGE THIS TO ACCOUNT FOR MACHINE PRECISIO
+               if (all(core_electron_be_der(1:3, k) == 0.d0)) cycle
 
-               if (.not. all(core_electron_be_der(1:3, k) == 0.d0)) then
-
+               if (exp_similarity_type == 'squared_diff') then
+                  this_force(1:3) = c_site(i)*core_electron_be_der(1:3, k)
+               else
                   y_der = 0.d0
-
-                  if (exp_similarity_type == 'squared_diff') then
-
-                     if (vector_norm) then
-                        sum_d1 = dot_product(y, der_vec(1, k, 1:n_samples))
-                        sum_d2 = dot_product(y, der_vec(2, k, 1:n_samples))
-                        sum_d3 = dot_product(y, der_vec(3, k, 1:n_samples))
-
-                        do l = 1, n_samples
-                           y_der(1, l) = (der_vec(1, k, l) - y(l)*sum_d1)/norm
-                           y_der(2, l) = (der_vec(2, k, l) - y(l)*sum_d2)/norm
-                           y_der(3, l) = (der_vec(3, k, l) - y(l)*sum_d3)/norm
-                        end do
-
-                        this_force(1) = dot_product(y_der(1, 1:n_samples), prefactor(1:n_samples))
-                        this_force(2) = dot_product(y_der(2, 1:n_samples), prefactor(1:n_samples))
-                        this_force(3) = dot_product(y_der(3, 1:n_samples), prefactor(1:n_samples))
-
-                     else
-                        ! do sum
-                        sum_d1 = sum(der_vec(1, k, 1:n_samples))
-                        sum_d2 = sum(der_vec(2, k, 1:n_samples))
-                        sum_d3 = sum(der_vec(3, k, 1:n_samples))
-
-                        do l = 1, n_samples
-                           y_der(1, l) = (der_vec(1, k, l) - y(l)*sum_d1)/norm
-                           y_der(2, l) = (der_vec(2, k, l) - y(l)*sum_d2)/norm
-                           y_der(3, l) = (der_vec(3, k, l) - y(l)*sum_d3)/norm
-                        end do
-
-                        this_force(1) = dot_product(y_der(1, 1:n_samples), prefactor(1:n_samples))
-                        this_force(2) = dot_product(y_der(2, 1:n_samples), prefactor(1:n_samples))
-                        this_force(3) = dot_product(y_der(3, 1:n_samples), prefactor(1:n_samples))
-
-                     end if
-
-                  else
-                     call broaden_spectrum_derivative(x(1:n_samples),&
-                          & core_electron_be(i),&
-                          & core_electron_be_der(1:3, k),&
-                          & y_der(1:3, 1:n_samples), sigma, y_exp(1:n_samples), this_force(1:3), norm, dx)
-
-                  end if
-
-                  this_force(1:3) = -energy_scale*this_force(1:3)
-
-                  forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
-
-                  mag_force = norm2(forces0(1:3, j2))
-                  if (mag_force > max_mag_force) then
-                     mag_force_i = j2
-                     max_mag_force = mag_force
-                  end if
-
-                  !             Sign is plus because this force is acting on j2. Factor of one is because this is
-                  !             derived from a local energy
-                  !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
-                  do k1 = 1, 3
-                     do k2 = 1, 3
-                        virial(k1, k2) = virial(k1, k2) + 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
-                     end do
-                  end do
+                  call broaden_spectrum_derivative(x(1:n_samples),&
+                       & core_electron_be(i),&
+                       & core_electron_be_der(1:3, k),&
+                       & y_der(1:3, 1:n_samples), sigma, y_exp(1:n_samples), this_force(1:3), norm, dx)
                end if
 
-               !           There is no net force acting on i2 from its periodic replicas...
-               ! if( j2 /= i2 )then
-               !    forces0(1:3,i2) = forces0(1:3,i2) + this_force(1:3)
-               ! end if
-               !           ... but the periodic replicas DO contribute to the virial
-               !           Sign is minus because this force is acting on i2. Factor of 1/2 is because this is
-               !           derived from a pair energy
-               !            virial = virial - 0.5d0 * dot_product(this_force(1:3), xyz(1:3,k))
-               ! do k1 = 1, 3
-               !    do k2 =1, 3
-               !       virial(k1, k2) = virial(k1, k2) - 0.25d0 * (this_force(k1)*xyz(k2,k) + this_force(k2)*xyz(k1,k))
-               !    end do
-               ! end do
+               this_force(1:3) = -energy_scale*this_force(1:3)
+               forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
+
+!              The force acts on j2 and is derived from a local energy.
+               do k1 = 1, 3
+                  do k2 = 1, 3
+                     virial(k1, k2) = virial(k1, k2) + 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+                  end do
+               end do
             end do
          end do
-         deallocate (y_der)
+         if (allocated(c_site)) deallocate (c_site)
+         if (allocated(y_der)) deallocate (y_der)
          if (allocated(prefactor)) deallocate (prefactor)
-         deallocate (der_vec, der_factor)
-         if (allocated(dxa)) deallocate (dxa)
 
       end if
 
