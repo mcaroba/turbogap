@@ -2,7 +2,8 @@
 # cuda_get_soap_p and cuda_get_soap_der_one, spread over (site or pair, n, l)
 # instead of one thread per site or pair, against the original loop orders kept
 # in descverify.cu: the same sums in the same order, so the outputs must agree
-# bit for bit. Needs nvcc and a device; skips loudly without either.
+# bit for bit. gpu_soap_pair_contract against the derivative chain it replaces,
+# to a tolerance. Needs nvcc and a device; skips loudly without either.
 
 set -euo pipefail
 
@@ -33,7 +34,7 @@ build() {
 }
 
 main() {
-    printf '\n== cuda_get_soap_p and _der_one against the originals, bit for bit\n'
+    printf '\n== cuda_get_soap_p and _der_one against the originals, bit for bit; the contraction against the chain\n'
     check_preconditions
     build
     "$WORK/descverify" "$N_SITES" "$NEIGH" "$REPS"

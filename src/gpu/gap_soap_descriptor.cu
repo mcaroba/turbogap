@@ -479,6 +479,178 @@ __global__ void cuda_soap_normalize(double* soap_d, double* sqrt_dot_d, int n_so
 extern "C" void gpu_soap_normalize(double* soap_d, double* sqrt_dot_d, int n_soap, int n_sites, hipStream_t* stream) {
   cuda_soap_normalize<<<n_sites, tpb, 0, stream[0]>>>(soap_d, sqrt_dot_d, n_soap, n_sites);
 }
+
+// The expansion of one batch, kept by get_soap in place of the descriptor
+// derivatives, for gpu_soap_pair_contract. Everything but soap_d and the
+// multiplicities was get_soap's and is freed by gpu_soap_expansion_release.
+struct soap_expansion {
+  double* soap_d;
+  double* sqrt_dot_d;
+  hipDoubleComplex* cnk_d;
+  double* rad_d;
+  double* rad_der_d;
+  hipDoubleComplex* ang_d;
+  hipDoubleComplex* ang_rad_d;
+  hipDoubleComplex* ang_azi_d;
+  hipDoubleComplex* ang_pol_d;
+  double* rjs_d;
+  double* thetas_d;
+  double* phis_d;
+  int* k2_i_site_d;
+  int* k2_start_d;
+  int* n_neigh_d;
+  double* multiplicity_d;
+  int2* index_d;
+  double rcut_max;
+  int n_sites;
+  int n_pairs;
+  int n_soap;
+  int k_max;
+  int n_max;
+  int l_max;
+};
+
+static soap_expansion kept = {};
+
+extern "C" void gpu_soap_keep_expansion(double* soap_d, double* sqrt_dot_d, hipDoubleComplex* cnk_d, double* rad_d,
+                                        double* rad_der_d, hipDoubleComplex* ang_d, hipDoubleComplex* ang_rad_d,
+                                        hipDoubleComplex* ang_azi_d, hipDoubleComplex* ang_pol_d, double* rjs_d, double* thetas_d,
+                                        double* phis_d, int* k2_i_site_d, int* k2_start_d, int* n_neigh_d, double* multiplicity_d,
+                                        bool* skip_soap_component_d, double rcut_max, int n_sites, int n_pairs, int n_soap,
+                                        int k_max, int n_max, int l_max, hipStream_t* stream) {
+  kept = {soap_d,    sqrt_dot_d, cnk_d,    rad_d,   rad_der_d,   ang_d,      ang_rad_d, ang_azi_d,
+          ang_pol_d, rjs_d,      thetas_d, phis_d,  k2_i_site_d, k2_start_d, n_neigh_d, multiplicity_d,
+          nullptr,   rcut_max,   n_sites,  n_pairs, n_soap,      k_max,      n_max,     l_max};
+  hipMallocAsync((void**) &kept.index_d, sizeof(int2) * n_max * n_max * (l_max + 1), stream[0]);
+  cuda_get_soap_index(kept.index_d, skip_soap_component_d, n_max, l_max, stream);
+}
+
+extern "C" void gpu_soap_expansion_release(hipStream_t* stream) {
+  void* owned[] = {kept.sqrt_dot_d, kept.cnk_d,       kept.rad_d,      kept.rad_der_d, kept.ang_d,
+                   kept.ang_rad_d,  kept.ang_azi_d,   kept.ang_pol_d,  kept.rjs_d,     kept.thetas_d,
+                   kept.phis_d,     kept.k2_i_site_d, kept.k2_start_d, kept.n_neigh_d, kept.index_d};
+  for (void* p : owned)
+    if (p)
+      hipFreeAsync(p, stream[0]);
+  kept = {};
+}
+
+// pair_d(1:3, k) = sign * sum_s G(i, s) dq_s(i)/dr_k, i the site of pair k, for
+// G(n_sites, n_soap) a gradient with respect to the normalised descriptor q.
+// The same contraction as G against soap_cart_der, but dq/dr is never formed:
+// G is carried back through the normalisation and the power spectrum to one
+// complex vector per site and expansion coefficient, H(n, lm), and each pair
+// then needs only its own coefficient derivatives against H.
+extern "C" void gpu_soap_pair_contract(double* G_d, double sign, double* pair_d, hipStream_t* stream) {
+  soap_expansion e = kept;
+  int n_sites = e.n_sites;
+  int n_pairs = e.n_pairs;
+  int n_soap = e.n_soap;
+  int k_max = e.k_max;
+  int n_max = e.n_max;
+  int l_max = e.l_max;
+
+  // Through q = p/|p|: dE/dp = (G - q (q.G)) / |p|.
+  double* Gp_d;
+  hipMallocAsync((void**) &Gp_d, sizeof(double) * n_sites * n_soap, stream[0]);
+  tg_parallel_for(
+      "turbogap_soap_contract_norm", n_sites, stream,
+      TG_LAMBDA(const int i) {
+        double qg = 0.0;
+        for (int s = 0; s < n_soap; s++)
+          qg += e.soap_d[s + i * n_soap] * G_d[i + s * n_sites];
+        double inv = 1.0 / e.sqrt_dot_d[i];
+        for (int s = 0; s < n_soap; s++)
+          Gp_d[i + s * n_sites] = (G_d[i + s * n_sites] - e.soap_d[s + i * n_soap] * qg) * inv;
+      },
+      tpb);
+
+  // Through p(n, np, l) = sum_m mult cnk(n).cnk(np): the diagonal is the
+  // product of one coefficient with itself, so it carries twice.
+  hipDoubleComplex* H_d;
+  hipMallocAsync((void**) &H_d, sizeof(hipDoubleComplex) * n_sites * k_max * n_max, stream[0]);
+  tg_parallel_for(
+      "turbogap_soap_contract_h", n_sites * n_max * (l_max + 1), stream,
+      TG_LAMBDA(const int t) {
+        int i = t % n_sites;
+        int l = (t / n_sites) % (l_max + 1);
+        int n = t / n_sites / (l_max + 1) + 1;
+        for (int m = 0; m <= l; m++) {
+          int k = 1 + l * (l + 1) / 2 + m;
+          hipDoubleComplex h = make_hipDoubleComplex(0.0, 0.0);
+          for (int np = 1; np <= n_max; np++) {
+            int lo = n < np ? n : np;
+            int hi = n < np ? np : n;
+            int2 idx = e.index_d[l + (l_max + 1) * (hi - 1 + (lo - 1) * n_max)];
+            if (idx.x < 0)
+              continue;
+            double w = Gp_d[i + idx.x * n_sites] * e.multiplicity_d[idx.y + m];
+            if (n == np)
+              w *= 2.0;
+            hipDoubleComplex c = e.cnk_d[i + n_sites * (k - 1 + (np - 1) * k_max)];
+            h.x += w * c.x;
+            h.y += w * c.y;
+          }
+          H_d[i + n_sites * (k - 1 + (n - 1) * k_max)] = h;
+        }
+      },
+      tpb);
+
+  // Each pair's coefficient derivatives against H, then to Cartesian as
+  // cuda_get_soap_der_thr_one does. The central pair is redone below.
+  tg_parallel_for(
+      "turbogap_soap_contract_pair", n_pairs, stream,
+      TG_LAMBDA(const int k2) {
+        int i = e.k2_i_site_d[k2] - 1;
+        double f_rad = 0.0;
+        double f_azi = 0.0;
+        double f_pol = 0.0;
+        if (e.rjs_d[k2] < e.rcut_max) {
+          double Pi = 4.0 * acos(-1.0);
+          for (int k = 1; k <= k_max; k++) {
+            hipDoubleComplex ang = e.ang_d[k2 + n_pairs * (k - 1)];
+            hipDoubleComplex ang_rad = e.ang_rad_d[k2 + n_pairs * (k - 1)];
+            hipDoubleComplex ang_azi = e.ang_azi_d[k2 + n_pairs * (k - 1)];
+            hipDoubleComplex ang_pol = e.ang_pol_d[k2 + n_pairs * (k - 1)];
+            for (int n = 1; n <= n_max; n++) {
+              hipDoubleComplex h = H_d[i + n_sites * (k - 1 + (n - 1) * k_max)];
+              double rad = e.rad_d[n - 1 + k2 * n_max];
+              double rad_der = e.rad_der_d[n - 1 + k2 * n_max];
+              f_rad += rad_der * (ang.x * h.x + ang.y * h.y) + rad * (ang_rad.x * h.x + ang_rad.y * h.y);
+              f_azi += rad * (ang_azi.x * h.x + ang_azi.y * h.y);
+              f_pol += rad * (ang_pol.x * h.x + ang_pol.y * h.y);
+            }
+          }
+          f_rad *= Pi;
+          f_azi *= Pi;
+          f_pol *= Pi;
+        }
+        double theta = e.thetas_d[k2];
+        double phi = e.phis_d[k2];
+        double rj = e.rjs_d[k2];
+        pair_d[3 * k2] = sign * (sin(theta) * cos(phi) * f_rad - cos(theta) * cos(phi) / rj * f_pol - sin(phi) / rj * f_azi);
+        pair_d[3 * k2 + 1] = sign * (sin(theta) * sin(phi) * f_rad - cos(theta) * sin(phi) / rj * f_pol + cos(phi) / rj * f_azi);
+        pair_d[3 * k2 + 2] = sign * (cos(theta) * f_rad + sin(theta) / rj * f_pol);
+      },
+      tpb);
+
+  // The central pair is minus the sum of the site's others, in their order.
+  tg_parallel_for(
+      "turbogap_soap_contract_self", n_sites, stream,
+      TG_LAMBDA(const int i) {
+        int k3 = e.k2_start_d[i];
+        for (int c = 0; c < 3; c++) {
+          double s = 0.0;
+          for (int j = 1; j < e.n_neigh_d[i]; j++)
+            s -= pair_d[3 * (k3 + j) + c];
+          pair_d[3 * k3 + c] = s;
+        }
+      },
+      tpb);
+
+  hipFreeAsync(Gp_d, stream[0]);
+  hipFreeAsync(H_d, stream[0]);
+}
 // Two earlier versions of the derivative kernel (cuda_get_derivatives and
 // cuda_get_derivatives_new) used to live here, inside a block comment and
 // with their only call site commented out as well. They also wrote

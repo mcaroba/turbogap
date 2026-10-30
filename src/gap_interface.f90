@@ -199,6 +199,7 @@ contains
       integer :: n_all_sites
       integer :: i4
       logical :: lp_der
+      logical :: contract
       integer :: n_sites_supercell
       integer :: j3
       integer :: ierr
@@ -286,6 +287,12 @@ contains
             allocate (soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs))
 !           Device get_soap never fills the host copy; only write_derivatives reads it.
             if (write_derivatives) soap_cart_der = 0.d0
+         end if
+!        Forces and local-property gradients contract dE/dq against the kept
+!        expansion; only the dipole model and write_derivatives need dq/dr.
+         contract = do_derivatives .and. .not. write_derivatives .and. .not. is_dipole_model
+         soap_cart_der_d = c_null_ptr
+         if (do_derivatives .and. .not. contract) then
             st_soap_cart_der = 3*n_soap*n_atom_pairs*sizeof(soap_cart_der(1, 1, 1))
             call gpu_malloc_async(soap_cart_der_d, st_soap_cart_der, gpu_stream)
          end if
@@ -300,7 +307,7 @@ contains
                  & soap_cart_der_d, n_neigh_d, W_d, S_d, multiplicity_array_d,&
                  & st_W_d, st_S_d, st_multiplicity_array_d,&
                  & recompute_basis, &
-                 & cublas_handle, gpu_stream)
+                 & cublas_handle, gpu_stream, contract)
 
          end if
 
@@ -429,8 +436,9 @@ contains
          time_local_prop(3) = time_local_prop(3) + time_local_prop(2) - time_local_prop(1)
 
          call soap_backend_release()
+         if (contract) call gpu_soap_expansion_release(gpu_stream)
          call gpu_free_async(soap_d, gpu_stream)
-         call gpu_free_async(soap_cart_der_d, gpu_stream)
+         if (c_associated(soap_cart_der_d)) call gpu_free_async(soap_cart_der_d, gpu_stream)
 
          if (.not. write_soap) deallocate (soap)
          if (do_derivatives .and. .not. write_derivatives) deallocate (soap_cart_der)

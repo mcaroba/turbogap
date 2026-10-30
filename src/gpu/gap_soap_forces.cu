@@ -106,7 +106,11 @@ extern "C" void gpu_final_soap_forces_virial(int n_sites, double* Qss_d, int n_s
   double* pair_force_d;
   gpuErrchk(hipMallocAsync(&pair_force_d, (size_t) 3 * n_pairs * sizeof(double), stream[0]));
 
-  cuda_soap_forces_virial_two<<<nblocks, tpb, 0, stream[0]>>>(n_sites, Qss_d, n_soap, l_index_d, soap_der_d, pair_force_d);
+  // No soap_der_d: get_soap kept the expansion instead, see gpu_soap_pair_contract.
+  if (soap_der_d)
+    cuda_soap_forces_virial_two<<<nblocks, tpb, 0, stream[0]>>>(n_sites, Qss_d, n_soap, l_index_d, soap_der_d, pair_force_d);
+  else
+    gpu_soap_pair_contract(Qss_d, 1.0, pair_force_d, stream);
 
   // 0.5 symmetrises; this route does not halve again, its l_nn running over the
   // neighbour list rather than over ordered pairs of a k_list.
@@ -187,8 +191,11 @@ extern "C" void gpu_local_property_derivatives(int n_sites, double* Qss_d, int n
     hipMalloc((void**)&this_force_d,sizeof(double)*n_pairs*3);*/
   hipMemsetAsync(local_property_cart_der_d, 0, 3 * n_pairs * sizeof(double), stream[0]);
 
-  cuda_local_property_derivatives<<<nblocks, tpb, 0, stream[0]>>>(n_sites, Qss_d, n_soap, l_index_d, soap_der_d,
-                                                                  local_property_cart_der_d);
+  if (soap_der_d)
+    cuda_local_property_derivatives<<<nblocks, tpb, 0, stream[0]>>>(n_sites, Qss_d, n_soap, l_index_d, soap_der_d,
+                                                                    local_property_cart_der_d);
+  else
+    gpu_soap_pair_contract(Qss_d, -1.0, local_property_cart_der_d, stream);
 
   /*gpuErrchk( hipPeekAtLastError() );
     gpuErrchk( hipDeviceSynchronize() );*/

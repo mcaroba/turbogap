@@ -2,7 +2,8 @@
 // kept below, on random input: every output must be bit-identical, with and
 // without skipped components and with pairs past the cutoff. The der_one
 // reference is the old pair of kernels, cnk_*_der written then read. Prints the
-// time of each on the same data.
+// time of each on the same data. gpu_soap_pair_contract is checked, to a
+// tolerance, against the chain it replaces done on the host from der_one.
 #include "../../src/gpu/gap_soap_descriptor.cu"
 
 #include <algorithm>
@@ -217,6 +218,7 @@ __global__ void reference_get_derivatives(double* radial_exp_coeff_d, hipDoubleC
 }
 
 static const double rcut_max = 5.0;
+static const double CONTRACT_TOL = 1e-11;
 
 struct problem {
   int n_sites;
@@ -439,6 +441,96 @@ static long compare_kernel(const char* name, kernel_fn ref_fn, kernel_fn new_fn,
   return n_diff;
 }
 
+// The chain gpu_soap_pair_contract replaces, on the host from der_one's output:
+// normalisation, Cartesian, the central pair as minus the others, the dot with
+// G. Returns the largest error over the largest value.
+static double check_contract(const problem& p, device_problem& d, hipStream_t* s) {
+  int ns = p.n_sites;
+  int npairs = p.n_atom_pairs;
+  int nsoap = p.n_soap;
+  int neigh = npairs / ns;
+  std::mt19937 rng(777);
+  std::uniform_real_distribution<double> u(-1.0, 1.0);
+  std::vector<double> thetas(npairs);
+  std::vector<double> phis(npairs);
+  std::vector<double> G((size_t) ns * nsoap);
+  std::vector<int> k2_start(ns);
+  std::vector<int> n_neigh(ns, neigh);
+  for (int k2 = 0; k2 < npairs; k2++) {
+    thetas[k2] = std::acos(u(rng));
+    phis[k2] = M_PI * u(rng);
+  }
+  for (double& g : G) g = u(rng);
+  for (int i = 0; i < ns; i++) k2_start[i] = i * neigh;
+
+  new_p(p, d, s);
+  new_der(p, d, s);
+  gpuErrchk(hipStreamSynchronize(*s));
+  std::vector<double> soap = fetch(d.soap, (size_t) ns * nsoap);
+  std::vector<double> norm = fetch(d.sqrt_dot, ns);
+  std::vector<double> der[3];
+  for (int c = 0; c < 3; c++) der[c] = fetch(d.out[c], (size_t) npairs * nsoap);
+
+  std::vector<double> ref(3 * (size_t) npairs, 0.0);
+  for (int k2 = 0; k2 < npairs; k2++) {
+    if (k2 % neigh == 0)
+      continue;
+    int i = k2 / neigh;
+    double nrm = norm[i];
+    double pd[3] = {0.0, 0.0, 0.0};
+    for (int q = 0; q < nsoap; q++)
+      for (int c = 0; c < 3; c++) pd[c] += soap[q + (size_t) i * nsoap] * der[c][k2 + (size_t) q * npairs];
+    double f[3] = {0.0, 0.0, 0.0};
+    for (int q = 0; q < nsoap; q++) {
+      double pq = soap[q + (size_t) i * nsoap];
+      for (int c = 0; c < 3; c++)
+        f[c] += G[i + (size_t) q * ns] * (der[c][k2 + (size_t) q * npairs] / nrm - pq * pd[c] / (nrm * nrm * nrm));
+    }
+    double st = std::sin(thetas[k2]);
+    double ct = std::cos(thetas[k2]);
+    double sp = std::sin(phis[k2]);
+    double cp = std::cos(phis[k2]);
+    double r = p.rjs[k2];
+    ref[3 * k2] = st * cp * f[0] - ct * cp / r * f[2] - sp / r * f[1];
+    ref[3 * k2 + 1] = st * sp * f[0] - ct * sp / r * f[2] + cp / r * f[1];
+    ref[3 * k2 + 2] = ct * f[0] + st / r * f[2];
+  }
+  for (int i = 0; i < ns; i++)
+    for (int c = 0; c < 3; c++)
+      for (int j = 1; j < neigh; j++) ref[3 * (i * neigh) + c] -= ref[3 * (i * neigh + j) + c];
+
+  std::vector<double> q_host(soap);
+  for (int i = 0; i < ns; i++)
+    for (int q = 0; q < nsoap; q++) q_host[q + (size_t) i * nsoap] /= norm[i];
+  double* q_d = upload(q_host);
+  double* G_d = upload(G);
+  double* thetas_d = upload(thetas);
+  double* phis_d = upload(phis);
+  int* k2_start_d = upload(k2_start);
+  int* n_neigh_d = upload(n_neigh);
+  double* pair_d;
+  gpuErrchk(hipMalloc((void**) &pair_d, sizeof(double) * 3 * npairs));
+  gpu_soap_keep_expansion(q_d, d.sqrt_dot, d.cnk, d.rad, d.rad_der, d.ang[0], d.ang[1], d.ang[2], d.ang[3], d.rjs, thetas_d,
+                          phis_d, d.k2_i_site, k2_start_d, n_neigh_d, d.multiplicity, d.skip, rcut_max, ns, npairs, nsoap,
+                          p.k_max, p.n_max, p.l_max, s);
+  gpu_soap_pair_contract(G_d, 1.0, pair_d, s);
+  gpuErrchk(hipStreamSynchronize(*s));
+  std::vector<double> got = fetch(pair_d, 3 * (size_t) npairs);
+  hipFree(kept.index_d);
+  kept = {};
+  for (void* x : {(void*) q_d, (void*) G_d, (void*) thetas_d, (void*) phis_d, (void*) k2_start_d, (void*) n_neigh_d, (void*) pair_d})
+    hipFree(x);
+
+  double err = 0.0;
+  double big = 0.0;
+  for (size_t k = 0; k < ref.size(); k++) {
+    err = std::max(err, std::fabs(got[k] - ref[k]));
+    big = std::max(big, std::fabs(ref[k]));
+  }
+  std::printf("      contract max error / max value %.1e\n", err / big);
+  return err / big;
+}
+
 static long check_case(const char* label, int n_sites, int neigh, int n_max, int l_max, double skip_fraction, int reps,
                        hipStream_t* s) {
   problem p = make_problem(n_sites, neigh, n_max, l_max, skip_fraction, 12345);
@@ -447,6 +539,8 @@ static long check_case(const char* label, int n_sites, int neigh, int n_max, int
   long bad = 0;
   bad += compare_kernel("soap_p", reference_p, new_p, p_outputs, p, d, s, reps);
   bad += compare_kernel("der_one", reference_der, new_der, der_outputs, p, d, s, reps);
+  if (!(check_contract(p, d, s) < CONTRACT_TOL))
+    bad++;
   free_problem(d);
   return bad;
 }
@@ -463,6 +557,6 @@ int main(int argc, char** argv) {
   bad += check_case("n_max 5 l_max 3", n_sites, neigh, 5, 3, 0.0, reps, &s);
   bad += check_case("n_max 11 l_max 6, 50% skip", n_sites, neigh, 11, 6, 0.5, reps, &s);
   bad += check_case("n_max 24 l_max 10", n_sites / 4, neigh, 24, 10, 0.0, reps, &s);
-  std::printf(bad == 0 ? "    PASS: bit-identical\n" : "    FAIL: outputs differ\n");
+  std::printf(bad == 0 ? "    PASS: bit-identical, contraction within tolerance\n" : "    FAIL: outputs differ\n");
   return bad == 0 ? 0 : 1;
 }

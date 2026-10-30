@@ -358,6 +358,44 @@ MODULE F_B_C
          integer(c_int), value :: n_soap
       end subroutine
 
+      subroutine gpu_soap_keep_expansion(soap_d, sqrt_dot_d, cnk_d, rad_d, rad_der_d, &
+                                         ang_d, ang_rad_d, ang_azi_d, ang_pol_d, rjs_d, thetas_d, phis_d, &
+                                         k2_i_site_d, k2_start_d, n_neigh_d, multiplicity_d, skip_soap_component_d, &
+                                         rcut_max, n_sites, n_pairs, n_soap, k_max, n_max, l_max, gpu_stream) &
+         bind(C, name="gpu_soap_keep_expansion")
+         use iso_c_binding
+         type(c_ptr), value :: soap_d
+         type(c_ptr), value :: sqrt_dot_d
+         type(c_ptr), value :: cnk_d
+         type(c_ptr), value :: rad_d
+         type(c_ptr), value :: rad_der_d
+         type(c_ptr), value :: ang_d
+         type(c_ptr), value :: ang_rad_d
+         type(c_ptr), value :: ang_azi_d
+         type(c_ptr), value :: ang_pol_d
+         type(c_ptr), value :: rjs_d
+         type(c_ptr), value :: thetas_d
+         type(c_ptr), value :: phis_d
+         type(c_ptr), value :: k2_i_site_d
+         type(c_ptr), value :: k2_start_d
+         type(c_ptr), value :: n_neigh_d
+         type(c_ptr), value :: multiplicity_d
+         type(c_ptr), value :: skip_soap_component_d
+         real(c_double), value :: rcut_max
+         integer(c_int), value :: n_sites
+         integer(c_int), value :: n_pairs
+         integer(c_int), value :: n_soap
+         integer(c_int), value :: k_max
+         integer(c_int), value :: n_max
+         integer(c_int), value :: l_max
+         type(c_ptr) :: gpu_stream
+      end subroutine
+
+      subroutine gpu_soap_expansion_release(gpu_stream) bind(C, name="gpu_soap_expansion_release")
+         use iso_c_binding
+         type(c_ptr) :: gpu_stream
+      end subroutine
+
       subroutine gpu_get_derivatives(radial_exp_coeff_d, angular_exp_coeff_d, radial_exp_coeff_der_d, &
                                      angular_exp_coeff_rad_der_d, angular_exp_coeff_azi_der_d, angular_exp_coeff_pol_der_d, &
                                      cnk_rad_der_d, cnk_azi_der_d, cnk_pol_der_d, &

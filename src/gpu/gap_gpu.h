@@ -73,6 +73,13 @@ void gpu_get_soap_der(double* soap_d, double* sqrt_dot_d, double3* soap_cart_der
                       int n_sites, int n_atom_pairs, int n_soap, int k_max, int n_max, int l_max, int maxneigh,
                       hipStream_t* stream);
 void gpu_soap_normalize(double* soap_d, double* sqrt_dot_d, int n_soap, int n_sites, hipStream_t* stream);
+void gpu_soap_keep_expansion(double* soap_d, double* sqrt_dot_d, hipDoubleComplex* cnk_d, double* rad_d, double* rad_der_d,
+                             hipDoubleComplex* ang_d, hipDoubleComplex* ang_rad_d, hipDoubleComplex* ang_azi_d,
+                             hipDoubleComplex* ang_pol_d, double* rjs_d, double* thetas_d, double* phis_d, int* k2_i_site_d,
+                             int* k2_start_d, int* n_neigh_d, double* multiplicity_d, bool* skip_soap_component_d, double rcut_max,
+                             int n_sites, int n_pairs, int n_soap, int k_max, int n_max, int l_max, hipStream_t* stream);
+void gpu_soap_expansion_release(hipStream_t* stream);
+void gpu_soap_pair_contract(double* G_d, double sign, double* pair_d, hipStream_t* stream);
 void gpu_get_derivatives(double* radial_exp_coeff_d, hipDoubleComplex* angular_exp_coeff_d, double* radial_exp_coeff_der_d,
                          hipDoubleComplex* angular_exp_coeff_rad_der_d, hipDoubleComplex* angular_exp_coeff_azi_der_d,
                          hipDoubleComplex* angular_exp_coeff_pol_der_d, hipDoubleComplex* cnk_rad_der_d,

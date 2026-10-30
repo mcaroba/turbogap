@@ -41,9 +41,14 @@ Everything TurboGAP runs on a GPU lives here. It used to live in three files in
   coefficients and their derivatives, and the `cnk` contraction.
 - `gap_soap_descriptor.cu` — the power spectrum from `cnk`, its normalisation,
   the radial/azimuthal/polar derivatives and their conversion to Cartesian, and
-  the transposes those need.
+  the transposes those need. Also `gpu_soap_pair_contract`, which forces and
+  local-property gradients use instead: dE/dq taken back through the
+  normalisation and the power spectrum to one vector per site and expansion
+  coefficient, so the pairs x n_soap derivatives are never formed. Only a dipole
+  model and `write_derivatives` still build them.
 - `gap_soap_forces.cu` — contraction of the Cartesian derivatives into forces
-  and the virial, and the same for local properties.
+  and the virial, and the same for local properties; with no derivatives, the
+  per-pair gradients come from `gpu_soap_pair_contract`.
 
 **MAD** (declarations in `mad_gpu.h`)
 
