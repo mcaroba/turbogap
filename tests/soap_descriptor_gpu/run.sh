@@ -30,7 +30,7 @@ build() {
     mkdir -p "$WORK"
     nvcc -x cu -O3 -arch="$CUDA_ARCH" --expt-extended-lambda --expt-relaxed-constexpr \
         -I"$HOP_ROOT" -I"$HOP_ROOT/source/hip" -DHOP_TARGET_CUDA -DCUDA -I"$GL_STUB" -I"$repo/src/gpu" \
-        "$here/descverify.cu" -o "$WORK/descverify"
+        "$here/descverify.cu" -x cu "$repo/src/gpu/gpu_memory.cu" -lcurand -lcublas -o "$WORK/descverify"
 }
 
 main() {

@@ -23,6 +23,7 @@
 #include "gpu_backend.h"
 #include "gpu_common.h"
 #include "gap_gpu.h"
+#include "gpu_memory.h"
 
 #include <cstddef>
 
@@ -526,12 +527,14 @@ extern "C" void gpu_soap_keep_expansion(double* soap_d, double* sqrt_dot_d, hipD
 }
 
 extern "C" void gpu_soap_expansion_release(hipStream_t* stream) {
-  void* owned[] = {kept.sqrt_dot_d, kept.cnk_d,       kept.rad_d,      kept.rad_der_d, kept.ang_d,
-                   kept.ang_rad_d,  kept.ang_azi_d,   kept.ang_pol_d,  kept.rjs_d,     kept.thetas_d,
-                   kept.phis_d,     kept.k2_i_site_d, kept.k2_start_d, kept.n_neigh_d, kept.index_d};
+  // All but index_d came from gpu_malloc_async and leave its ledger here.
+  void* owned[] = {kept.sqrt_dot_d, kept.cnk_d, kept.rad_d,    kept.rad_der_d, kept.ang_d,       kept.ang_rad_d,  kept.ang_azi_d,
+                   kept.ang_pol_d,  kept.rjs_d, kept.thetas_d, kept.phis_d,    kept.k2_i_site_d, kept.k2_start_d, kept.n_neigh_d};
   for (void* p : owned)
     if (p)
-      hipFreeAsync(p, stream[0]);
+      cuda_free_async(&p, stream);
+  if (kept.index_d)
+    hipFreeAsync(kept.index_d, stream[0]);
   kept = {};
 }
 
