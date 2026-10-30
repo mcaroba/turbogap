@@ -24,6 +24,7 @@ module turbogap_setup
    use timing
    use types
    use read_files
+   use error, only: turbogap_abort
 #ifndef _GPU
 !  The GPU soap_turbo predates this switch, so only the host build sets it.
    use soap_turbo_radial, only: legacy_filter_seed
@@ -333,6 +334,17 @@ contains
             call get_irreducible_local_properties(params, n_local_properties_tot, n_soap_turbo, soap_turbo_hypers, &
                            local_property_labels, local_property_labels_temp, local_property_labels_temp2, local_property_indexes, &
                                 valid_vdw, vdw_lp_index, valid_estat_charges, charge_lp_index, core_be_lp_index, valid_xps, xps_idx)
+
+!           XPS data is fitted through a core_electron_be local property. Without
+!           one there is no predicted spectrum, and the first step read past it.
+            do i = 1, params%n_exp
+               if (trim(params%exp_data(i)%label) == "xps" .and. trim(params%exp_data(i)%file_data) /= "none" &
+                   .and. .not. valid_xps) then
+                  write (*, *) 'ERROR: XPS data is given, but no soap_turbo descriptor of the potential has a'
+                  write (*, *) '       core_electron_be local property to predict the spectrum from.'
+                  call turbogap_abort()
+               end if
+            end do
 
             if (params%n_local_properties > 0) then
                write (*, *) '                                       |'
