@@ -55,9 +55,9 @@ Everything TurboGAP runs on a GPU lives here. It used to live in three files in
 - `mad_pdf.cu` — the pair distribution function: pair counting inside the pdf
   cutoff, compaction into `k`-indexed buffers, the kernel density estimate of
   `g(r)` and its derivative, and the reduction over pairs.
-- `mad_xrd.cu` — the structure factor: `Gk` and its position derivative, the
-  Hadamard product with the scattering factors, the dgemv that turns that into
-  per-pair forces, and their collection into forces and the virial.
+- `mad_xrd.cu` — the structure factor forces: each pair's force as one sum of
+  the pdf derivative against w = S^T (residual x scattering factor), formed on
+  the host, and their collection into forces and the virial.
 - `mad_electrostatics.cu` — shifted-force Coulomb (GSF). Grouped here rather
   than with GAP because it is reached from the same experimental-prediction
   driver and shares the pair compaction, but it is a separate physical model

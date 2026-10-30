@@ -1080,6 +1080,31 @@ MODULE F_B_C
          type(c_ptr) :: stream
       end subroutine gpu_setup_matrix_forces
 
+      subroutine gpu_xrd_pair_forces(nk, n_samples, w_d, pdf_der_d, c_factor, xyz_k_d, fi_d, stream) &
+         bind(C, name="gpu_xrd_pair_forces")
+         use iso_c_binding
+         integer(c_int), value :: nk
+         integer(c_int), value :: n_samples
+         type(c_ptr), value :: w_d
+         type(c_ptr), value :: pdf_der_d
+         real(c_double), value :: c_factor
+         type(c_ptr), value :: xyz_k_d
+         type(c_ptr), value :: fi_d
+         type(c_ptr) :: stream
+      end subroutine gpu_xrd_pair_forces
+
+      subroutine gpu_xrd_weights(n_samples_sf, n_samples, S_d, residual_d, f_d, w_d, stream) &
+         bind(C, name="gpu_xrd_weights")
+         use iso_c_binding
+         integer(c_int), value :: n_samples_sf
+         integer(c_int), value :: n_samples
+         type(c_ptr), value :: S_d
+         type(c_ptr), value :: residual_d
+         type(c_ptr), value :: f_d
+         type(c_ptr), value :: w_d
+         type(c_ptr) :: stream
+      end subroutine gpu_xrd_weights
+
       subroutine gpu_exp_force_virial_collection(n_k, n_sites, forces0, energy_scale, fi, &
                                                  j2_list, virial, xyz, stream) bind(C, name="gpu_exp_force_virial_collection")
 
@@ -1097,58 +1122,6 @@ MODULE F_B_C
          type(c_ptr), value :: fi
          type(c_ptr) :: stream
       end subroutine gpu_exp_force_virial_collection
-
-      subroutine gpu_get_fi_dgemv(i, n_samples_sf, n_k, dermat_d,&
-           & prefactor_d, fi_d, cublas_handle, stream) bind(C, name&
-           &="gpu_get_fi_dgemv")
-         use iso_c_binding
-         implicit none
-         integer(c_int), value :: i
-         integer(c_int), value :: n_samples_sf
-         integer(c_int), value :: n_k
-         type(c_ptr), value :: dermat_d
-         type(c_ptr), value :: prefactor_d
-         type(c_ptr), value :: fi_d
-         type(c_ptr), value :: cublas_handle
-         type(c_ptr), value :: stream
-      end subroutine gpu_get_fi_dgemv
-
-      subroutine gpu_hadamard_vec_mat_product(n_samples_sf, n_k,&
-           & all_scattering_factors_d, dermat_d, stream) bind(C&
-           &, name="gpu_hadamard_vec_mat_product")
-         use iso_c_binding
-         implicit none
-         integer(c_int), value :: n_samples_sf
-         integer(c_int), value :: n_k
-         type(c_ptr), value :: dermat_d
-         type(c_ptr), value :: all_scattering_factors_d
-         type(c_ptr) :: stream
-      end subroutine gpu_hadamard_vec_mat_product
-
-      subroutine gpu_get_Gka(i, n_k, n_samples, Gka_d, Gk_d, xyz_k_d, stream) bind(C&
-           &, name="gpu_get_Gka")
-         use iso_c_binding
-         implicit none
-         integer(c_int), value :: i
-         integer(c_int), value :: n_samples
-         integer(c_int), value :: n_k
-         type(c_ptr), value :: Gka_d
-         type(c_ptr), value :: Gk_d
-         type(c_ptr), value :: xyz_k_d
-         type(c_ptr) :: stream
-      end subroutine gpu_get_Gka
-
-      subroutine gpu_get_Gka_inplace(i, n_k, n_samples, Gk_d, xyz_k_d, stream) bind(C&
-           &, name="gpu_get_Gka_inplace")
-         use iso_c_binding
-         implicit none
-         integer(c_int), value :: i
-         integer(c_int), value :: n_samples
-         integer(c_int), value :: n_k
-         type(c_ptr), value :: Gk_d
-         type(c_ptr), value :: xyz_k_d
-         type(c_ptr) :: stream
-      end subroutine gpu_get_Gka_inplace
 
       subroutine gpu_print_pointer_int(p) bind(C&
            &, name="gpu_print_pointer_int")
@@ -1243,18 +1216,6 @@ MODULE F_B_C
          type(c_ptr), value :: rjs_d
          type(c_ptr) :: stream
       end subroutine gpu_get_pair_distribution_der_only
-
- subroutine gpu_set_Gk(nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, stream) bind(C, name="gpu_set_Gk")
-         use iso_c_binding
-         implicit none
-         integer(c_int), value :: nk
-         integer(c_int), value :: n_samples
-         real(c_double), value :: c_factor
-         type(c_ptr), value :: k_index_d
-         type(c_ptr), value :: Gk_d
-         type(c_ptr), value :: pair_distribution_partial_der_d
-         type(c_ptr) :: stream
-      end subroutine gpu_set_Gk
 
       subroutine  gpu_set_pair_distribution_k_index_only(n_pairs, k_index_d, nk_sum_flags_d, stream )bind(C,name="gpu_set_pair_distribution_k_index_only")
          use iso_c_binding

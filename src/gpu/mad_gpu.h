@@ -34,14 +34,10 @@ void gpu_get_pair_distribution_only_falloc(double* pair_distribution_d, double* 
                                            double der_factor, hipStream_t* stream);
 
 // ---- mad_xrd.cu
-void gpu_set_Gk(int nk, int n_samples, int* k_index_d, double* Gk_d, double* pair_distribution_partial_der_d, double c_factor,
-                hipStream_t* stream);
-void gpu_get_Gka(int i, int n_k, int n_samples, double* Gka_d, double* Gk_d, double* xyz_k_d, hipStream_t* stream);
-void gpu_get_Gka_inplace(int i, int n_k, int n_samples, double* Gk_d, double* xyz_k_d, hipStream_t* stream);
-void gpu_hadamard_vec_mat_product(int n_samples_sf, int n_k, double* all_scattering_factors_d, double* dermat_d,
-                                  hipStream_t* stream);
-void gpu_get_fi_dgemv(const int i, const int n_samples_sf, const int n_k, double* dermat_d, double* prefactor_d, double* fi_d,
-                      hipblasHandle_t handle, hipStream_t* stream);
+void gpu_xrd_pair_forces(int nk, int n_samples, double* w_d, double* pdf_der_d, double c_factor, double* xyz_k_d, double* fi_d,
+                         hipStream_t* stream);
+void gpu_xrd_weights(int n_samples_sf, int n_samples, double* S_d, double* residual_d, double* f_d, double* w_d,
+                     hipStream_t* stream);
 void gpu_exp_force_virial_collection(int n_k, int n_sites, double3* forces0, double energy_scale, double* fi, int* j2_list,
                                      double* virial, double3* xyz, hipStream_t* stream);
 

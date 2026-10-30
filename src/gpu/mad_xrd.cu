@@ -1,17 +1,10 @@
 // MAD: the X-ray/neutron structure factor.
 //
-// Gk and its derivative with respect to atomic positions, the Hadamard product
-// with the scattering factors, the dgemv that turns that into per-pair forces,
-// and the collection of those into forces and the virial.
+// The per-pair forces from the pdf derivative, and their collection into
+// forces and the virial.
 //
 // Every kernel here is a flat map, written once through tg_parallel_for and
 // dispatched to CUDA or Kokkos by src/gpu/gpu_backend.h.
-//
-// Most index n_k * n_samples, a product of two ints that need not be an int,
-// so they take the long-indexed launcher. The in-kernel `if (k < n_k && ...)`
-// guards the hand-written launches carried are gone with them: those existed
-// because a <<<>>> grid is rounded up to whole blocks and over-runs the extent.
-// tg_parallel_for_long passes the exact extent, so the guard was dead weight.
 #include "gpu_backend.h"
 #include "gpu_common.h"
 #include "gpu_scatter.h"
@@ -19,56 +12,39 @@
 
 #define tpb 512
 
-// Gk(1:n_samples, n_k) = -2 * c_factor * pair_distribution_der(1:n_samples, k)
-extern "C" void gpu_set_Gk(int nk, int n_samples, int* k_index_d, double* Gk_d, double* pair_distribution_partial_der_d,
-                           double c_factor, hipStream_t* stream) {
-  tg_parallel_for_long(
-      "turbogap_set_Gk", (long long) nk * n_samples, stream,
-      TG_LAMBDA(const long long tid) { Gk_d[tid] = -2.0 * c_factor * pair_distribution_partial_der_d[tid]; }, BLOCK_SIZE);
-}
-
-extern "C" void gpu_get_Gka(int i, int n_k, int n_samples, double* Gka_d, double* Gk_d, double* xyz_k_d, hipStream_t* stream) {
-  tg_parallel_for_long(
-      "turbogap_get_Gka", (long long) n_k * n_samples, stream,
-      TG_LAMBDA(const long long tid) {
-        const long long k = tid / n_samples;
-        Gka_d[tid] = Gk_d[tid] * xyz_k_d[(i - 1) + k * 3];
+// fi(k, c) = -2 c_factor * sum_s w_s dg_s/dr_k * xyz_k(c): pair k's force before
+// the energy scale, with w = S^T (residual x scattering factor) formed on the
+// host. pdf_der is (n_samples, nk), fi is (nk, 3).
+extern "C" void gpu_xrd_pair_forces(int nk, int n_samples, double* w_d, double* pdf_der_d, double c_factor, double* xyz_k_d,
+                                    double* fi_d, hipStream_t* stream) {
+  tg_parallel_for(
+      "turbogap_xrd_pair_forces", nk, stream,
+      TG_LAMBDA(const int k) {
+        double a = 0.0;
+        for (int s = 0; s < n_samples; s++)
+          a += w_d[s] * pdf_der_d[s + (long long) n_samples * k];
+        a *= -2.0 * c_factor;
+        for (int c = 0; c < 3; c++)
+          fi_d[k + (long long) nk * c] = a * xyz_k_d[c + 3 * (long long) k];
       },
-      BLOCK_SIZE);
+      tpb);
 }
 
-extern "C" void gpu_get_Gka_inplace(int i, int n_k, int n_samples, double* Gk_d, double* xyz_k_d, hipStream_t* stream) {
-  tg_parallel_for_long(
-      "turbogap_get_Gka_inplace", (long long) n_k * n_samples, stream,
-      TG_LAMBDA(const long long tid) {
-        const long long k = tid / n_samples;
-        Gk_d[tid] *= xyz_k_d[(i - 1) + k * 3];
+// w(s) = sum_q S(q, s) residual(q) f(q), f = 1 when f_d is null: the weights
+// gpu_xrd_pair_forces contracts the pdf derivative with, where S, the residual
+// and the scattering factors are already on the device. S is (n_samples_sf,
+// n_samples).
+extern "C" void gpu_xrd_weights(int n_samples_sf, int n_samples, double* S_d, double* residual_d, double* f_d, double* w_d,
+                                hipStream_t* stream) {
+  tg_parallel_for(
+      "turbogap_xrd_weights", n_samples, stream,
+      TG_LAMBDA(const int s) {
+        double a = 0.0;
+        for (int q = 0; q < n_samples_sf; q++)
+          a += S_d[q + (long long) n_samples_sf * s] * residual_d[q] * (f_d ? f_d[q] : 1.0);
+        w_d[s] = a;
       },
-      BLOCK_SIZE);
-}
-
-extern "C" void gpu_hadamard_vec_mat_product(int n_samples_sf, int n_k, double* all_scattering_factors_d, double* dermat_d,
-                                             hipStream_t* stream) {
-  tg_parallel_for_long(
-      "turbogap_hadamard_vec_mat", (long long) n_k * n_samples_sf, stream,
-      TG_LAMBDA(const long long tid) {
-        const long long l = tid % n_samples_sf;
-        dermat_d[tid] *= all_scattering_factors_d[l];
-      },
-      BLOCK_SIZE);
-}
-
-extern "C" void gpu_get_fi_dgemv(const int i, const int n_samples_sf, const int n_k, double* dermat_d, double* prefactor_d,
-                                 double* fi_d, hipblasHandle_t handle, hipStream_t* stream) {
-  const double alf = 1;
-  const double bet = 0;
-  const double* alpha = &alf;
-  const double* beta = &bet;
-  double* ptr = fi_d + (i - 1) * n_k;
-
-  // call dgemv("T", n_samples_sf, n_k, 1.d0, dermat, n_samples_sf,
-  //            prefactor, 1, 0.d0, fi(:,i), 1)
-  hipblasDgemv(handle, HIPBLAS_OP_T, n_samples_sf, n_k, alpha, dermat_d, n_samples_sf, prefactor_d, 1, beta, ptr, 1);
+      tpb);
 }
 
 extern "C" void gpu_exp_force_virial_collection(int n_k, int n_sites, double3* forces0, double energy_scale, double* fi,

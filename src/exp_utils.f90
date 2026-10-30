@@ -884,8 +884,6 @@ contains
       real(dp) :: r_min
       real(dp) :: r_max
       real(dp) :: r_cut
-      real(dp) :: alpha
-      real(dp) :: beta
       integer, intent(in), target :: neighbors_list(:)
       integer, intent(in), target :: n_neigh(:)
       integer, intent(in), target :: neighbor_species(:)
@@ -932,6 +930,7 @@ contains
       real(dp), intent(inout), target :: virial(1:3, 1:3)
       character*32, intent(in) :: output
       real(dp), allocatable, target :: prefactor(:)
+      real(dp), allocatable, target :: w_sf(:)
       real(dp), allocatable, target :: all_scattering_factors(:)
       real(dp), allocatable, target :: sf_parameters(:, :)
       real(dp), allocatable, target :: structure_factor_der(:)
@@ -965,22 +964,12 @@ contains
       ! GPU VARIABLES
       type(c_ptr) :: forces0_d
       type(c_ptr) :: fi_d
+      type(c_ptr) :: w_d
       type(c_ptr) :: virial_d
-      type(c_ptr) :: dermat_d
-      type(c_ptr) :: prefactor_d
-      type(c_ptr) :: all_scattering_factors_d
-      type(c_ptr) :: sinc_factor_matrix_d
-      type(c_ptr) :: Gka_d
-      type(c_ptr) :: Gk_d
       integer(c_size_t) :: st_forces0_d
       integer(c_size_t) :: st_fi_d
+      integer(c_size_t) :: st_w_d
       integer(c_size_t) :: st_virial_d
-      integer(c_size_t) :: st_dermat_d
-      integer(c_size_t) :: st_prefactor_d
-      integer(c_size_t) :: st_all_scattering_factors_d
-      integer(c_size_t) :: st_sinc_factor_matrix_d
-      integer(c_size_t) :: st_Gka_d
-      integer(c_size_t) :: st_Gk_d
       integer, intent(in) :: nk
       type(c_ptr) :: cublas_handle
       type(c_ptr) :: gpu_stream
@@ -1115,255 +1104,81 @@ contains
       ! First loop to get the number of valid k indexes
       call cpu_time(time(1))
 
-      if (gpu_low_memory) then
-         ! copy back things we need from host to device
-
-         call gpu_meminfo()
-
-         st_fi_d = int(nk, c_size_t)*3*c_double
-         call gpu_malloc_async(fi_d, st_fi_d, gpu_stream)
-         call gpu_memset_async(fi_d, 0, st_fi_d, gpu_stream)
-
-         st_prefactor_d = int(size(prefactor, 1), c_size_t)*c_double
-         call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)
-         call cpy_htod(c_loc(prefactor), prefactor_d, st_prefactor_d, gpu_stream)
-
-         st_all_scattering_factors_d = int(size(all_scattering_factors, 1), c_size_t)*c_double
-         call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
-         call cpy_htod(c_loc(all_scattering_factors), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
-
-         alpha = 1.d0
-         beta = 0.d0
-
-         call gpu_stream_sync(gpu_stream)
-         call gpu_meminfo()
-
-         do i = 1, 3
-
-            call gpu_malloc_async(k_index_d, st_k_index_d, gpu_stream)
-            call cpy_htod(c_loc(gpu_host_storage%k_index_h), k_index_d, st_k_index_d, gpu_stream)
-
-            call gpu_malloc_async(pair_distribution_partial_der_d, st_pair_distribution_partial_der_d, gpu_stream)
-          call cpy_htod( c_loc( gpu_host_storage % pair_distribution_partial_der_h), pair_distribution_partial_der_d, st_pair_distribution_partial_der_d, gpu_stream)
-
-            st_Gk_d = int(n_samples, c_size_t)*nk*c_double
-            call gpu_malloc_async(Gk_d, st_Gk_d, gpu_stream)
-
-            call gpu_stream_sync(gpu_stream)
-            call gpu_set_Gk(nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, gpu_stream)
-
-            call gpu_free_async(k_index_d, gpu_stream)
-            call gpu_free_async(pair_distribution_partial_der_d, gpu_stream)
-
-            st_rjs = int(nk, c_size_t)*c_double
-            call gpu_stream_sync(gpu_stream)
-            call gpu_malloc_async(xyz_k_d, 3*st_rjs, gpu_stream)
-            call cpy_htod(c_loc(gpu_host_storage%xyz_k_h), xyz_k_d, 3*st_rjs, gpu_stream)
-
-            call gpu_stream_sync(gpu_stream)
-            call gpu_get_Gka_inplace(i, nk, n_samples, Gk_d, xyz_k_d, gpu_stream)
-            call gpu_free_async(xyz_k_d, gpu_stream)
-
-            call gpu_stream_sync(gpu_stream)
-            st_sinc_factor_matrix_d = int(size(sinc_factor_matrix, 1), c_size_t)*size(sinc_factor_matrix, 2)*c_double
-            call gpu_malloc_async(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
-            call cpy_htod(c_loc(sinc_factor_matrix), sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
-
-            st_dermat_d = int(n_samples_sf, c_size_t)*nk*c_double
-            call gpu_malloc_async(dermat_d, st_dermat_d, gpu_stream)
-
-            call gpu_stream_sync(gpu_stream)
-            call gpu_dgemm_n_n(n_samples_sf, nk, n_samples, alpha, sinc_factor_matrix_d, n_samples_sf,&
-                 & Gk_d, n_samples, beta, dermat_d, n_samples_sf, cublas_handle)
-
-            call gpu_free_async(sinc_factor_matrix_d, gpu_stream)
-            call gpu_free_async(Gk_d, gpu_stream)
-
-            call gpu_stream_sync(gpu_stream)
+!     Each pair's force is its displacement times one sum over the pdf
+!     samples, -2 c sum_s w_s dg_s/dr_k, with w = S^T (residual x scattering
+!     factor): the sinc transform, the scattering factors and the residual
+!     folded into one vector. A samples x pairs matrix used to be formed per
+!     component, multiplied by S and contracted with the residual.
+      allocate (w_sf(1:n_samples))
+      do l = 1, n_samples
+         w_sf(l) = 0.d0
+         do i = 1, n_samples_sf
             if (do_xrd) then
-               call gpu_hadamard_vec_mat_product(n_samples_sf, nk, all_scattering_factors_d, dermat_d, gpu_stream)
+               w_sf(l) = w_sf(l) + sinc_factor_matrix(i, l)*prefactor(i)*all_scattering_factors(i)
+            else
+               w_sf(l) = w_sf(l) + sinc_factor_matrix(i, l)*prefactor(i)
             end if
-
-            ! Keeping fi on the device
-            call gpu_get_fi_dgemv(i, n_samples_sf, nk, dermat_d, prefactor_d, fi_d, cublas_handle, gpu_stream)
-
-            call gpu_free_async(dermat_d, gpu_stream)
-            call gpu_stream_sync(gpu_stream)
-
          end do
+      end do
 
-         call gpu_free_async(all_scattering_factors_d, gpu_stream)
-         call gpu_free_async(prefactor_d, gpu_stream)
-
-         call gpu_stream_sync(gpu_stream)
-         st_forces0_d = int(size(forces0, 2), c_size_t)*size(forces0, 1)*c_double
-         call gpu_malloc_async(forces0_d, st_forces0_d, gpu_stream)
-         call cpy_htod(c_loc(forces0), forces0_d, st_forces0_d, gpu_stream)
-
-         st_virial_d = int(9, c_size_t)*c_double
-         call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
-         call cpy_htod(c_loc(virial), virial_d, st_virial_d, gpu_stream)
-
-         do j = 1, 3
-            do i = 1, 3
-               print *, "virial portion, cpu ", i, " ", j, " ", virial(i, j)
-            end do
-         end do
-
+!     Low memory keeps the pair arrays on the host between the pdf and here.
+      if (gpu_low_memory) then
+         call gpu_malloc_async(pair_distribution_partial_der_d, st_pair_distribution_partial_der_d, gpu_stream)
+         call cpy_htod(c_loc(gpu_host_storage%pair_distribution_partial_der_h), pair_distribution_partial_der_d, &
+                       st_pair_distribution_partial_der_d, gpu_stream)
          st_rjs = int(nk, c_size_t)*c_double
-         call gpu_stream_sync(gpu_stream)
          call gpu_malloc_async(xyz_k_d, 3*st_rjs, gpu_stream)
          call cpy_htod(c_loc(gpu_host_storage%xyz_k_h), xyz_k_d, 3*st_rjs, gpu_stream)
-
          call gpu_malloc_async(j2_index_d, st_k_index_d, gpu_stream)
          call cpy_htod(c_loc(gpu_host_storage%j2_index_h), j2_index_d, st_k_index_d, gpu_stream)
+      end if
 
-         call gpu_stream_sync(gpu_stream)
-         call gpu_exp_force_virial_collection(nk, size(forces0, 2), forces0_d, energy_scale, fi_d, &
-                                              j2_index_d, virial_d, xyz_k_d, gpu_stream)
+      st_fi_d = int(nk, c_size_t)*3*c_double
+      call gpu_malloc_async(fi_d, st_fi_d, gpu_stream)
+      st_w_d = int(n_samples, c_size_t)*c_double
+      call gpu_malloc_async(w_d, st_w_d, gpu_stream)
+      call cpy_htod(c_loc(w_sf), w_d, st_w_d, gpu_stream)
+      call gpu_xrd_pair_forces(nk, n_samples, w_d, pair_distribution_partial_der_d, c_factor, xyz_k_d, fi_d, gpu_stream)
+      call gpu_free_async(w_d, gpu_stream)
+      if (gpu_low_memory) call gpu_free_async(pair_distribution_partial_der_d, gpu_stream)
 
-         call gpu_stream_sync(gpu_stream)
+      st_forces0_d = int(size(forces0, 2), c_size_t)*size(forces0, 1)*c_double
+      call gpu_malloc_async(forces0_d, st_forces0_d, gpu_stream)
+      call cpy_htod(c_loc(forces0), forces0_d, st_forces0_d, gpu_stream)
 
-         call cpy_dtoh(forces0_d, c_loc(forces0), st_forces0_d, gpu_stream)
-         call cpy_dtoh(virial_d, c_loc(virial), st_virial_d, gpu_stream)
+      st_virial_d = int(9, c_size_t)*c_double
+      call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
+      call cpy_htod(c_loc(virial), virial_d, st_virial_d, gpu_stream)
 
+      call gpu_exp_force_virial_collection(nk, size(forces0, 2), forces0_d, energy_scale, fi_d, &
+                                           j2_index_d, virial_d, xyz_k_d, gpu_stream)
+
+      call cpy_dtoh(forces0_d, c_loc(forces0), st_forces0_d, gpu_stream)
+      call cpy_dtoh(virial_d, c_loc(virial), st_virial_d, gpu_stream)
+
+      call gpu_free_async(forces0_d, gpu_stream)
+      call gpu_free_async(fi_d, gpu_stream)
+      call gpu_free_async(virial_d, gpu_stream)
+      if (gpu_low_memory) then
          call gpu_free_async(j2_index_d, gpu_stream)
          call gpu_free_async(xyz_k_d, gpu_stream)
-         call gpu_free_async(forces0_d, gpu_stream)
-         call gpu_free_async(fi_d, gpu_stream)
-         call gpu_free_async(virial_d, gpu_stream)
-
-!        The device kernel accumulated the pair half of the virial, and the
-!        copy back is asynchronous: the host cannot add to virial until the
-!        stream has drained.
-         call gpu_stream_sync(gpu_stream)
-
-         if (do_xrd) then
-            call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
-                 & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
-         else
-            call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
-                 & prefactor, sinc_factor_matrix, n_samples, n_samples_sf)
-         end if
-
-         if (do_xrd) deallocate (all_scattering_factors)
-         if (do_xrd) deallocate (sf_parameters)
-         deallocate (prefactor)
-
-         do j = 1, 3
-            do i = 1, 3
-               print *, "virial post gpu ", i, " ", j, " ", virial(i, j)
-            end do
-         end do
-
-      else
-
-         st_Gk_d = int(n_samples, c_size_t)*nk*c_double
-         call gpu_malloc_async(Gk_d, st_Gk_d, gpu_stream)
-
-         call gpu_set_Gk(nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, gpu_stream)
-         call gpu_meminfo()
-
-         st_sinc_factor_matrix_d = int(size(sinc_factor_matrix, 1), c_size_t)*size(sinc_factor_matrix, 2)*c_double
-         call gpu_malloc_async(sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
-         call cpy_htod(c_loc(sinc_factor_matrix), sinc_factor_matrix_d, st_sinc_factor_matrix_d, gpu_stream)
-
-         st_dermat_d = int(n_samples_sf, c_size_t)*nk*c_double
-         call gpu_malloc_async(dermat_d, st_dermat_d, gpu_stream)
-
-         st_fi_d = int(nk, c_size_t)*3*c_double
-         call gpu_malloc_async(fi_d, st_fi_d, gpu_stream)
-         call gpu_memset_async(fi_d, 0, st_fi_d, gpu_stream)
-
-         st_prefactor_d = int(size(prefactor, 1), c_size_t)*c_double
-         call gpu_malloc_async(prefactor_d, st_prefactor_d, gpu_stream)
-         call cpy_htod(c_loc(prefactor), prefactor_d, st_prefactor_d, gpu_stream)
-
-         st_all_scattering_factors_d = int(size(all_scattering_factors, 1), c_size_t)*c_double
-         call gpu_malloc_async(all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
-         call cpy_htod(c_loc(all_scattering_factors), all_scattering_factors_d, st_all_scattering_factors_d, gpu_stream)
-
-         alpha = 1.d0
-         beta = 0.d0
-
-         st_Gka_d = int(n_samples, c_size_t)*nk*c_double
-         call gpu_malloc_async(Gka_d, st_Gka_d, gpu_stream)
-
-         call gpu_stream_sync(gpu_stream)
-         call gpu_meminfo()
-
-         do i = 1, 3
-
-            call gpu_get_Gka(i, nk, n_samples, Gka_d, Gk_d, xyz_k_d, gpu_stream)
-
-            call gpu_device_sync()
-            call gpu_dgemm_n_n(n_samples_sf, nk, n_samples, alpha, sinc_factor_matrix_d, n_samples_sf,&
-                 & Gka_d, n_samples, beta, dermat_d, n_samples_sf, cublas_handle)
-
-            if (do_xrd) then
-               call gpu_hadamard_vec_mat_product(n_samples_sf, nk, all_scattering_factors_d, dermat_d, gpu_stream)
-            end if
-
-            call gpu_get_fi_dgemv(i, n_samples_sf, nk, dermat_d, prefactor_d, fi_d, cublas_handle, gpu_stream)
-
-         end do
-
-         call gpu_free_async(Gk_d, gpu_stream)
-         call gpu_free_async(Gka_d, gpu_stream)
-         call gpu_free_async(sinc_factor_matrix_d, gpu_stream)
-         call gpu_free_async(all_scattering_factors_d, gpu_stream)
-         call gpu_free_async(prefactor_d, gpu_stream)
-         call gpu_free_async(dermat_d, gpu_stream)
-
-         st_forces0_d = int(size(forces0, 2), c_size_t)*size(forces0, 1)*c_double
-         call gpu_malloc_async(forces0_d, st_forces0_d, gpu_stream)
-         call cpy_htod(c_loc(forces0), forces0_d, st_forces0_d, gpu_stream)
-
-         st_virial_d = int(9, c_size_t)*c_double
-         call gpu_malloc_async(virial_d, st_virial_d, gpu_stream)
-         call cpy_htod(c_loc(virial), virial_d, st_virial_d, gpu_stream)
-
-         do j = 1, 3
-            do i = 1, 3
-               print *, "virial pre gpu ", i, " ", j, " ", virial(i, j)
-            end do
-         end do
-
-         call gpu_stream_sync(gpu_stream)
-
-         call gpu_exp_force_virial_collection(nk, size(forces0, 2), forces0_d, energy_scale, fi_d, &
-                                              j2_index_d, virial_d, xyz_k_d, gpu_stream)
-
-         call gpu_stream_sync(gpu_stream)
-
-         call cpy_dtoh(forces0_d, c_loc(forces0), st_forces0_d, gpu_stream)
-         call cpy_dtoh_blocking(virial_d, c_loc(virial), st_virial_d)
-
-         call gpu_free_async(forces0_d, gpu_stream)
-         call gpu_free_async(fi_d, gpu_stream)
-         call gpu_free_async(virial_d, gpu_stream)
-
-!        The device kernel accumulated the pair half of the virial; the copy
-!        above was blocking, so the cell half can be added straight away.
-         if (do_xrd) then
-            call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
-                 & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
-         else
-            call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
-                 & prefactor, sinc_factor_matrix, n_samples, n_samples_sf)
-         end if
-
-         if (do_xrd) deallocate (all_scattering_factors)
-         if (do_xrd) deallocate (sf_parameters)
-         deallocate (prefactor)
-
-         do j = 1, 3
-            do i = 1, 3
-               print *, "virial post gpu ", i, " ", j, " ", virial(i, j)
-            end do
-         end do
-
       end if
+
+!     The device kernel accumulated the pair half of the virial, and the copy
+!     back is asynchronous: the host cannot add to virial until it has drained.
+      call gpu_stream_sync(gpu_stream)
+
+      if (do_xrd) then
+         call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+              & prefactor, sinc_factor_matrix, n_samples, n_samples_sf, all_scattering_factors)
+      else
+         call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
+              & prefactor, sinc_factor_matrix, n_samples, n_samples_sf)
+      end if
+
+      if (do_xrd) deallocate (all_scattering_factors)
+      if (do_xrd) deallocate (sf_parameters)
+      deallocate (prefactor, w_sf)
 
       call gpu_meminfo()
    end subroutine get_structure_factor_forces_matrix
@@ -4905,61 +4720,32 @@ contains
 
       ! Internal
       real(dp) :: time(3)
-      real(dp) :: alpha
-      real(dp) :: beta
-      type(c_ptr) :: Gk_d
-      type(c_ptr) :: Gka_d
+      type(c_ptr) :: w_d
+      type(c_ptr) :: f_d
       type(c_ptr) :: fi_d
-      type(c_ptr) :: dermat_d
       type(c_ptr) :: forces0_d
       type(c_ptr) :: virial_d
-      integer(c_size_t) :: st_Gk_d
-      integer(c_size_t) :: st_Gka_d
+      integer(c_size_t) :: st_w_d
       integer(c_size_t) :: st_fi_d
-      integer(c_size_t) :: st_dermat_d
       integer(c_size_t) :: st_forces0_d
       integer(c_size_t) :: st_virial_d
-      integer :: i
 
       ! First loop to get the number of valid k indexes
       call cpu_time(time(1))
 
-      st_Gk_d = int(n_samples, c_size_t)*nk*c_double
-      call gpu_malloc_async(Gk_d, st_Gk_d, gpu_stream)
-
-      call gpu_set_Gk(nk, n_samples, k_index_d, Gk_d, pair_distribution_partial_der_d, c_factor, gpu_stream)
-
-      st_dermat_d = int(n_samples_sf, c_size_t)*nk*c_double
-      call gpu_malloc_async(dermat_d, st_dermat_d, gpu_stream)
+!     Each pair's force as one sum of the pdf derivative against
+!     w = S^T (residual x scattering factor), as in
+!     get_structure_factor_forces_matrix.
+      st_w_d = int(n_samples, c_size_t)*c_double
+      call gpu_malloc_async(w_d, st_w_d, gpu_stream)
+      f_d = c_null_ptr
+      if (do_xrd) f_d = all_scattering_factors_d
+      call gpu_xrd_weights(n_samples_sf, n_samples, sinc_factor_matrix_d, prefactor_d, f_d, w_d, gpu_stream)
 
       st_fi_d = int(nk, c_size_t)*3*c_double
       call gpu_malloc_async(fi_d, st_fi_d, gpu_stream)
-      call gpu_memset_async(fi_d, 0, st_fi_d, gpu_stream)
-
-      alpha = 1.d0
-      beta = 0.d0
-
-      st_Gka_d = int(n_samples, c_size_t)*nk*c_double
-      call gpu_malloc_async(Gka_d, st_Gka_d, gpu_stream)
-
-      do i = 1, 3
-
-         call gpu_get_Gka(i, nk, n_samples, Gka_d, Gk_d, xyz_k_d, gpu_stream)
-
-         call gpu_dgemm_n_n(n_samples_sf, nk, n_samples, alpha, sinc_factor_matrix_d, n_samples_sf,&
-              & Gka_d, n_samples, beta, dermat_d, n_samples_sf, cublas_handle)
-
-         if (do_xrd) then
-            call gpu_hadamard_vec_mat_product(n_samples_sf, nk, all_scattering_factors_d, dermat_d, gpu_stream)
-         end if
-
-         call gpu_get_fi_dgemv(i, n_samples_sf, nk, dermat_d, prefactor_d, fi_d, cublas_handle, gpu_stream)
-
-      end do
-
-      call gpu_free_async(Gk_d, gpu_stream)
-      call gpu_free_async(Gka_d, gpu_stream)
-      call gpu_free_async(dermat_d, gpu_stream)
+      call gpu_xrd_pair_forces(nk, n_samples, w_d, pair_distribution_partial_der_d, c_factor, xyz_k_d, fi_d, gpu_stream)
+      call gpu_free_async(w_d, gpu_stream)
 
       st_forces0_d = int(size(forces0, 2), c_size_t)*size(forces0, 1)*c_double
       call gpu_malloc_async(forces0_d, st_forces0_d, gpu_stream)
