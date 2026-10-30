@@ -466,3 +466,34 @@ FP64 GEMM against the sparse set on a card whose FP64 runs at 1/32 rate, and
   CO_predict profile above might suggest -- it is untidy rather than expensive.
 * The occupancy of the three-body kernel is a closed question; see the sweep
   recorded in `src/gpu/gap_3b.cc`, where raising it made the kernel slower.
+
+## 10. GH200, forces without dq/dr (2026-10-30)
+
+307k-atom CO, `dd_type = rcb`, one rank per GH200, seconds per MD step, old
+and new binary alternated within one whole-node job:
+
+| | before | after |
+| --- | --- | --- |
+| 1 GH200 | 2.50 | **1.16** |
+| 4 GH200 | 0.68 | **0.34** |
+
+Before, 271 of the 500 ms of device time per step at four cards went on
+forming the descriptor derivatives -- `soap_der_one`, the transposes,
+`_two_one`, `_two_two`, `_thr_one`, `_thr_two` -- only for
+`cuda_soap_forces_virial_two` to contract them with dE/dq.
+`gpu_soap_pair_contract` contracts first: dE/dq goes back through the
+normalisation and the power spectrum to one vector per site and expansion
+coefficient, and each pair needs only its own coefficient derivatives.
+Device time per step at four cards is now 0.19 s.
+
+What a four-card step is made of now (nsys, busy time per force call):
+
+* the device is busy about half the step; the other half is host code,
+  spread thinly: zeroing, `domain_complete_contributions`, the neighbour
+  geometry, the integrator, and the main thread preparing batches the second
+  thread has not finished;
+* `dd_type = none` is 0.48 s against 0.36 s for `rcb`: rank 0 integrates the
+  whole system and fingerprints the replicated state while the other ranks
+  wait in a broadcast;
+* `gpu_batch_gbytes` from 9.4 to 64 GB moves nothing beyond noise, on one
+  card or four; the batch count is not where the host time goes.
