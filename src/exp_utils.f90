@@ -3112,29 +3112,32 @@ contains
       logical, intent(in) :: neutron
       real(dp), allocatable, intent(out) :: xrd(:)
       real(dp), allocatable, intent(out) :: xrd_der(:, :, :)
+!     Atoms per chunk: each chunk sums its own partial pattern and the chunks
+!     are added in order, so the result does not depend on the thread count.
+      integer, parameter :: DEBYE_CHUNK = 64
       real(dp), allocatable :: f_table(:, :)
       real(dp), allocatable :: q_wave(:)
+      real(dp), allocatable :: xrd_part(:, :)
       real(dp) :: posi(1:3)
-      real(dp) :: diff(1:3)
-      real(dp) :: rij
-      real(dp) :: qrij
-      real(dp) :: s
-      real(dp) :: ff
-      real(dp) :: w
-      real(dp) :: dwdr
-      real(dp) :: dsdr
-      real(dp) :: arg_w
-      real(dp) :: der_factor
 !     Note the d0. The rest of this module writes acos(-1.0), which evaluates
 !     in default (single) precision and then widens, so its pi is wrong in the
 !     8th digit -- enough to show up against an independent reference.
       real(dp), parameter :: pi = acos(-1.0d0)
+      integer, allocatable :: cell_start(:)
+      integer, allocatable :: cell_atoms(:)
+      integer, allocatable :: atom_cell(:, :)
+      integer :: n_cell(1:3)
+      integer :: n_samples
+      integer :: n_chunks
+      integer :: ic
       integer :: i
       integer :: j
-      integer :: l
-      integer :: n_samples
+      integer :: m
+      integer :: c1
+      integer :: c2
+      integer :: c3
+      integer :: cell
       integer :: species_i
-      integer :: species_j
 
       n_samples = size(q_list)
 
@@ -3151,67 +3154,42 @@ contains
          xrd_der = 0.d0
       end if
 
-      do i = i_beg, i_end
-         species_i = species(i)
-         posi(1:3) = positions(1:3, i)
+!     With the window, pairs beyond r_cut are dropped, so only the cells next
+!     to an atom's own are searched; without it every pair counts.
+      if (window) call debye_cells()
 
-         do j = 1, n_sites0
+      n_chunks = (i_end - i_beg + DEBYE_CHUNK)/DEBYE_CHUNK
+      allocate (xrd_part(1:n_samples, 1:max(n_chunks, 1)))
+      xrd_part = 0.d0
 
-            if (j == i) then
-!              The self term. sinc(0) = 1, and an atom's distance to itself
-!              does not move, so there is no gradient here.
-               xrd(1:n_samples) = xrd(1:n_samples) + f_table(1:n_samples, species_i)**2
-               cycle
-            end if
-
-            species_j = species(j)
-            diff(1:3) = posi(1:3) - positions(1:3, j)
-            rij = sqrt(dot_product(diff, diff))
-
-!           Two atoms on top of one another have no direction to push along.
-!           Take the sinc(0) = 1 limit and skip the gradient rather than
-!           divide by r_ij = 0.
-            if (rij < 1.d-10) then
-               xrd(1:n_samples) = xrd(1:n_samples) + &
-                    & f_table(1:n_samples, species_i)*f_table(1:n_samples, species_j)
-               cycle
-            end if
-
-!           The Lorch window sinc(pi r / r_cut), which damps the termination
-!           ripple a hard cutoff would put into I(q). Pairs beyond r_cut are
-!           dropped: past its first zero the window is an oscillation, not a
-!           taper, so carrying them would add the ringing back.
-            w = 1.d0
-            dwdr = 0.d0
+      !$omp parallel do default(shared) schedule(dynamic, 1) &
+      !$omp private(ic, i, j, m, c1, c2, c3, cell, species_i, posi)
+      do ic = 1, n_chunks
+         do i = i_beg + (ic - 1)*DEBYE_CHUNK, min(i_end, i_beg + ic*DEBYE_CHUNK - 1)
+            species_i = species(i)
+            posi(1:3) = positions(1:3, i)
             if (window) then
-               if (rij > r_cut) cycle
-               arg_w = pi*rij/r_cut
-               w = sin(arg_w)/arg_w
-               dwdr = (cos(arg_w) - w)/rij
+               do c3 = max(1, atom_cell(3, i) - 1), min(n_cell(3), atom_cell(3, i) + 1)
+                  do c2 = max(1, atom_cell(2, i) - 1), min(n_cell(2), atom_cell(2, i) + 1)
+                     do c1 = max(1, atom_cell(1, i) - 1), min(n_cell(1), atom_cell(1, i) + 1)
+                        cell = c1 + n_cell(1)*((c2 - 1) + n_cell(2)*(c3 - 1))
+                        do m = cell_start(cell), cell_start(cell + 1) - 1
+                           call add_pair(i, cell_atoms(m), species_i, posi, xrd_part(1:n_samples, ic))
+                        end do
+                     end do
+                  end do
+               end do
+            else
+               do j = 1, n_sites0
+                  call add_pair(i, j, species_i, posi, xrd_part(1:n_samples, ic))
+               end do
             end if
-
-            do l = 1, n_samples
-               qrij = q_wave(l)*rij
-               ff = f_table(l, species_i)*f_table(l, species_j)
-
-               if (qrij == 0.d0) then
-                  s = 1.d0
-                  dsdr = 0.d0
-               else
-                  s = sin(qrij)/qrij
-                  dsdr = (cos(qrij) - s)/rij
-               end if
-
-               xrd(l) = xrd(l) + ff*s*w
-
-               if (do_derivatives) then
-!                 d/dr_i [ s(q r_ij) w(r_ij) ] = (diff / r_ij) (w ds/dr + s dw/dr)
-                  der_factor = ff*(w*dsdr + s*dwdr)/rij
-                  xrd_der(1:3, l, i) = xrd_der(1:3, l, i) + diff(1:3)*der_factor
-               end if
-            end do
-
          end do
+      end do
+      !$omp end parallel do
+
+      do ic = 1, n_chunks
+         xrd(1:n_samples) = xrd(1:n_samples) + xrd_part(1:n_samples, ic)
       end do
 
       xrd = xrd/dfloat(n_sites0)
@@ -3219,6 +3197,129 @@ contains
 
       deallocate (f_table)
       deallocate (q_wave)
+      deallocate (xrd_part)
+
+   contains
+
+!     Pair (i, j) into the pattern and into row i of the derivative.
+      subroutine add_pair(i, j, species_i, posi, part)
+         integer, intent(in) :: i
+         integer, intent(in) :: j
+         integer, intent(in) :: species_i
+         real(dp), intent(in) :: posi(1:3)
+         real(dp), intent(inout) :: part(:)
+         real(dp) :: diff(1:3)
+         real(dp) :: rij
+         real(dp) :: qrij
+         real(dp) :: s
+         real(dp) :: ff
+         real(dp) :: w
+         real(dp) :: dwdr
+         real(dp) :: dsdr
+         real(dp) :: arg_w
+         real(dp) :: der_factor
+         integer :: l
+         integer :: species_j
+
+         if (j == i) then
+!           The self term. sinc(0) = 1, and an atom's distance to itself
+!           does not move, so there is no gradient here.
+            part(1:n_samples) = part(1:n_samples) + f_table(1:n_samples, species_i)**2
+            return
+         end if
+
+         species_j = species(j)
+         diff(1:3) = posi(1:3) - positions(1:3, j)
+         rij = sqrt(dot_product(diff, diff))
+
+!        Two atoms on top of one another have no direction to push along.
+!        Take the sinc(0) = 1 limit and skip the gradient rather than
+!        divide by r_ij = 0.
+         if (rij < 1.d-10) then
+            part(1:n_samples) = part(1:n_samples) + &
+                 & f_table(1:n_samples, species_i)*f_table(1:n_samples, species_j)
+            return
+         end if
+
+!        The Lorch window sinc(pi r / r_cut), which damps the termination
+!        ripple a hard cutoff would put into I(q). Pairs beyond r_cut are
+!        dropped: past its first zero the window is an oscillation, not a
+!        taper, so carrying them would add the ringing back.
+         w = 1.d0
+         dwdr = 0.d0
+         if (window) then
+            if (rij > r_cut) return
+            arg_w = pi*rij/r_cut
+            w = sin(arg_w)/arg_w
+            dwdr = (cos(arg_w) - w)/rij
+         end if
+
+         do l = 1, n_samples
+            qrij = q_wave(l)*rij
+            ff = f_table(l, species_i)*f_table(l, species_j)
+
+            if (qrij == 0.d0) then
+               s = 1.d0
+               dsdr = 0.d0
+            else
+               s = sin(qrij)/qrij
+               dsdr = (cos(qrij) - s)/rij
+            end if
+
+            part(l) = part(l) + ff*s*w
+
+            if (do_derivatives) then
+!              d/dr_i [ s(q r_ij) w(r_ij) ] = (diff / r_ij) (w ds/dr + s dw/dr)
+               der_factor = ff*(w*dsdr + s*dwdr)/rij
+               xrd_der(1:3, l, i) = xrd_der(1:3, l, i) + diff(1:3)*der_factor
+            end if
+         end do
+      end subroutine add_pair
+
+!     Atoms binned into cells of side at least r_cut over their bounding box,
+!     not periodic: the sum uses raw distances, never the minimum image. At
+!     most about 8 cells per atom.
+      subroutine debye_cells()
+         real(dp) :: lo(1:3)
+         real(dp) :: hi(1:3)
+         real(dp) :: side(1:3)
+         integer, allocatable :: fill(:)
+         integer :: d
+         integer :: n_cells
+         integer :: k
+
+         lo = minval(positions(1:3, 1:n_sites0), dim=2)
+         hi = maxval(positions(1:3, 1:n_sites0), dim=2)
+         do d = 1, 3
+            n_cell(d) = max(1, min(int((hi(d) - lo(d))/r_cut), nint(2.d0*dfloat(n_sites0)**(1.d0/3.d0))))
+            side(d) = max((hi(d) - lo(d))/dfloat(n_cell(d)), r_cut)
+         end do
+         n_cells = n_cell(1)*n_cell(2)*n_cell(3)
+
+         allocate (atom_cell(1:3, 1:n_sites0))
+         allocate (cell_start(1:n_cells + 1))
+         allocate (cell_atoms(1:n_sites0))
+         allocate (fill(1:n_cells))
+         cell_start = 0
+         do k = 1, n_sites0
+            do d = 1, 3
+               atom_cell(d, k) = min(n_cell(d), int((positions(d, k) - lo(d))/side(d)) + 1)
+            end do
+            cell = atom_cell(1, k) + n_cell(1)*((atom_cell(2, k) - 1) + n_cell(2)*(atom_cell(3, k) - 1))
+            cell_start(cell + 1) = cell_start(cell + 1) + 1
+         end do
+         cell_start(1) = 1
+         do k = 1, n_cells
+            cell_start(k + 1) = cell_start(k + 1) + cell_start(k)
+         end do
+         fill = cell_start(1:n_cells)
+         do k = 1, n_sites0
+            cell = atom_cell(1, k) + n_cell(1)*((atom_cell(2, k) - 1) + n_cell(2)*(atom_cell(3, k) - 1))
+            cell_atoms(fill(cell)) = k
+            fill(cell) = fill(cell) + 1
+         end do
+         deallocate (fill)
+      end subroutine debye_cells
 
    end subroutine get_xrd_debye
 
