@@ -1171,20 +1171,30 @@ contains
          integer :: k2
          integer :: i_chunk
          integer :: n_atom_pairs_in
+         integer, allocatable :: k_start(:)
+         integer, allocatable :: n_in(:)
 
          n_sites = size(n_neigh)
          n_atom_pairs = size(rjs)
 
+!   Counted per site on every thread: a serial walk over all pairs held the
+!   device idle once per descriptor per step.
+         allocate (k_start(1:n_sites))
+         allocate (n_in(1:n_sites))
          k = 0
-         n_atom_pairs_in = 0
          do i = 1, n_sites
+            k_start(i) = k
+            k = k + n_neigh(i)
+         end do
+         !$omp parallel do default(shared) schedule(static) private(i, j)
+         do i = 1, n_sites
+            n_in(i) = 0
             do j = 1, n_neigh(i)
-               k = k + 1
-               if (rjs(k) < rcut) then
-                  n_atom_pairs_in = n_atom_pairs_in + 1
-               end if
+               if (rjs(k_start(i) + j) < rcut) n_in(i) = n_in(i) + 1
             end do
          end do
+         !$omp end parallel do
+         n_atom_pairs_in = sum(n_in)
 
          k_max = 1 + l_max*(l_max + 1)/2 + l_max
 !   What the descriptor path will actually allocate for these pairs and sites,
@@ -1219,16 +1229,11 @@ contains
             return
          end if
 
-         k = 0
          k2 = 0
          i_chunk = 1
          do i = 1, n_sites
-            do j = 1, n_neigh(i)
-               k = k + 1
-               if (rjs(k) < rcut) then
-                  k2 = k2 + 1
-               end if
-            end do
+            k = k_start(i) + n_neigh(i)
+            k2 = k2 + n_in(i)
             if (k2 >= int(float(i_chunk)*pairs_per_chunk)) then
                i_end_list(i_chunk) = i
                j_end_list(i_chunk) = k
