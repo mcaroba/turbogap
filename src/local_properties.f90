@@ -133,9 +133,9 @@ contains
       n_sites = size(soap, 2)
 !    n_sites0 = size(forces, 2)
 
-      allocate (kernels(1:n_sites, 1:n_sparse))
-      kernels = 0.d0
-      allocate (kernels_copy(1:n_sites, 1:n_sparse))
+!     Host shadows for sizeof only; the kernels live on the device.
+      allocate (kernels(1:1, 1:1))
+      allocate (kernels_copy(1:1, 1:1))
 
       size_kernels = n_sites*n_sparse
       size_soap = n_soap*n_sites
