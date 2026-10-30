@@ -3456,6 +3456,15 @@ contains
       end if
 
       mag = sqrt(dot_product(y, y))  !sum(y * dx) !
+!     A zero spectrum has no direction to normalise to: every predicted line
+!     is outside the experimental energy range, and dividing by it made every
+!     energy and force NaN.
+      if (mag <= 0.d0) then
+         write (*, '(A,ES12.4,A,ES12.4,A,ES12.4,A,ES12.4)') &
+            'ERROR: no predicted core_electron_be within the XPS energy range ', x_min, ' to ', x_max, &
+            '; predicted ', minval(core_electron_be), ' to ', maxval(core_electron_be)
+         call turbogap_abort()
+      end if
       y = y/mag
       y_all = y_all/mag
 
