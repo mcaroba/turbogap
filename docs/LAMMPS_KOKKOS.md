@@ -107,7 +107,7 @@ already backend-agnostic, and the work is converting those five files here.
 | `gap_predict.cu` | all 4 |
 | `gap_2b.cu` | both |
 | `gap_soap_radial.cu` | all 3 |
-| `gap_soap_angular.cu` | all 6, one through `tg_parallel_for_3d` |
+| `gap_soap_angular.cu` | all 6 |
 | `mad_electrostatics.cu` | 2 of 3 |
 | `mad_pdf.cu` | 4 of 10 |
 | `gap_soap_descriptor.cu` | 2 of 9 |
@@ -158,12 +158,12 @@ showing the register count did not run away.
 
 ### About `tg_parallel_for_3d`
 
-`cuda_get_cnk_one_new_new` indexes site, radial `n` and angular `k`, carried on
-the grid's x, y and z. Kokkos tiles an `MDRangePolicy` differently, so the
-order the triples are visited is not the same. That is safe here because each
-triple runs a serial neighbour loop and writes one `cnk` entry, reading nothing
-another triple writes -- and would be wrong the moment that stopped holding.
-The CUDA path keeps the original y/z grid exactly.
+It has no caller now. `cuda_get_cnk_one_new_new` used it for site, radial `n`
+and angular `k` on the grid's x, y and z, which put every lane of every load
+on its own cache line; it is a flat `tg_parallel_for_long` with `n` fastest.
+The primitive stays for pure maps. Kokkos tiles an `MDRangePolicy` differently
+from the CUDA grid, so it is safe only where each index triple reads nothing
+another triple writes.
 
 
 ## Then the part that is not kernels

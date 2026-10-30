@@ -8,48 +8,33 @@
 #define tpb 64
 #define tpbcnk 64 // this is because k_max is 45???
 
-// The three indices are the site, the radial n and the angular k. Each
-// triple runs a serial neighbour loop and writes one cnk entry, reading
-// nothing another triple writes, so the order they are visited in does not
-// matter -- which is what makes an MDRange safe here. See tg_parallel_for_3d.
+// One thread per (site, n, k), n fastest: a warp then reads one site's
+// radial coefficients contiguously and its angular ones as two broadcasts,
+// where site-fastest put every lane of every load on its own cache line. Each
+// output is the same sum, in the same order, as before.
 static void cuda_get_cnk_one_new_new(hipDoubleComplex* cnk_d, double* radial_exp_coeff_d, hipDoubleComplex* angular_exp_coeff_d,
                                      int* n_neigh_d, int* k2_start_d, int n_atom_pairs, int n_sites, int k_max, int n_max,
                                      int l_max, hipStream_t* stream) {
-  tg_parallel_for_3d(
-      "turbogap_soap_cnk", n_sites, n_max, k_max, stream,
-      TG_LAMBDA(const int i_site, const int i_n, const int i_k) {
-        const int n = i_n + 1;
-        const int k = i_k + 1;
+  tg_parallel_for_long(
+      "turbogap_soap_cnk", (long long) n_sites * n_max * k_max, stream,
+      TG_LAMBDA(const long long t) {
+        const int n = t % n_max + 1;
+        const int k = (t / n_max) % k_max + 1;
+        const int i_site = t / n_max / k_max;
         double pi = 4.0 * acos(-1.0);
         int k2 = k2_start_d[i_site];
         int my_n_neigh = n_neigh_d[i_site];
         hipDoubleComplex loc_cnk;
         loc_cnk.x = 0.0;
         loc_cnk.y = 0.0;
-        /*if(k<=k_max){
-	cnk_d[k-1+k_max*(n-1+n_max*i_site)]; // coalesced???
-	}*/
         for (int j = 1; j <= my_n_neigh; j++) {
           k2++;
-          double loc_rad_exp_coeff = radial_exp_coeff_d[n - 1 + n_max * (k2 - 1)]; //coalesced ???
-          //int k=1+l*(l+1)/2+m;
-          hipDoubleComplex loc_ang_exp_coeff =
-              angular_exp_coeff_d[k2 - 1 + n_atom_pairs * (k - 1)]; // angular_exp_coeff_d[k-1+k_max*(k2-1)]; //coalesced ??
+          double loc_rad_exp_coeff = radial_exp_coeff_d[n - 1 + n_max * (k2 - 1)];
+          hipDoubleComplex loc_ang_exp_coeff = angular_exp_coeff_d[k2 - 1 + n_atom_pairs * (k - 1)];
           loc_cnk.x += pi * loc_rad_exp_coeff * loc_ang_exp_coeff.x;
           loc_cnk.y += pi * loc_rad_exp_coeff * loc_ang_exp_coeff.y;
-          /*         if(isnan(loc_cnk.x)||isnan(loc_cnk.y)){
-		   printf("\n loc_cnk is nan %lf %lf %lf %lf %lf %lf", loc_cnk.x,loc_cnk.y, loc_ang_exp_coeff.x, loc_ang_exp_coeff.y,loc_rad_exp_coeff ,pi);
-		   } *//*
-			  if(isnan(loc_ang_exp_coeff.x)||isnan(loc_ang_exp_coeff.y)){
-			  printf("\n loc_cnk is nan %lf %lf %lf %lf %lf %lf", loc_cnk.x,loc_cnk.y, loc_ang_exp_coeff.x, loc_ang_exp_coeff.y,loc_rad_exp_coeff,pi);
-			  } */
-          /*         if(isnan(loc_rad_exp_coeff)){
-		   printf("\n loc_rad_exp_coeff is nan %lf %lf %lf %lf %lf %lf", loc_cnk.x,loc_cnk.y, loc_ang_exp_coeff.x, loc_ang_exp_coeff.y,loc_rad_exp_coeff,pi);
-		   } */
         }
-        if (k <= k_max) {
-          cnk_d[i_site + n_sites * ((k - 1) + (n - 1) * k_max)] = loc_cnk; //cnk_d[k-1+k_max*(n-1+n_max*i_site)]=loc_cnk;
-        }
+        cnk_d[i_site + n_sites * ((k - 1) + (n - 1) * k_max)] = loc_cnk;
       },
       tpbcnk);
 }
