@@ -497,3 +497,20 @@ What a four-card step is made of now (nsys, busy time per force call):
   wait in a broadcast;
 * `gpu_batch_gbytes` from 9.4 to 64 GB moves nothing beyond noise, on one
   card or four; the batch count is not where the host time goes.
+
+Then the host half and the kernels the contraction had hidden, each timed old
+against new in one job (42-step runs, s/step):
+
+| change | 1 GH200 | 4 GH200 |
+| --- | --- | --- |
+| host shadows of the kernels at one element, pair indices and the get_soap masks on the device | 1.12 -> 1.03 | 0.34 -> 0.30 |
+| local-property total handed to the device path | 1.05 -> 1.02 | within noise |
+| 2b/core_pot offsets by scan, cnk n-fastest, parallel SOAP index | 1.01 -> 0.84 | 0.31 -> 0.27 |
+| contraction per (pair, n) | 0.84 -> 0.79 | within noise |
+
+So 2.50 -> 0.79 on one card and 0.68 -> 0.27 on four since the start of
+section 10. `co_predict` stayed bit-identical on the device through every
+change but the last, which reorders the contraction's sums. Left at four
+cards: close to half the step is host code, and the largest kernels are the
+radial basis, the 2b inner loop over the sparse set, `exp_coeff_der` and the
+three-body kernel.
