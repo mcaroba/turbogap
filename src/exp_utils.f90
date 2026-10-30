@@ -3420,6 +3420,13 @@ contains
       real(dp) :: dx
       real(dp), intent(out) :: mag
       logical, intent(in) :: broaden
+!     Sites per chunk: each chunk broadens into its own partial spectrum and
+!     the chunks are added in order, so the result does not depend on the
+!     thread count.
+      integer, parameter :: XPS_CHUNK = 256
+      real(dp), allocatable :: y_part(:, :)
+      integer :: ic
+      integer :: n_chunks
 
       if (allocated(x)) deallocate (x)
       if (allocated(y)) deallocate (y)
@@ -3431,7 +3438,8 @@ contains
 
       x = 0.d0
       y = 0.d0
-      y_all = 0.d0
+!     Broadening writes every element.
+      if (.not. broaden) y_all = 0.d0
 
       x_min = xi(1)
       x_max = xi(size(xi))
@@ -3449,9 +3457,20 @@ contains
       if (broaden) then
          y = 0.d0
 
-         do i = 1, size(core_electron_be)
-            call broaden_spectrum(x, core_electron_be(i), y, y_all, i, sigma)
+         n_chunks = (size(core_electron_be) + XPS_CHUNK - 1)/XPS_CHUNK
+         allocate (y_part(1:n_samples, 1:n_chunks))
+         y_part = 0.d0
+         !$omp parallel do default(shared) schedule(static) private(ic, i)
+         do ic = 1, n_chunks
+            do i = (ic - 1)*XPS_CHUNK + 1, min(size(core_electron_be), ic*XPS_CHUNK)
+               call broaden_spectrum(x, core_electron_be(i), y_part(1:n_samples, ic), y_all, i, sigma)
+            end do
          end do
+         !$omp end parallel do
+         do ic = 1, n_chunks
+            y(1:n_samples) = y(1:n_samples) + y_part(1:n_samples, ic)
+         end do
+         deallocate (y_part)
 
       end if
 
