@@ -37,9 +37,28 @@ constexpr std::size_t TRANSPOSE_BLOCK_ROWS = 8;
 
 // Where (n, np, l) lands: .x the output column (-1 if skipped), .y the first
 // multiplicity index of its m run. The order is the one the loops used to walk;
-// each entry counts the kept ones before it, rather than one thread walking
-// them all.
+// each entry adds the kept ones of the rows n before it, counted once per row,
+// to those before it in its own row.
 static void cuda_get_soap_index(int2* index_d, bool* skip_soap_component_d, int n_max, int l_max, hipStream_t* stream) {
+  int2* row_d;
+  hipMallocAsync((void**) &row_d, sizeof(int2) * n_max, stream[0]);
+  tg_parallel_for(
+      "turbogap_soap_soap_index_rows", n_max, stream,
+      TG_LAMBDA(const int r) {
+        int n = r + 1;
+        int counter = 0;
+        int counter2 = 0;
+        for (int np = n; np <= n_max; np++) {
+          for (int l = 0; l <= l_max; l++) {
+            if (!skip_soap_component_d[l + (l_max + 1) * (np - 1 + (n - 1) * n_max)]) {
+              counter++;
+              counter2 += l + 1;
+            }
+          }
+        }
+        row_d[r] = make_int2(counter, counter2);
+      },
+      tpb);
   tg_parallel_for(
       "turbogap_soap_soap_index", n_max * n_max * (l_max + 1), stream,
       TG_LAMBDA(const int s) {
@@ -54,22 +73,25 @@ static void cuda_get_soap_index(int2* index_d, bool* skip_soap_component_d, int 
         }
         int counter = 0;
         int counter2 = 0;
-        for (int n1 = 1; n1 <= n; n1++) {
-          for (int np1 = n1; np1 <= n_max; np1++) {
-            for (int l1 = 0; l1 <= l_max; l1++) {
-              if (n1 == n && np1 == np && l1 == l) {
-                index_d[s] = make_int2(counter, counter2);
-                return;
-              }
-              if (!skip_soap_component_d[l1 + (l_max + 1) * (np1 - 1 + (n1 - 1) * n_max)]) {
-                counter++;
-                counter2 += l1 + 1;
-              }
+        for (int r = 0; r < n - 1; r++) {
+          counter += row_d[r].x;
+          counter2 += row_d[r].y;
+        }
+        for (int np1 = n; np1 <= np; np1++) {
+          for (int l1 = 0; l1 <= l_max; l1++) {
+            if (np1 == np && l1 == l) {
+              index_d[s] = make_int2(counter, counter2);
+              return;
+            }
+            if (!skip_soap_component_d[l1 + (l_max + 1) * (np1 - 1 + (n - 1) * n_max)]) {
+              counter++;
+              counter2 += l1 + 1;
             }
           }
         }
       },
       tpb);
+  hipFreeAsync(row_d, stream[0]);
 }
 
 // One thread per (site, n, l), then one per site for the norm, summed over the
@@ -621,35 +643,55 @@ extern "C" void gpu_soap_pair_contract(double* G_d, double sign, double* pair_d,
             h.x += w * c.x;
             h.y += w * c.y;
           }
-          H_d[i + n_sites * (k - 1 + (n - 1) * k_max)] = h;
+          H_d[n - 1 + n_max * (k - 1 + k_max * i)] = h;
         }
       },
       tpb);
 
-  // Each pair's coefficient derivatives against H, then to Cartesian as
-  // cuda_get_soap_der_thr_one does. The central pair is redone below.
+  // Each pair's coefficient derivatives against H, one thread per (pair, n)
+  // with n fastest so that rad and H are read contiguously across a warp; then
+  // per pair, the sum over n in order and the Cartesian conversion of
+  // cuda_get_soap_der_thr_one. The central pair is redone below.
+  double* part_d;
+  hipMallocAsync((void**) &part_d, sizeof(double) * 3 * n_pairs * n_max, stream[0]);
+  tg_parallel_for_long(
+      "turbogap_soap_contract_pair_n", (long long) n_pairs * n_max, stream,
+      TG_LAMBDA(const long long t) {
+        int n = t % n_max + 1;
+        int k2 = t / n_max;
+        int i = e.k2_i_site_d[k2] - 1;
+        double rad = e.rad_d[n - 1 + k2 * n_max];
+        double rad_der = e.rad_der_d[n - 1 + k2 * n_max];
+        double f_rad = 0.0;
+        double f_azi = 0.0;
+        double f_pol = 0.0;
+        for (int k = 1; k <= k_max; k++) {
+          hipDoubleComplex h = H_d[n - 1 + n_max * (k - 1 + k_max * i)];
+          hipDoubleComplex ang = e.ang_d[k2 + n_pairs * (k - 1)];
+          hipDoubleComplex ang_rad = e.ang_rad_d[k2 + n_pairs * (k - 1)];
+          hipDoubleComplex ang_azi = e.ang_azi_d[k2 + n_pairs * (k - 1)];
+          hipDoubleComplex ang_pol = e.ang_pol_d[k2 + n_pairs * (k - 1)];
+          f_rad += rad_der * (ang.x * h.x + ang.y * h.y) + rad * (ang_rad.x * h.x + ang_rad.y * h.y);
+          f_azi += rad * (ang_azi.x * h.x + ang_azi.y * h.y);
+          f_pol += rad * (ang_pol.x * h.x + ang_pol.y * h.y);
+        }
+        part_d[3 * t] = f_rad;
+        part_d[3 * t + 1] = f_azi;
+        part_d[3 * t + 2] = f_pol;
+      },
+      tpb);
   tg_parallel_for(
       "turbogap_soap_contract_pair", n_pairs, stream,
       TG_LAMBDA(const int k2) {
-        int i = e.k2_i_site_d[k2] - 1;
         double f_rad = 0.0;
         double f_azi = 0.0;
         double f_pol = 0.0;
         if (e.rjs_d[k2] < e.rcut_max) {
           double Pi = 4.0 * acos(-1.0);
-          for (int k = 1; k <= k_max; k++) {
-            hipDoubleComplex ang = e.ang_d[k2 + n_pairs * (k - 1)];
-            hipDoubleComplex ang_rad = e.ang_rad_d[k2 + n_pairs * (k - 1)];
-            hipDoubleComplex ang_azi = e.ang_azi_d[k2 + n_pairs * (k - 1)];
-            hipDoubleComplex ang_pol = e.ang_pol_d[k2 + n_pairs * (k - 1)];
-            for (int n = 1; n <= n_max; n++) {
-              hipDoubleComplex h = H_d[i + n_sites * (k - 1 + (n - 1) * k_max)];
-              double rad = e.rad_d[n - 1 + k2 * n_max];
-              double rad_der = e.rad_der_d[n - 1 + k2 * n_max];
-              f_rad += rad_der * (ang.x * h.x + ang.y * h.y) + rad * (ang_rad.x * h.x + ang_rad.y * h.y);
-              f_azi += rad * (ang_azi.x * h.x + ang_azi.y * h.y);
-              f_pol += rad * (ang_pol.x * h.x + ang_pol.y * h.y);
-            }
+          for (int n = 0; n < n_max; n++) {
+            f_rad += part_d[3 * (n + (long long) n_max * k2)];
+            f_azi += part_d[3 * (n + (long long) n_max * k2) + 1];
+            f_pol += part_d[3 * (n + (long long) n_max * k2) + 2];
           }
           f_rad *= Pi;
           f_azi *= Pi;
@@ -663,6 +705,7 @@ extern "C" void gpu_soap_pair_contract(double* G_d, double sign, double* pair_d,
         pair_d[3 * k2 + 2] = sign * (cos(theta) * f_rad + sin(theta) / rj * f_pol);
       },
       tpb);
+  hipFreeAsync(part_d, stream[0]);
 
   // The central pair is minus the sum of the site's others, in their order.
   tg_parallel_for(
