@@ -251,7 +251,9 @@ contains
                res%this_virial = 0.d0
             end if
             if (model%soap_turbo_hypers(i)%has_local_properties) then
+#ifndef _GPU
                res%this_local_properties = 0.d0
+#endif
                if (params%do_forces) then
 !                 Pair-wide, and the backend gets a pointer to this batch's
 !                 slice of it, so only that slice can have been written. Read
@@ -270,6 +272,9 @@ contains
             call time_end(time%soap_solo)
 
 #ifdef _GPU
+!           Local properties go straight into the total: the device adds each
+!           batch's sites into it once, so a zeroed whole-structure scratch added
+!           back per batch, O(batches x sites), gave the same bits.
 !           Thread 0, which holds the device and MPI, runs this batch; thread 1
 !           meanwhile does the next batch's host-side preparation, which the
 !           device would otherwise wait for.
@@ -296,7 +301,7 @@ contains
                   params%which_atom, state%indices, soap, soap_cart_der, der_neighbors, der_neighbors_list, &
                   model%soap_turbo_hypers(i)%has_local_properties, model%soap_turbo_hypers(i)%n_local_properties, &
                   model%soap_turbo_hypers(i)%local_property_models, n_lp_count, res%energies_soap, res%forces_soap, &
-                  res%this_local_properties_pt, res%this_local_properties_cart_der_pt, model%local_property_indexes, &
+                  res%local_properties, res%this_local_properties_cart_der_pt, model%local_property_indexes, &
                   res%this_virial, &
                   time%soap_lin(3), time%get_soap(3), model%soap_turbo_hypers(i)%W_d, model%soap_turbo_hypers(i)%S_d, &
                   model%soap_turbo_hypers(i)%multiplicity_array_d, model%soap_turbo_hypers(i)%st_W_d, &
@@ -362,7 +367,9 @@ contains
 
             if (model%soap_turbo_hypers(i)%has_local_properties) then
 
+#ifndef _GPU
                res%local_properties(:, :) = res%local_properties(:, :) + res%this_local_properties(:, :)
+#endif
                if (any(model%soap_turbo_hypers(i)&
                     &%local_property_models(:)%do_derivatives) &
                     & .and. params%do_derivatives) then
