@@ -8,6 +8,7 @@
 #include "gap_gpu.h"
 #include "gpu_backend.h"
 #include "gpu_common.h"
+#include "gpu_scan.h"
 
 #define tpb 64
 
@@ -64,11 +65,26 @@ TG_INLINE_FUNCTION double gpu_spline_der(int nx, double r, double* x, double* y,
   return ds;
 }
 
+// Each site's first pair, counted from site i_beg: one scan, where every thread
+// used to sum n_neigh over all the sites before its own, O(sites^2) a call.
+static int* site_first_pair(int i_beg, int i_end, int* n_neigh_d, hipStream_t* stream) {
+  int n = i_end - i_beg + 1;
+  int* first_d;
+  gpuErrchk(hipMallocAsync((void**) &first_d, sizeof(int) * n, stream[0]));
+  gpuErrchk(hipMemcpyAsync(first_d, n_neigh_d + i_beg - 1, sizeof(int) * n, hipMemcpyDeviceToDevice, stream[0]));
+  inclusiveScan(first_d, n, stream);
+  tg_parallel_for("turbogap_site_first_pair", n, stream, TG_LAMBDA(const int t) { first_d[t] -= n_neigh_d[i_beg - 1 + t]; }, tpb);
+  return first_d;
+}
+
 extern "C" void gpu_get_2b_forces_energies(int i_beg, int i_end, int n_sparse, double* energies_d, double e0, int* n_neigh_d,
                                            bool do_forces, double* forces_d, double* virial_d, double* rjs_d, double rcut,
                                            int* species_d, int* neighbor_species_d, int sp1, int sp2, double buffer, double delta,
                                            double* cutoff_d, double* Qs_d, double sigma, double* alphas_d, double* xyz_d,
                                            hipStream_t* stream) {
+  if (i_end < i_beg)
+    return;
+  int* first_d = site_first_pair(i_beg, i_end, n_neigh_d, stream);
   tg_parallel_for(
       "turbogap_get_2b", i_end - i_beg + 1, stream,
       TG_LAMBDA(const int tid) {
@@ -86,9 +102,7 @@ extern "C" void gpu_get_2b_forces_energies(int i_beg, int i_end, int n_sparse, d
         }
         if (species_d[i_site] == sp1 || species_d[i_site] == sp2) {
           pi = acos(-1.0);
-          k = 0;
-          for (i = i_beg - 1; i < i_site; i++)
-            k += n_neigh_d[i];
+          k = first_d[tid];
           for (j = 2; j <= n_neigh_d[i_site]; j++) {
             k += 1;
             if (!((species_d[i_site] == sp1 && neighbor_species_d[k] == sp2) ||
@@ -130,6 +144,7 @@ extern "C" void gpu_get_2b_forces_energies(int i_beg, int i_end, int n_sparse, d
           TG_ATOMIC_ADD(&virial_d[k1], 0.5 * virial_loc[k1]);
       },
       tpb);
+  gpuErrchk(hipFreeAsync(first_d, stream[0]));
   // There was a hipStreamSynchronize here, commented "temporary, to measure
   // timings". It blocked the host on every launch, so the caller's loop over
   // the 2b descriptors could not have overlapped even with a stream each. The
@@ -141,6 +156,9 @@ extern "C" void gpu_get_core_pot_energy_and_forces(int i_beg, int i_end, bool do
                                                    int* n_neigh_d, int* neighbor_species_d, double* rjs_d, int n_sparse,
                                                    double* x_d, double* V_d, double* dVdx2_d, double yp1, double ypn, double* xyz_d,
                                                    double* forces_d, double* virial_d, double* energies_d, hipStream_t* stream) {
+  if (i_end < i_beg)
+    return;
+  int* first_d = site_first_pair(i_beg, i_end, n_neigh_d, stream);
   tg_parallel_for(
       "turbogap_get_core_pot", i_end - i_beg + 1, stream,
       TG_LAMBDA(const int tid) {
@@ -158,9 +176,7 @@ extern "C" void gpu_get_core_pot_energy_and_forces(int i_beg, int i_end, bool do
             virial_loc[i] = 0.0;
         }
         if (species_d[i_site] == sp1 || species_d[i_site] == sp2) {
-          k = 0;
-          for (i = i_beg - 1; i < i_site; i++)
-            k += n_neigh_d[i];
+          k = first_d[tid];
           for (j = 1; j < n_neigh_d[i_site]; j++) {
             k += 1;
             if (!((species_d[i_site] == sp1 && neighbor_species_d[k] == sp2) ||
@@ -198,4 +214,5 @@ extern "C" void gpu_get_core_pot_energy_and_forces(int i_beg, int i_end, bool do
           TG_ATOMIC_ADD(&virial_d[k1], 0.5 * virial_loc[k1]);
       },
       tpb);
+  gpuErrchk(hipFreeAsync(first_d, stream[0]));
 }
