@@ -514,3 +514,39 @@ change but the last, which reorders the contraction's sums. Left at four
 cards: close to half the step is host code, and the largest kernels are the
 radial basis, the 2b inner loop over the sparse set, `exp_coeff_der` and the
 three-body kernel.
+
+## 11. GH200, MAD biasing (2026-10-30)
+
+The same 307k-atom CO system with `dd_type = rcb`, biased towards
+experimental data the three ways the code offers, seconds per MD step (per
+force call where a step could not be measured):
+
+| | 1 GH200 before | 1 GH200 after | 4 GH200 before | 4 GH200 after |
+| --- | --- | --- | --- | --- |
+| plain MD | 0.78 | 0.78 | 0.22 | 0.21 |
+| XRD from the pdf | 2.70 | 1.81 | 0.98 | 0.78 |
+| Debye XRD | -- | 3.42 | 88 s a call | 1.28 |
+| XPS | did not finish 2 steps in 15 min | 2.18 | 71 s a call | 0.84 |
+
+What each had been doing:
+
+* **XRD from the pdf**, the only MAD path on the device, formed a samples x
+  pairs matrix from the pdf derivative per Cartesian component and pushed it
+  through a dgemm with the sinc matrix and a dgemv with the residual. The
+  scattering factors depend on q alone, so all of it folds into one vector
+  `w`, and each pair is a single sum (`gpu_xrd_pair_forces`).
+* **Debye XRD** ran on the host, one thread, every owned atom against every
+  atom, dropping pairs past `xrd_rcut` only after measuring them. It now
+  searches neighbouring cells when the window is on, threaded over chunks of
+  atoms.
+* **XPS** ran on the host and filled a 3 x pairs x samples array -- 330 GB on
+  one rank here -- whose every entry is one per-atom factor times the pair's
+  `core_electron_be` gradient. It now forms that factor per atom. Its energy
+  had also been counted once per atom (`tests/xps_fd` catches it).
+
+What is left in a four-card XRD step is mostly not XRD: the whole-structure
+view the decomposition builds for the pdf, and the reduction of its forces
+over ranks, cost about 0.3 s a step between them (`MPI comms` and
+`Miscellaneous` in the report). The Lorentz-polarization factor is not
+applied to the device prediction at all; `tests/xrd_lp_pdf forward` fails
+on every device binary.
