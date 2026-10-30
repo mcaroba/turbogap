@@ -36,29 +36,40 @@ constexpr std::size_t TRANSPOSE_TILE_DIM = 32;
 constexpr std::size_t TRANSPOSE_BLOCK_ROWS = 8;
 
 // Where (n, np, l) lands: .x the output column (-1 if skipped), .y the first
-// multiplicity index of its m run. The order is the one the loops used to walk.
+// multiplicity index of its m run. The order is the one the loops used to walk;
+// each entry counts the kept ones before it, rather than one thread walking
+// them all.
 static void cuda_get_soap_index(int2* index_d, bool* skip_soap_component_d, int n_max, int l_max, hipStream_t* stream) {
   tg_parallel_for(
-      "turbogap_soap_soap_index", 1, stream,
-      TG_LAMBDA(const int) {
+      "turbogap_soap_soap_index", n_max * n_max * (l_max + 1), stream,
+      TG_LAMBDA(const int s) {
+        int l = s % (l_max + 1);
+        int np = (s / (l_max + 1)) % n_max + 1;
+        int n = s / (l_max + 1) / n_max + 1;
+        if (np < n)
+          return;
+        if (skip_soap_component_d[s]) {
+          index_d[s] = make_int2(-1, 0);
+          return;
+        }
         int counter = 0;
         int counter2 = 0;
-        for (int n = 1; n <= n_max; n++) {
-          for (int np = n; np <= n_max; np++) {
-            for (int l = 0; l <= l_max; l++) {
-              int s = l + (l_max + 1) * (np - 1 + (n - 1) * n_max);
-              if (skip_soap_component_d[s]) {
-                index_d[s] = make_int2(-1, 0);
-              } else {
+        for (int n1 = 1; n1 <= n; n1++) {
+          for (int np1 = n1; np1 <= n_max; np1++) {
+            for (int l1 = 0; l1 <= l_max; l1++) {
+              if (n1 == n && np1 == np && l1 == l) {
                 index_d[s] = make_int2(counter, counter2);
+                return;
+              }
+              if (!skip_soap_component_d[l1 + (l_max + 1) * (np1 - 1 + (n1 - 1) * n_max)]) {
                 counter++;
-                counter2 += l + 1;
+                counter2 += l1 + 1;
               }
             }
           }
         }
       },
-      1);
+      tpb);
 }
 
 // One thread per (site, n, l), then one per site for the norm, summed over the

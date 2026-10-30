@@ -3,7 +3,8 @@
 // without skipped components and with pairs past the cutoff. The der_one
 // reference is the old pair of kernels, cnk_*_der written then read. Prints the
 // time of each on the same data. gpu_soap_pair_contract is checked, to a
-// tolerance, against the chain it replaces done on the host from der_one.
+// tolerance, against the chain it replaces done on the host from der_one, and
+// cuda_get_soap_index against the walk it replaced.
 #include "../../src/gpu/gap_soap_descriptor.cu"
 
 #include <algorithm>
@@ -531,12 +532,40 @@ static double check_contract(const problem& p, device_problem& d, hipStream_t* s
   return err / big;
 }
 
+// cuda_get_soap_index against the walk it replaced, on the host.
+static long check_index(const problem& p, device_problem& d, hipStream_t* s) {
+  int n_max = p.n_max;
+  int l_max = p.l_max;
+  cuda_get_soap_index(d.index, d.skip, n_max, l_max, s);
+  gpuErrchk(hipStreamSynchronize(*s));
+  std::vector<int2> got(n_max * n_max * (l_max + 1));
+  gpuErrchk(hipMemcpy(got.data(), d.index, sizeof(int2) * got.size(), hipMemcpyDeviceToHost));
+  long bad = 0;
+  int counter = 0;
+  int counter2 = 0;
+  for (int n = 1; n <= n_max; n++)
+    for (int np = n; np <= n_max; np++)
+      for (int l = 0; l <= l_max; l++) {
+        int q = l + (l_max + 1) * (np - 1 + (n - 1) * n_max);
+        int2 want = p.skip[q] ? make_int2(-1, 0) : make_int2(counter, counter2);
+        if (!p.skip[q]) {
+          counter++;
+          counter2 += l + 1;
+        }
+        if (got[q].x != want.x || got[q].y != want.y)
+          bad++;
+      }
+  std::printf("      index    differing %ld\n", bad);
+  return bad;
+}
+
 static long check_case(const char* label, int n_sites, int neigh, int n_max, int l_max, double skip_fraction, int reps,
                        hipStream_t* s) {
   problem p = make_problem(n_sites, neigh, n_max, l_max, skip_fraction, 12345);
   device_problem d = upload_problem(p);
   std::printf("    %s: sites %d pairs %d n_soap %d\n", label, p.n_sites, p.n_atom_pairs, p.n_soap);
   long bad = 0;
+  bad += check_index(p, d, s);
   bad += compare_kernel("soap_p", reference_p, new_p, p_outputs, p, d, s, reps);
   bad += compare_kernel("der_one", reference_der, new_der, der_outputs, p, d, s, reps);
   if (!(check_contract(p, d, s) < CONTRACT_TOL))
