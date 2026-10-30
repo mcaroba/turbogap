@@ -87,6 +87,8 @@ void gpu_get_derivatives(double* radial_exp_coeff_d, hipDoubleComplex* angular_e
                          int n_atom_pairs, int n_sites, int n_soap, int k_max, int n_max, int l_max, hipStream_t* stream);
 
 // ---- gap_soap_forces.cu
+void gpu_pair_indices(int n_sites, int n_sites0, int* pair_start_d, int* neighbors_list_d, int* l_index_d, int* j2_index_d,
+                      hipStream_t* stream);
 void gpu_final_soap_forces_virial(int n_sites, double* Qss_d, int n_soap, int* l_index_d, int* j2_index_d, double3* soap_der_d,
                                   double3* xyz_d, double* virial_d, int n_sites0, double* forces_d, int n_pairs,
                                   hipStream_t* stream);

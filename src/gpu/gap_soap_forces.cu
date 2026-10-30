@@ -19,6 +19,7 @@
 // check of its own against the control in tools/verify_kokkos.sh. See
 // docs/LAMMPS_KOKKOS.md.
 
+#include "gpu_backend.h"
 #include "gpu_common.h"
 #include "gap_gpu.h"
 #include "gpu_scatter.h"
@@ -91,6 +92,22 @@ __global__ void cuda_soap_forces_virial_two(int n_sites, double* Qss_d, int n_so
     pair_force_d[3 * l_nn + 1] = shythis_block_force[0];
     pair_force_d[3 * l_nn + 2] = shzthis_block_force[0];
   }
+}
+
+// l_index (the 1-based site of each pair) and j2_index (the 1-based atom it
+// lands on), from pair_start(n_sites + 1), the 0-based offset of each site's
+// pairs. Integer maps; the host used to walk every pair for them.
+extern "C" void gpu_pair_indices(int n_sites, int n_sites0, int* pair_start_d, int* neighbors_list_d, int* l_index_d,
+                                 int* j2_index_d, hipStream_t* stream) {
+  tg_parallel_for(
+      "turbogap_soap_pair_site", n_sites, stream,
+      TG_LAMBDA(const int i) {
+        for (int k = pair_start_d[i]; k < pair_start_d[i + 1]; k++) {
+          l_index_d[k] = i + 1;
+          j2_index_d[k] = (neighbors_list_d[k] - 1) % n_sites0 + 1;
+        }
+      },
+      tpb);
 }
 
 extern "C" void gpu_final_soap_forces_virial(int n_sites, double* Qss_d, int n_soap, int* l_index_d, int* j2_index_d,

@@ -151,10 +151,7 @@ contains
       integer(c_int) :: n_sites
       integer(c_int) :: n_soap
       integer(c_int) :: i
-      integer(c_int) :: j
       integer(c_int) :: k
-      integer(c_int) :: l
-      integer(c_int) :: j2
       integer(c_int) :: zeta_int
       integer(c_int) :: n_sites0
       integer(c_int) :: k1
@@ -173,8 +170,6 @@ contains
       integer(c_int) :: size_Qs
       integer(c_int) :: size_alphas
       integer(c_int) :: size_energies
-      integer(c_int) :: maxnn
-      integer(c_int) :: size_nnlist
       integer(c_int) :: size_xyz
       integer(c_int) :: n1xyz
       integer(c_int) :: n2xyz
@@ -191,20 +186,16 @@ contains
       integer(c_int) :: rank
       integer(c_int) :: ierr
       integer(c_int), intent(inout) :: n_pairs
-      integer(c_int), allocatable, target :: neighbors_beg(:)
-      integer(c_int), allocatable, target :: neighbors_end(:)
+      integer(c_int), allocatable, target :: pair_start(:)
       type(c_ptr) :: virial_d
       type(c_ptr) :: n_neigh_d
       type(c_ptr) :: this_force_d
       type(c_ptr) :: j2_index_d
-      type(c_ptr) :: neighbors_beg_d
-      type(c_ptr) :: neighbors_end_d
+      type(c_ptr) :: pair_start_d
       type(c_ptr) :: xyz_d
       type(c_ptr) :: neighbors_list_d
       type(c_ptr) :: forces_d
       real(dp), intent(inout) :: solo_time_soap
-      integer(c_int), allocatable, target :: j2_index(:)
-      integer(c_int), allocatable, target :: l_index(:)
       type(c_ptr), intent(inout) :: soap_der_d
       type(c_ptr), intent(inout) :: soap_d
       real(dp) :: ttt(2)
@@ -215,12 +206,9 @@ contains
       integer(c_size_t) :: st_soap
       integer(c_size_t) :: st_n_pairs
       integer(c_size_t) :: st_xyz
-      integer(c_size_t) :: st_nnlist
       integer(c_size_t) :: st_forces
       integer(c_size_t) :: st_virial
       integer(c_size_t) :: st_neigh
-      integer(c_size_t) :: st_neigh_beg
-      integer(c_size_t) :: st_neigh_end
 
 #ifdef _MPIF90
       ttt(1) = MPI_Wtime()
@@ -298,47 +286,25 @@ contains
          call gpu_blas_mmul_n_t(cublas_handle, kernels_der_d, Qs_copy_d, Qss_d, n_sparse, &
                                 n_soap, n_sites, cdelta_force)
 
-         allocate (neighbors_beg(1:n_sites))
-         allocate (neighbors_end(1:n_sites))
-         l = 0
-         maxnn = 0
+!        Each pair's site and the atom it lands on, formed on the device from
+!        the site offsets: walking every pair here held the device idle.
+         allocate (pair_start(1:n_sites + 1))
+         pair_start(1) = 0
          do i = 1, n_sites
-            neighbors_beg(i) = l + 1
-            do j = 1, n_neigh(i)
-               l = l + 1
-            end do
-            neighbors_end(i) = l
-            if (n_neigh(i) > maxnn) then
-               maxnn = n_neigh(i)
-            end if
+            pair_start(i + 1) = pair_start(i) + n_neigh(i)
          end do
-         n_pairs = l
-
-         allocate (l_index(1:n_pairs))
-
-         l = 0
-         do i = 1, n_sites
-            do j = 1, n_neigh(i)
-               l = l + 1
-               l_index(l) = i
-            end do
-         end do
-         st_n_pairs = n_pairs*sizeof(l_index(1))
+         n_pairs = pair_start(n_sites + 1)
+         st_n_pairs = n_pairs*sizeof(n_pairs)
          call gpu_malloc_async(l_index_d, st_n_pairs, gpu_stream)
-         call cpy_htod(c_loc(l_index), l_index_d, st_n_pairs, gpu_stream)
-
-         allocate (j2_index(1:n_pairs))
-         l = 0
-         do i = 1, n_sites
-            do j = 1, n_neigh(i)
-               l = l + 1
-               j2 = mod(neighbors_list(l) - 1, n_sites0) + 1
-               j2_index(l) = j2
-            end do
-         end do
-         st_n_pairs = n_pairs*sizeof(j2_index(1))
          call gpu_malloc_async(j2_index_d, st_n_pairs, gpu_stream)
-         call cpy_htod(c_loc(j2_index), j2_index_d, st_n_pairs, gpu_stream)
+         call gpu_malloc_async(neighbors_list_d, st_n_pairs, gpu_stream)
+         call cpy_htod(c_loc(neighbors_list), neighbors_list_d, st_n_pairs, gpu_stream)
+         st_neigh = (n_sites + 1)*sizeof(n_pairs)
+         call gpu_malloc_async(pair_start_d, st_neigh, gpu_stream)
+         call cpy_htod(c_loc(pair_start), pair_start_d, st_neigh, gpu_stream)
+         call gpu_pair_indices(n_sites, n_sites0, pair_start_d, neighbors_list_d, l_index_d, j2_index_d, gpu_stream)
+         call gpu_free_async(pair_start_d, gpu_stream)
+         call gpu_free_async(neighbors_list_d, gpu_stream)
 
          virial = 0.d0
          forces = 0.d0
@@ -346,8 +312,6 @@ contains
          n1xyz = size(xyz, 1)
          n2xyz = size(xyz, 2)
          size_xyz = n1xyz*n2xyz
-
-         size_nnlist = size(neighbors_list, 1)
 
          n1forces = size(forces, 1)
          n2forces = size(forces, 2)
@@ -369,25 +333,11 @@ contains
          call gpu_malloc_async(xyz_d, st_xyz, gpu_stream)
          call cpy_htod(c_loc(xyz), xyz_d, st_xyz, gpu_stream)
 
-         st_nnlist = size_nnlist*sizeof(neighbors_list(1))
-         call gpu_malloc_async(neighbors_list_d, st_nnlist, gpu_stream)
-         call cpy_htod(c_loc(neighbors_list), neighbors_list_d, st_nnlist, gpu_stream)
-
          st_forces = size_forces*sizeof(forces(1, 1))
          call gpu_malloc_async(forces_d, st_forces, gpu_stream)
 
          st_virial = size_virial*sizeof(virial(1, 1))
          call gpu_malloc_async(virial_d, st_virial, gpu_stream)
-
-         st_neigh = n_sites*sizeof(n_neigh(1))
-
-         st_neigh_end = n_sites*sizeof(neighbors_end(1))
-         call gpu_malloc_async(neighbors_end_d, st_neigh_end, gpu_stream)
-         call cpy_htod(c_loc(neighbors_end), neighbors_end_d, st_neigh_end, gpu_stream)
-
-         st_neigh_beg = n_sites*sizeof(neighbors_beg(1))
-         call gpu_malloc_async(neighbors_beg_d, st_neigh_beg, gpu_stream)
-         call cpy_htod(c_loc(neighbors_beg), neighbors_beg_d, st_neigh_beg, gpu_stream)
 
          call gpu_final_soap_forces_virial(n_sites, &
                                            Qss_d, n_soap, l_index_d, j2_index_d, &
@@ -411,9 +361,6 @@ contains
 
       ! Now moving deallocation outside of routine so that local properties can use them.
 
-      call gpu_free_async(neighbors_list_d, gpu_stream)
-      call gpu_free_async(neighbors_end_d, gpu_stream)
-      call gpu_free_async(neighbors_beg_d, gpu_stream)
       call gpu_free_async(kernels_der_d, gpu_stream)
       call gpu_free_async(Qss_d, gpu_stream)
       call gpu_free_async(Qs_copy_d, gpu_stream)
@@ -438,12 +385,8 @@ contains
 
       deallocate (kernels, kernels_copy, tmp_energies)
 
-      if (allocated(j2_index)) deallocate (j2_index)
-      if (allocated(l_index)) deallocate (l_index)
-
       if (do_forces) then
-         deallocate (tmp_forces, tmp_virial)
-         deallocate (neighbors_beg, neighbors_end)
+         deallocate (tmp_forces, tmp_virial, pair_start)
       end if
 
 #ifdef _MPIF90

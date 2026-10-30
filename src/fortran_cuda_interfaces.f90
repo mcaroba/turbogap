@@ -232,6 +232,18 @@ MODULE F_B_C
          integer(c_int), value :: n_sparse
       end subroutine
 
+      subroutine gpu_pair_indices(n_sites, n_sites0, pair_start_d, neighbors_list_d, l_index_d, j2_index_d, gpu_stream) &
+         bind(C, name="gpu_pair_indices")
+         use iso_c_binding
+         integer(c_int), value :: n_sites
+         integer(c_int), value :: n_sites0
+         type(c_ptr), value :: pair_start_d
+         type(c_ptr), value :: neighbors_list_d
+         type(c_ptr), value :: l_index_d
+         type(c_ptr), value :: j2_index_d
+         type(c_ptr) :: gpu_stream
+      end subroutine
+
       subroutine gpu_final_soap_forces_virial(n_sites, &
                                               Qss_d, n_soap, l_index_d, j2_index_d, &
                                               soap_der_d, &
