@@ -34,7 +34,7 @@
 module turbogap_results
 
    use kinds, only: dp
-   use types, only: input_parameters, perform_t, any_has_local_properties
+   use types, only: input_parameters, perform_t, any_has_local_properties, soap_turbo
    use turbogap_structure, only: state_t
    use turbogap_setup, only: model_t
    use turbogap_loop, only: loop_t
@@ -162,7 +162,9 @@ contains
       integer, intent(in) :: n_pairs
       integer, intent(in) :: n_pairs_prev
       logical, intent(out) :: resized
+      logical :: fresh
 
+      fresh = .false.
       resized = (state%n_sites /= loop%n_sites_prev .or. params%do_mc)
 
       !     We only need to reallocate the arrays if the number of sites changes.
@@ -284,14 +286,17 @@ contains
                allocate (res%local_properties_cart_der(1:3, 1:n_pairs, 1:params%n_local_properties))
                allocate (res%this_local_properties_cart_der(1:3, 1:n_pairs, &
                                                             1:params%n_local_properties))
+               fresh = .true.
             end if
             if (.not. allocated(res%local_properties_cart_der)) then
                allocate (res%local_properties_cart_der(1:3, 1:n_pairs, 1:params%n_local_properties))
                allocate (res%this_local_properties_cart_der(1:3, 1:n_pairs, &
                                                             1:params%n_local_properties))
+               fresh = .true.
             end if
 
-            res%local_properties_cart_der = 0.d0
+!           Pair-wide; nothing writes it unless some gradient is computed.
+            if (fresh .or. any_lp_derivatives(model%soap_turbo_hypers)) res%local_properties_cart_der = 0.d0
             res%this_local_properties_cart_der_pt =>&
                  & res%this_local_properties_cart_der(1:3,&
                  & 1:n_pairs, 1:params&
@@ -615,5 +620,17 @@ contains
       if (allocated(res%this_local_properties)) deallocate (res%this_local_properties)
       if (allocated(res%this_local_properties_cart_der)) deallocate (res%this_local_properties_cart_der)
    end subroutine results_free
+
+   pure logical function any_lp_derivatives(hypers)
+      type(soap_turbo), allocatable, intent(in) :: hypers(:)
+      integer :: i
+
+      any_lp_derivatives = .false.
+      if (.not. allocated(hypers)) return
+      do i = 1, size(hypers)
+         if (.not. hypers(i)%has_local_properties) cycle
+         if (any(hypers(i)%local_property_models(:)%do_derivatives)) any_lp_derivatives = .true.
+      end do
+   end function any_lp_derivatives
 
 end module turbogap_results
