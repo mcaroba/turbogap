@@ -403,6 +403,24 @@ MODULE F_B_C
          type(c_ptr) :: gpu_stream
       end subroutine
 
+      subroutine gpu_soap_pair_site(n_sites, k2_start_d, n_neigh_d, k2_i_site_d, gpu_stream) &
+         bind(C, name="gpu_soap_pair_site")
+         use iso_c_binding
+         integer(c_int), value :: n_sites
+         type(c_ptr), value :: k2_start_d
+         type(c_ptr), value :: n_neigh_d
+         type(c_ptr), value :: k2_i_site_d
+         type(c_ptr) :: gpu_stream
+      end subroutine
+
+      subroutine gpu_logical_to_bool(logical_d, bool_d, n, gpu_stream) bind(C, name="gpu_logical_to_bool")
+         use iso_c_binding
+         type(c_ptr), value :: logical_d
+         type(c_ptr), value :: bool_d
+         integer(c_int), value :: n
+         type(c_ptr) :: gpu_stream
+      end subroutine
+
       subroutine gpu_soap_expansion_release(gpu_stream) bind(C, name="gpu_soap_expansion_release")
          use iso_c_binding
          type(c_ptr) :: gpu_stream

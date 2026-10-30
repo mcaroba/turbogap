@@ -481,6 +481,22 @@ extern "C" void gpu_soap_normalize(double* soap_d, double* sqrt_dot_d, int n_soa
   cuda_soap_normalize<<<n_sites, tpb, 0, stream[0]>>>(soap_d, sqrt_dot_d, n_soap, n_sites);
 }
 
+// The 1-based site of each pair from each site's 0-based first pair, and the
+// species mask from Fortran logicals: per-pair loops get_soap used to run.
+extern "C" void gpu_soap_pair_site(int n_sites, int* k2_start_d, int* n_neigh_d, int* k2_i_site_d, hipStream_t* stream) {
+  tg_parallel_for(
+      "turbogap_soap_pair_site", n_sites, stream,
+      TG_LAMBDA(const int i) {
+        for (int k = k2_start_d[i]; k < k2_start_d[i] + n_neigh_d[i]; k++)
+          k2_i_site_d[k] = i + 1;
+      },
+      tpb);
+}
+
+extern "C" void gpu_logical_to_bool(int* logical_d, bool* bool_d, int n, hipStream_t* stream) {
+  tg_parallel_for("turbogap_soap_logical_to_bool", n, stream, TG_LAMBDA(const int k) { bool_d[k] = logical_d[k] != 0; }, tpb);
+}
+
 // The expansion of one batch, kept by get_soap in place of the descriptor
 // derivatives, for gpu_soap_pair_contract. Everything but soap_d and the
 // multiplicities was get_soap's and is freed by gpu_soap_expansion_release.

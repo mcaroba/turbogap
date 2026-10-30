@@ -79,6 +79,8 @@ void gpu_soap_keep_expansion(double* soap_d, double* sqrt_dot_d, hipDoubleComple
                              int* k2_start_d, int* n_neigh_d, double* multiplicity_d, bool* skip_soap_component_d, double rcut_max,
                              int n_sites, int n_pairs, int n_soap, int k_max, int n_max, int l_max, hipStream_t* stream);
 void gpu_soap_expansion_release(hipStream_t* stream);
+void gpu_soap_pair_site(int n_sites, int* k2_start_d, int* n_neigh_d, int* k2_i_site_d, hipStream_t* stream);
+void gpu_logical_to_bool(int* logical_d, bool* bool_d, int n, hipStream_t* stream);
 void gpu_soap_pair_contract(double* G_d, double sign, double* pair_d, hipStream_t* stream);
 void gpu_get_derivatives(double* radial_exp_coeff_d, hipDoubleComplex* angular_exp_coeff_d, double* radial_exp_coeff_der_d,
                          hipDoubleComplex* angular_exp_coeff_rad_der_d, hipDoubleComplex* angular_exp_coeff_azi_der_d,
