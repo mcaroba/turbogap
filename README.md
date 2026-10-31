@@ -75,6 +75,7 @@ _**tl;dr, GPU**_ (CUDA or ROCm, on top of the above):
 git clone --recursive https://github.com/mcaroba/turbogap.git
 cd turbogap
 export TURBOGAP_ARCH=Aalto_gfortran_openblas_hip_cuda
+export CUDA_ARCH=sm_80    # your card: sm_80 A100, sm_90 H100/GH200, ...
 ./compile_gpu.sh
 export PATH="$(realpath bin-gpu):$PATH"
 ```
@@ -215,6 +216,53 @@ and their dependencies, filtered to those that do something in that mode.
 `turbogap --help gap` lists the keywords of the potential (`.gap`) file
 instead, grouped by the block they belong to (`soap_turbo`, `distance_2b`,
 `angle_3b`, `core_pot`). With no topic at all, both files are listed.
+
+### Running in parallel
+
+A run is MPI ranks, each with OpenMP threads. Unless `OMP_NUM_THREADS` is
+set, each rank takes the node's cores divided by the ranks on it; the banner
+prints the number.
+
+**CPU** (`bin/turbogap`): one rank per physical core and one thread. Pure MPI
+is the fastest layout -- 16 threads reach about 60% of 16 ranks. For large
+systems, decompose space so each rank holds only its own region:
+
+```sh
+# input:  dd_type = rcb
+#         dd_integrate = domain
+export OMP_NUM_THREADS=1
+srun --ntasks-per-node=<cores per node> --cpu-bind=cores turbogap md
+# or:  mpirun -np <cores> --bind-to core turbogap md
+```
+
+**GPU** (`bin-gpu/turbogap`): one rank per GPU -- several ranks sharing a card
+are slower -- bound to that GPU and to the cores next to it, with those cores
+as its threads (they prepare the next batch while the GPU runs this one). With
+more than one GPU use the same `rcb` decomposition. Batch sizes follow the
+card's memory; leave `gpu_batch_gbytes` unset.
+
+```sh
+# input (more than one GPU):  dd_type = rcb
+#                             dd_integrate = domain
+export OMP_NUM_THREADS=<cores per GPU>      # 72 on a GH200 node
+export OMP_PLACES=cores OMP_PROC_BIND=close
+srun --ntasks-per-node=<GPUs per node> --cpus-per-task=<cores per GPU> \
+     --gpus-per-node=<GPUs per node> --gpu-bind=closest --cpu-bind=cores turbogap md
+```
+
+Without `--gpu-bind=closest` every rank can land on GPU 0, silently; check
+that the `GPUdev:` lines at the top of the output show a different
+`CUDA_VISIBLE_DEVICES` for each rank.
+Under `mpirun`, give each rank its own card through a wrapper that sets
+`CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK` (ROCm:
+`HIP_VISIBLE_DEVICES`).
+
+**How many atoms per core or GPU.** Give each GPU at least 50k atoms, and
+100k or more when spreading over several; give each CPU core 100 or more. One
+GH200 does about the work of two 384-core CPU nodes, and experimental biasing
+(XRD, XPS) costs 2-5 times the potential's step on GPUs and more on CPUs.
+The measurements, and what a profile of each build shows, are in
+`docs/PERFORMANCE.md`.
 
 ## TurboGAP Tutorials
 
