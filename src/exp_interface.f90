@@ -641,7 +641,7 @@ contains
 
          if (params%do_forces .and. params%exp_forces) then
             allocate (pair_distribution_partial_der(1:params%pair_distribution_n_samples,&
-              & 1:n_dim_partial, j_beg:j_end))
+              & 1:pdf_der_slot(n_dim_partial), j_beg:j_end))
             pair_distribution_partial_der = 0.d0
 
             if (rank == 0 .and. md_istep == 0) write (*, '(A,1X,F7.4,1X,A)') "Gb/core: partial pdfder = ", dfloat(params&
@@ -709,8 +709,8 @@ contains
                     & params%pair_distribution_partial, j, k,&
                     & params%pair_distribution_kde_sigma,&
                     & dfloat(n_sites)/v_uc, params%exp_forces,&
-                    & pair_distribution_partial_der, n_dim_idx, &
-                    & j_beg, j_end)
+                    & pair_distribution_partial_der, pdf_der_slot(n_dim_idx), &
+                    & j_beg, j_end, [v_uc, n_atoms_of_species(j), n_atoms_of_species(k), factors(n_dim_idx)])
 
                n_dim_idx = n_dim_idx + 1
 
@@ -796,16 +796,6 @@ contains
                     &%pair_distribution_n_samples, n_dim_idx)*v_uc &
                     &  /n_atoms_of_species(j)/n_atoms_of_species(k)/factors(n_dim_idx) !real(n_sites)
 
-               if (params%do_forces .and. params%exp_forces) then
-                  pair_distribution_partial_der(1:params&
-                       &%pair_distribution_n_samples, n_dim_idx, &
-                       & j_beg:j_end) = pair_distribution_partial_der(1:params&
-                       & %pair_distribution_n_samples, n_dim_idx, &
-                       & j_beg:j_end)*v_uc/n_atoms_of_species(j)/ &
-                       & n_atoms_of_species(k)/factors(n_dim_idx)!real(n_sites)
-
-               end if
-
                y_pair_distribution(1:params%pair_distribution_n_samples) = &
                     & y_pair_distribution(1:params%pair_distribution_n_samples) +  &
                     &  factors(n_dim_idx)*(n_atoms_of_species(j)*n_atoms_of_species(k))* &
@@ -861,7 +851,7 @@ contains
                           & y_pair_distribution(1:params&
                           &%pair_distribution_n_samples), params%pair_distribution_rcut&
                           &, j, k, pair_distribution_partial_der(1:params &
-                          &%pair_distribution_n_samples, n_dim_idx,&
+                          &%pair_distribution_n_samples, pdf_der_slot(n_dim_idx),&
                           & j_beg:j_end), params%pair_distribution_partial,&
                           & params%pair_distribution_kde_sigma,&
                           & ((n_atoms_of_species(j)*&
@@ -1042,6 +1032,18 @@ contains
       if (allocated(n_atoms_of_species)) deallocate (n_atoms_of_species)
 
    end subroutine finalize_pair_distribution
+
+!  The slot of species pair n_dim_idx in the pdf derivative array. Each atom
+!  pair belongs to one species pair, so the host build keeps one slot for all;
+!  the device build's batched transfer still expects one per species pair.
+   pure integer function pdf_der_slot(n_dim_idx) result(slot)
+      integer, intent(in) :: n_dim_idx
+#ifdef _GPU
+      slot = n_dim_idx
+#else
+      slot = 1
+#endif
+   end function pdf_der_slot
 
 #ifdef _GPU
    subroutine calculate_structure_factor(params, x_structure_factor, x_structure_factor_temp,&
@@ -1966,7 +1968,7 @@ contains
                                 &%structure_factor_n_samples), y_structure_factor(1:params&
                                 &%structure_factor_n_samples), params%pair_distribution_rcut&
                                 &, j, k, pair_distribution_partial_der(1:params &
-                                &%pair_distribution_n_samples, n_dim_idx,&
+                                &%pair_distribution_n_samples, pdf_der_slot(n_dim_idx),&
                                 & j_beg:j_end), params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
@@ -1988,7 +1990,7 @@ contains
                                 &%structure_factor_n_samples), y_structure_factor(1:params&
                                 &%structure_factor_n_samples), params%pair_distribution_rcut&
                                 &, j, k, pair_distribution_partial_der(1:params &
-                                &%pair_distribution_n_samples, n_dim_idx,&
+                                &%pair_distribution_n_samples, pdf_der_slot(n_dim_idx),&
                                 & j_beg:j_end), params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
@@ -2694,7 +2696,7 @@ contains
                                 &%structure_factor_n_samples), y_xrd(1:params&
                                 &%structure_factor_n_samples), params%pair_distribution_rcut&
                                 &, j, k, pair_distribution_partial_der(1:params &
-                                &%pair_distribution_n_samples, n_dim_idx,&
+                                &%pair_distribution_n_samples, pdf_der_slot(n_dim_idx),&
                                 & j_beg:j_end), params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
@@ -2715,7 +2717,7 @@ contains
                                 &%structure_factor_n_samples), y_xrd(1:params&
                                 &%structure_factor_n_samples), params%pair_distribution_rcut&
                                 &, j, k, pair_distribution_partial_der(1:params &
-                                &%pair_distribution_n_samples, n_dim_idx,&
+                                &%pair_distribution_n_samples, pdf_der_slot(n_dim_idx),&
                                 & j_beg:j_end), params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&

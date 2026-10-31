@@ -1412,14 +1412,7 @@ contains
       logical, intent(in) :: neutron
       logical :: species_in_list
       logical :: counted_1 = .false.
-      real(dp), allocatable :: xyz_k(:, :)
-      real(dp), allocatable :: Gk(:, :)
-      real(dp), allocatable :: Gka(:, :)
-      real(dp), allocatable :: dermat(:, :)
-      real(dp), allocatable :: fi(:, :)
-      integer, allocatable :: k_list(:)
-      integer, allocatable :: i2_list(:)
-      integer, allocatable :: j2_list(:)
+      real(dp), allocatable :: w_r(:)
 
       ! First allocate the pair correlation function array
 
@@ -1530,129 +1523,47 @@ contains
 
       end if
 
-      ! First loop to get the number of valid k indexes
-!    call cpu_time(time(1))
-      n_k = 0
+!     The energy reaches a pair only through w = S^T (prefactor * f(q)), one
+!     weight per r sample, so each pair's force is a dot product with its
+!     pdf derivative rather than a row of a pairs x samples matrix product.
+      allocate (w_r(1:n_samples))
+      if (do_xrd) then
+         temp = prefactor*all_scattering_factors
+      else
+         temp = prefactor
+      end if
+      call dgemv("T", n_samples_sf, n_samples, 1.d0, sinc_factor_matrix, n_samples_sf,&
+           & temp, 1, 0.d0, w_r, 1)
+
       k = 0
       do i = 1, n_sites
-         i2 = modulo(neighbors_list(k + 1) - 1, n_sites0) + 1
          species_i = neighbor_species(k + 1)
          k = k + 1
          do j = 2, n_neigh(i)
             k = k + 1
-            j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
             species_j = neighbor_species(k)
 
             if (((species_i /= species_1) .or. (species_j /= species_2))) then
                if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
             end if
 
-            r = rjs(k) ! atom pair distance
+            r = rjs(k)
             if (r < 1e-3 .or. r > r_cut) cycle
             if (r < r_min) cycle
             if (r > r_max + kde_sigma*6.d0) cycle
-            if ((.not. all(xyz(1:3, k) == 0.d0)) .and. &
-                 & (.not. all(pair_distribution_der(1:n_samples, k) == 0.d0))) then
-               n_k = n_k + 1
-            end if
-         end do
-      end do
 
-      ! print *, " Structure factor forces Matrix: ", species_1, species_2
-      ! write(*, '(A,1X,F7.4,1X,A)') "Gb/core: SFM = ", dfloat(n_k * ( 2 * n_samples + 6 + n_samples_sf ))&
-      !            & * 8.d0 / (dfloat(1024*1024*1024)), " Gb  |"
-
-      allocate (k_list(1:n_k))
-      allocate (j2_list(1:n_k))
-      allocate (xyz_k(1:3, 1:n_k))
-      allocate (Gk(1:n_samples, 1:n_k))
-      allocate (Gka(1:n_samples, 1:n_k))
-      allocate (fi(1:n_k, 1:3)) ! We use the opposite dimensions for non temporary arrays
-      allocate (dermat(1:n_samples_sf, 1:n_k))
-
-      ! [sinc_factor_matrix] = n_samples_sf * n_samples_pc  ( N x M )
-      ! [g_ab]               = n_samples_pc * n_dim_partial ( M x K )
-      ! [S_ab]               = n_samples_sf * n_dim_partial ( N x K )
-      ! S_ab = [sinc_factor_matrix] x [g_ab - 1]
-      !      = ( N x M ) . ( M x K ) -> ( N x K )
-      ! alpha * (A * B) + beta * C
-      ! A === sinc_factor_partial
-      ! B === [g_ab - 1]
-      ! C === S_ab
-      !   TRANS_A, TRANS_B  N_ROWS_A  N_COLS_B  N_COLS_A ( == N_ROWS_B ) alpha,
-      !                                                   A,  first_dim_A,    B,      first_dim_B,  beta,  C, first_dim_C
-
-      ! We will eventually do sinc_factor_matrix * Gk
-
-      ! Now we loop again to allocate the arrays
-!    call cpu_time(time(1))
-      n_k = 0
-      k = 0
-      do i = 1, n_sites
-         i2 = modulo(neighbors_list(k + 1) - 1, n_sites0) + 1
-         species_i = neighbor_species(k + 1)
-         k = k + 1
-         do j = 2, n_neigh(i)
-            k = k + 1
             j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
-            species_j = neighbor_species(k)
+            f = -2.d0*c_factor*dot_product(w_r, pair_distribution_der(1:n_samples, k))
+            this_force(1:3) = energy_scale*f*xyz(1:3, k)
+            forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 
-            if (((species_i /= species_1) .or. (species_j /= species_2))) then
-               if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
-            end if
-
-            r = rjs(k) ! atom pair distance
-            if (r < 1e-3 .or. r > r_cut) cycle
-            if (r < r_min) cycle
-            if (r > r_max + kde_sigma*6.d0) cycle
-            if ((.not. all(xyz(1:3, k) == 0.d0)) .and. &
-                 & (.not. all(pair_distribution_der(1:n_samples, k) == 0.d0))) then
-               n_k = n_k + 1
-               k_list(n_k) = k
-               j2_list(n_k) = j2
-               xyz_k(1:3, n_k) = xyz(1:3, k)
-               Gk(1:n_samples, n_k) = -2.d0*c_factor*pair_distribution_der(1:n_samples, k)
-            end if
-         end do
-      end do
-
-      do i = 1, 3
-
-         do j = 1, n_samples
-            Gka(j, :) = xyz_k(i, :)*Gk(j, :)
-         end do
-
-         call dgemm("N", "N", n_samples_sf, n_k, n_samples, 1.d0, sinc_factor_matrix, n_samples_sf,&
-           & Gka, n_samples, 0.d0,&
-           & dermat, n_samples_sf)
-         ! call my_dgemm(sinc_factor_matrix(1:n_samples_sf, 1:n_samples),&
-         !      & Gka(1:n_samples,1:n_k), dermat(1:n_samples_sf,1:n_k),&
-         !      & n_samples_sf, n_k, n_samples)
-
-         !dermat = matmul(sinc_factor_matrix, Gka)
-
-         if (do_xrd) then
-            do j = 1, n_k
-               dermat(1:n_samples_sf, j) = all_scattering_factors*dermat(1:n_samples_sf, j)
-            end do
-         end if
-
-         ! Now we take the dot products by matrix vector
-         call dgemv("T", n_samples_sf, n_k, 1.d0, dermat, n_samples_sf,&
-              &  prefactor, 1, 0.d0, fi(:, i), 1)
-
-      end do
-
-      do j = 1, n_k
-         this_force(1:3) = energy_scale*fi(j, 1:3)
-         forces0(1:3, j2_list(j)) = forces0(1:3, j2_list(j)) + this_force(1:3)
-
-!        See the note in get_structure_factor_forces: 0.25 is 0.5 to
-!        symmetrise, times 0.5 because k_list holds ordered pairs and the
-!        reversed pair reproduces this term rather than adding a new one.
-         do k1 = 1, 3
-            do k2 = 1, 3
-               virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz_k(k2, j) + this_force(k2)*xyz_k(k1, j))
+!           See the note in get_structure_factor_forces: 0.25 is 0.5 to
+!           symmetrise, times 0.5 because the pairs are ordered and the
+!           reversed pair reproduces this term rather than adding a new one.
+            do k1 = 1, 3
+               do k2 = 1, 3
+                  virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+               end do
             end do
          end do
       end do
@@ -1665,7 +1576,7 @@ contains
               & prefactor, sinc_factor_matrix, n_samples, n_samples_sf)
       end if
 
-      deallocate (dermat, fi, Gka, Gk, xyz_k, j2_list, k_list)
+      deallocate (w_r)
       if (do_xrd) deallocate (all_scattering_factors)
       if (do_xrd) deallocate (sf_parameters)
       deallocate (prefactor)
@@ -1859,7 +1770,8 @@ contains
    subroutine get_pair_distribution(n_sites0, &
         & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min, r_max, n_samples, x,&
         & pair_distribution, r_cut, return_histogram,&
-        & partial_rdf, species_1, species_2, kde_sigma, rho, do_derivatives, pair_distribution_der, n_dim_idx, j_beg, j_end)
+        & partial_rdf, species_1, species_2, kde_sigma, rho, do_derivatives, &
+        & pair_distribution_der, n_dim_idx, j_beg, j_end, der_scale)
       implicit none
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: kde_sigma
@@ -1878,6 +1790,9 @@ contains
       integer, intent(in) :: n_dim_idx
       integer, intent(in) :: j_beg
       integer, intent(in) :: j_end
+!     v_uc, n_a, n_b, f: the partial's normalisation, applied to the
+!     derivatives as * v_uc / n_a / n_b / f.
+      real(dp), intent(in), optional :: der_scale(1:4)
       integer :: n_sites
       integer :: n_pairs
       integer :: count
@@ -1907,6 +1822,13 @@ contains
       real(dp), allocatable :: kde(:)
       real(dp) :: r
       real(dp) :: n_pc
+      real(dp) :: dr
+      real(dp) :: kde_norm
+!     Gaussian kernels are evaluated within KDE_CUT sigma of each pair; past
+!     that they are below 3e-18 of their peak.
+      real(dp), parameter :: KDE_CUT = 9.d0
+      integer :: l_lo
+      integer :: l_hi
       real(dp) :: ri_vec(1:3)
       real(dp) :: rj_vec(1:3)
       real(dp), parameter :: pi = acos(-1.0)
@@ -1959,6 +1881,9 @@ contains
 
       end do
 
+      dr = (r_max - r_min)/dfloat(n_samples)
+      kde_norm = sqrt(2.d0*pi)*kde_sigma
+
       count = 0
       count_species_1 = 0
       k = 0
@@ -2009,40 +1934,26 @@ contains
             if (kde_sigma > 0.d0) then
                ! do a kernel density estimate
                count = count + 1
-               kde = 0.d0
-               do l = 1, n_samples
-                  kde(l) = kde(l) + exp(-((x(l) - r)/kde_sigma)**2/2.d0)
+               l_lo = max(1, int((r - KDE_CUT*kde_sigma - r_min)/dr))
+               l_hi = min(n_samples, int((r + KDE_CUT*kde_sigma - r_min)/dr) + 2)
+               do l = l_lo, l_hi
+                  kde(l) = exp(-((x(l) - r)/kde_sigma)**2/2.d0)
+                  pair_distribution(l) = pair_distribution(l) + kde(l)
                end do
-               pair_distribution(1:n_samples) = pair_distribution(1:n_samples) + &
-                    & kde(1:n_samples)
 
+!              The derivative row of pair k is written once, so the
+!              normalisations are applied here rather than over the whole array.
                if (do_derivatives) then
-                  ! reuse kde to get the derivatives
-                  do l = 1, n_samples
-                     kde(l) = kde(l)*((x(l) - r)/kde_sigma**2)/r/dV(l)
+                  do l = l_lo, l_hi
+                     pair_distribution_der(l, n_dim_idx, k) = &
+                          & kde(l)*((x(l) - r)/kde_sigma**2)/r/dV(l)*dr/kde_norm
                   end do
-
-                  ! the first term is ( delta_jk - delta_ik )*( r_j^alpha - r_i^alpha )
-                  ! which can be double counted as per the vdw paper as
-                  ! 2 * ( - delta_ik )*( r_j^alpha - r_i^alpha )
-                  ! therefore we only have a contributon at i == k
-
-                  ! Calculating the derivatives this way takes up too much memory if the cutoff is very large.
-                  ! There must be some other way
-                  ! do i4 = 1,3
-                  !    pair_distribution_der(1:n_samples, i4, k) = - 2.d0 * xyz( i4, k ) * kde
-                  ! end do
-
-                  ! Calculating the derivatives this way simply takes up too much memory
-                  ! There must be some other way
-                  ! do i4 = 1,3
-                  !    pair_distribution_der(1:n_samples, i4, k) = - 2.d0 * xyz( i4, k ) * kde
-                  ! end do
-
-                  pair_distribution_der(1:n_samples, n_dim_idx, k) = &
-                       & pair_distribution_der(1:n_samples, n_dim_idx, &
-                       & k) + kde(1:n_samples)
-
+                  if (present(der_scale)) then
+                     do l = l_lo, l_hi
+                        pair_distribution_der(l, n_dim_idx, k) = pair_distribution_der(l, n_dim_idx, k) &
+                                                                & *der_scale(1)/der_scale(2)/der_scale(3)/der_scale(4)
+                     end do
+                  end if
                end if
             else
 
@@ -2062,12 +1973,6 @@ contains
          pair_distribution(1:n_samples) =&
               & pair_distribution(1:n_samples)*((r_max - r_min)/dfloat(n_samples)) &
               & /(sqrt(2.d0*pi)*kde_sigma)
-
-         if (do_derivatives) then
-            pair_distribution_der(1:n_samples, n_dim_idx, 1:n_pairs) =&
-                 & pair_distribution_der(1:n_samples, n_dim_idx, 1:n_pairs)*((r_max - r_min)/dfloat(n_samples)) &
-                 & /(sqrt(2.d0*pi)*kde_sigma)
-         end if
 
       end if
 
