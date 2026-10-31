@@ -1,11 +1,15 @@
 """The MCP surface: tool, resource and prompt registration only."""
 
+import functools
 from functools import cache
 from typing import Any, Literal
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
-from . import examples
+from . import examples, jobs
+from .config import config_path, load_hosts
+from .hosts import HostError, make_host
 from .keywords import KeywordTable
 from .tree import root
 from .validate import as_dicts, validate
@@ -16,6 +20,8 @@ Gaussian Approximation Potentials. An input file is one `keyword = value` per li
 an unknown keyword aborts the run. Before writing an input, look keywords up with
 `keywords`, start from a worked example under turbogap://examples, and check the
 result with `validate_input` for the mode it will run in (predict, md, mc, soap, ipi).
+Runs are asynchronous: `run_start` returns a job id at once; poll it with `run_status`
+and read a summary with `run_results`. turbogap://hosts lists where runs can go.
 """
 
 MAD_OBSERVABLES = {
@@ -68,6 +74,96 @@ def validate_input(input_text: str, mode: str) -> dict[str, Any]:
     errors = sum(i.severity == "error" for i in issues)
     return {"ok": errors == 0, "errors": errors, "warnings": len(issues) - errors,
             "issues": as_dicts(issues)}
+
+
+def reported(tool):
+    """Pass expected failures to the client as their own message; the SDK
+    otherwise keeps any exception's text on the server."""
+    @functools.wraps(tool)
+    def wrapper(*args, **kwargs):
+        try:
+            return tool(*args, **kwargs)
+        except (HostError, ValueError) as e:
+            raise ToolError(str(e)) from e
+    return wrapper
+
+
+def get_host(name):
+    hosts = load_hosts()
+    if name not in hosts:
+        raise ValueError(f"no host '{name}' in {config_path()}; configured: {', '.join(hosts) or 'none'}")
+    return make_host(hosts[name])
+
+
+def job_and_host(job_id):
+    job = jobs.load(job_id)
+    return job, get_host(job.host)
+
+
+@server.tool()
+@reported
+def run_start(host: str, mode: str = "", input_text: str = "", case: str = "",
+              atoms_xyz: str = "", links: list[dict[str, str]] | None = None,
+              files: dict[str, str] | None = None, ranks: int = 0) -> dict[str, Any]:
+    """Start TurboGAP on a configured host and return a job id at once.
+
+    Either give `mode` and `input_text`, or name a regression `case` (see
+    turbogap://examples) to run it exactly as the suite stages it; anything else
+    given overrides the case. `atoms_xyz` is extended-XYZ text written to the input's
+    atoms_file; `files` are further small text files by name; `links` are
+    {source, target} symlinks to files already on the host, inside its runs_root,
+    test_data or read_roots. The input is validated first and nothing starts on an
+    error; every file the input names must exist before the launch. `ranks` is
+    capped by the host's max_ranks.
+    """
+    return jobs.start(get_host(host), table(), root(), mode=mode, input_text=input_text,
+                      atoms_xyz=atoms_xyz, links=links or [], files=files, ranks=ranks, case=case)
+
+
+@server.tool()
+@reported
+def run_status(job_id: str) -> dict[str, Any]:
+    """State of a job (running, done, failed, cancelled, lost), its exit code, the
+    last 20 lines of its log, and how many thermo.log rows it has written."""
+    job, h = job_and_host(job_id)
+    return jobs.status(h, job)
+
+
+@server.tool()
+@reported
+def run_results(job_id: str, frame: int = -1, arrays: bool = False) -> dict[str, Any]:
+    """Summary of a job's output: one trajectory frame (0-based, -1 the last) with
+    energy, virial, lattice, species and force statistics, and thermo.log as decimated
+    series. `arrays` adds positions and forces for up to 1000 atoms. Full files stay
+    on the host; their paths are returned."""
+    job, h = job_and_host(job_id)
+    return jobs.results(h, job, frame, arrays)
+
+
+@server.tool()
+@reported
+def run_cancel(job_id: str) -> dict[str, Any]:
+    """Stop a job: TERM its process group, then KILL what is left after 5 s."""
+    job, h = job_and_host(job_id)
+    return jobs.cancel(h, job)
+
+
+@server.resource("turbogap://hosts", mime_type="application/json")
+def host_list() -> list:
+    """The configured hosts, and whether each answers now."""
+    out = []
+    for name, config in load_hosts().items():
+        ok, why = make_host(config).reachable()
+        out.append({"name": name, "ssh": config.ssh or "(this machine)", "bin": config.bin,
+                    "runs_root": config.runs_root, "max_ranks": config.max_ranks,
+                    "reachable": ok, "error": why})
+    return out
+
+
+@server.resource("turbogap://jobs", mime_type="application/json")
+def job_list() -> list:
+    """Every job this server has started, oldest first."""
+    return [vars(j) for j in jobs.all_jobs()]
 
 
 @server.resource("turbogap://keywords.md", mime_type="text/markdown")

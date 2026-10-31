@@ -2,7 +2,7 @@
 name = "turbogap-mcp"
 version = "0.1.0"
 description = "MCP server for using TurboGAP: keywords, input validation, runs and a live calculator."
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = ["mcp>=2.3,<3"]
 
 [project.optional-dependencies]

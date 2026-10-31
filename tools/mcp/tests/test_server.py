@@ -27,7 +27,7 @@ def entry_point():
         pytest.fail(f"{ENTRY} is missing: install the package (uv sync) before testing it")
 
 
-def test_lists_the_phase_one_surface():
+def test_lists_the_surface():
     async def session(client):
         tools = await client.list_tools()
         templates = await client.list_resource_templates()
@@ -35,8 +35,10 @@ def test_lists_the_phase_one_surface():
         return tools, templates, resources
 
     tools, templates, resources = run(session)
-    assert {t.name for t in tools.tools} == {"keywords", "validate_input"}
-    assert {str(r.uri) for r in resources.resources} == {"turbogap://keywords.md", "turbogap://examples"}
+    assert {t.name for t in tools.tools} == {"keywords", "validate_input", "run_start", "run_status",
+                                             "run_results", "run_cancel"}
+    assert {str(r.uri) for r in resources.resources} == {"turbogap://keywords.md", "turbogap://examples",
+                                                         "turbogap://hosts", "turbogap://jobs"}
     assert [t.uri_template for t in templates.resource_templates] == ["turbogap://examples/{case}"]
 
 
@@ -62,6 +64,15 @@ def test_example_resource_is_a_runnable_recipe():
     assert recipe["mode"] == "predict"
     assert {"source": "atoms_7176.xyz", "target": "atoms.xyz"} in recipe["links"]
     assert recipe["input"].startswith('atoms_file = "atoms.xyz"')
+
+
+def test_unknown_job_is_a_tool_error():
+    async def session(client):
+        return await client.call_tool("run_status", {"job_id": "nope"})
+
+    result = run(session)
+    assert result.is_error
+    assert "no job 'nope'" in result.content[0].text
 
 
 def test_mad_prompt_points_at_examples():
