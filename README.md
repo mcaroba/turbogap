@@ -259,8 +259,9 @@ Under `mpirun`, give each rank its own card through a wrapper that sets
 
 **How many atoms per core or GPU.** Give each GPU at least 50k atoms, and
 100k or more when spreading over several; give each CPU core 100 or more. One
-GH200 does about the work of two 384-core CPU nodes, and experimental biasing
-(XRD, XPS) costs 2-5 times the potential's step on GPUs and more on CPUs.
+GH200 does about the work of two 384-core CPU nodes. Experimental biasing
+costs 1.1-2 times the potential's step on CPUs for XPS and Debye XRD and 5
+times for XRD from the pdf, and 2.3-4.4 times on GPUs.
 The measurements, and what a profile of each build shows, are in
 `docs/PERFORMANCE.md`.
 

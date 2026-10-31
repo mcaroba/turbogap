@@ -34,7 +34,8 @@ the GPU runs used whole nodes.
 | build | `compile_gpu.sh`, `CSC-Roihu_gfortran_openblas_cuda` | `make OPENMP=0`, `CSC-Roihu_gfortran_openblas_mpi` |
 | layout | one rank per GPU, 72 threads, `--gpu-bind=closest` | one rank per core, one thread |
 
-**Code.** Branch `perf/soap-der-one` as of 2026-10-31.
+**Code.** Branch `perf/soap-der-one` as of 2026-10-31; the Debye and XPS
+rows of the MAD table, `perf/mad-rank-local` (`b156426`).
 
 ## Speed of the potential
 
@@ -68,27 +69,37 @@ speed of 16 ranks, so run one rank per core.
 ## What experimental biasing costs
 
 The same 307,671 atoms, microseconds per step per atom, with the factor over
-plain MD in the same setting:
+plain MD run in the same job:
 
 | | 1 GH200 | 4 GH200 | 1 CPU node | 2 CPU nodes |
 | --- | --- | --- | --- | --- |
 | plain MD | 2.7 | 0.90 | 4.9 | 2.6 |
 | XRD from the pdf | 6.1 (2.3x) | 2.6 (2.9x) | 26 (5.3x) | 14 (5.3x) |
-| Debye XRD | 11 (4.2x) | 4.2 (4.7x) | 20 (4.0x) | 16 (6.2x) |
-| XPS | 7.3 (2.7x) | 2.9 (3.2x) | 25 (5.1x) | 23 (8.9x) |
-
-On four GPUs the factors hold with size (57k atoms: XRD 2.8x, Debye 4.4x,
-XPS 4.2x; 615k: 3.0x, 4.9x, 3.3x).
+| Debye XRD | 11 (4.4x) | 3.9 (4.1x) | 9.2 (1.9x) | 5.4 (2.1x) |
+| XPS | 6.6 (2.6x) | 2.6 (2.7x) | 5.3 (1.09x) | 2.9 (1.12x) |
 
 The pdf, the Debye sum and the XPS spectrum are properties of the whole
-system. Under a decomposition they are computed on a gathered copy of it, and
-the spectrum is broadened in full on every rank, so they scale worse than the
-potential and worst on many CPU ranks: XPS barely gets faster from one CPU
-node to two. Run MAD on GPUs where you can.
+system, computed under a decomposition from a gathered copy of the positions
+or binding energies. Each rank broadens only its own atoms' XPS lines and
+sums only its own atoms' Debye pairs, so those two scale like the potential.
+XRD from the pdf does not yet, and is now the costliest on CPUs. The GPU
+build runs the Debye sum as host code, and a CPU node now runs XPS faster
+than one GH200; both are where the GPU build has most to gain.
 
-**Memory.** Debye XRD and XPS hold an array over every atom of the system on
-every rank. On 307k atoms a CPU rank peaks near 1.9 GB with either, against
-0.7 GB for plain MD -- about 700 of the node's 760 GB at 384 ranks.
+Until `b156426` every rank also broadened every atom's XPS line and held the
+Debye gradient of every atom:
+
+| per step, 307k atoms | 1 GH200 | 4 GH200 | 1 CPU node | 2 CPU nodes |
+| --- | --- | --- | --- | --- |
+| XPS, s | 2.20 -> 2.02 | 0.88 -> 0.79 | 7.73 -> 1.64 | 7.26 -> 0.89 |
+| Debye XRD, s | 3.43 -> 3.43 | 1.25 -> 1.21 | 5.98 -> 2.83 | 4.92 -> 1.66 |
+| XPS, peak GB per rank | 7.3 -> 5.9 | 3.8 -> 2.4 | 1.8 -> 0.6 | 1.8 -> 0.6 |
+| Debye XRD, peak GB per rank | 6.0 -> 6.0 | 3.6 -> 2.5 | 1.9 -> 0.8 | 2.2 -> 1.0 |
+
+**Memory.** Peak resident memory per rank (sacct MaxRSS) with XPS is now that
+of plain MD on CPUs, 0.6 GB at 307k atoms on 384 ranks, and Debye XRD adds
+0.2-0.4 GB. On four GH200s plain MD peaks at 1.8 GB per rank and either term
+at 2.4-2.5 GB.
 
 ## Where the time goes
 
@@ -124,4 +135,5 @@ What the measured code was tested with, and where:
 | `tests/soap_descriptor_gpu` | the device descriptor kernels bit for bit against the originals, and the force contraction against the explicit derivative chain (to 4e-15) | alt: RTX 5070 |
 | `tests/xps_fd` | XPS forces and virial against finite differences of the XPS energy, serial and on two ranks | alt |
 | `tests/xrd_debye` | the Debye pattern against an independent numpy sum, forces and virial against finite differences | alt |
+| XPS and Debye on 3 ranks under `dd_type` none, rcb and legacy | forces and energies against the binary before `b156426`: identical | alt |
 | `tests/pdf_virial`, `tests/xrd_lp_pdf` (gradient) | pdf, structure factor and XRD forces and virial against finite differences, with the device build | alt: RTX 5070 |
