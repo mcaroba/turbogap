@@ -273,9 +273,10 @@ def parse_read_files(path):
             end = starts[n + 1] if n + 1 < len(starts) else len(body)
             header = body[j]
             k = j
+            # Fortran continuation: the text resumes after a leading & if there is one.
             while header.rstrip().endswith("&") and k + 1 < len(body):
                 k += 1
-                header += body[k]
+                header = header.rstrip()[:-1] + body[k].lstrip().lstrip("&")
             names = KW_RE.findall(header)
             if not names:
                 continue
@@ -351,9 +352,10 @@ def parse_gap_hypers(path):
             end = starts[n + 1] if n + 1 < len(starts) else hi
             header = body[j]
             k = j
+            # Fortran continuation: the text resumes after a leading & if there is one.
             while header.rstrip().endswith("&") and k + 1 < len(body):
                 k += 1
-                header += body[k]
+                header = header.rstrip()[:-1] + body[k].lstrip().lstrip("&")
             names = KW_RE.findall(header)
             if not names:
                 continue

@@ -1888,7 +1888,8 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
-         write (*, '(A)') '  exp_energy_scales                    [real list, eV]'
+         write (*, '(A)') '  exp_energy_scales (or exp_energy_scales_initial, exp_energy_scales_beg)'
+         write (*, '(A)') '      [real list, eV]'
          write (*, '(A)') '      Weight of each observable''s mismatch in the total energy, one value'
          write (*, '(A)') '      per observable. This is what sets how hard the data pulls against'
          write (*, '(A)') '      the potential. Also seeds the initial and final values of a ramp.'

@@ -4379,7 +4379,7 @@ contains
 ! do experimental
          params%do_exp = .true.
 
-         !> @kw exp_energy_scales
+         !> @kw exp_energy_scales, exp_energy_scales_initial, exp_energy_scales_beg
          !> Weight of each observable's mismatch in the total energy, one value per observable. This
          !> is what sets how hard the data pulls against the potential. Also seeds the initial and
          !> final values of a ramp.
