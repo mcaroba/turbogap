@@ -21,6 +21,7 @@
 module turbogap_exp
    use turbogap_loop, only: loop_t
    use turbogap_setup, only: model_t
+   use turbogap_comm, only: comm_t, comm_sum_all
 #ifdef _GPU
 
    use kinds
@@ -73,7 +74,7 @@ contains
 ! of arrays to pass. That was the last such statement in the driver.
    subroutine compute_exp_xps(params, n_sites, n_xyz, xyz, neighbors_list, n_neigh, &
                               local_properties, local_properties_cart_der, soap_turbo_hypers, &
-                              a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, rank, &
+                              a_box, b_box, c_box, indices, i_beg, i_end, j_beg, j_end, comm, &
                               md_istep, mc_istep, valid_xps, xps_idx, core_be_lp_index, &
                               write_condition, overwrite_condition, exp_output, &
                               energies_lp, forces_lp, virial_lp, time, be_all, site_ids)
@@ -88,7 +89,7 @@ contains
       integer, intent(in) :: i_end
       integer, intent(in) :: j_beg
       integer, intent(in) :: j_end
-      integer, intent(in) :: rank
+      type(comm_t), intent(in) :: comm
       integer, intent(in) :: indices(1:3)
       integer, intent(in) :: md_istep
       integer, intent(in) :: mc_istep
@@ -124,11 +125,15 @@ contains
       real(dp), allocatable :: y_xps(:)
       real(dp), allocatable :: y_i_pred_all(:, :)
       real(dp), allocatable :: v_neigh_lp(:)
+      real(dp), allocatable :: be_own(:)
       real(dp) :: mag
+      integer :: rank
       integer :: i
       integer :: j
       integer :: j2
       integer :: k
+
+      rank = comm%rank
 
       !     Compute core_electron_be energies and forces
       if (any_has_core_electron_be(soap_turbo_hypers) .and. (params%do_prediction) &
@@ -155,13 +160,17 @@ contains
             end do
          end do
 
+!        Each rank broadens only the sites it owns; the spectrum is the sum.
+         be_own = be_all(site_ids(i_beg:i_end))
          call get_xps_spectra(params%exp_data(xps_idx)%data(1, :),&
               & params%exp_data(xps_idx)%data(2, :), params&
               &%xps_sigma, params%exp_data(xps_idx)%n_samples, mag,&
               & params%exp_data(xps_idx)%x, params&
               &%exp_data(xps_idx)%y_pred, y_i_pred_all,&
-              & be_all, &
-              & .true.)
+              & be_own, .true., normalise=.false.)
+         call comm_sum_all(comm, params%exp_data(xps_idx)%y_pred, params%exp_data(xps_idx)%n_samples)
+         call normalise_xps_spectrum(params%exp_data(xps_idx)%x, be_all, params%exp_data(xps_idx)%y_pred, &
+              & y_i_pred_all, mag)
 
          call get_energy_scale(params%do_md, params%do_mc,&
               & md_istep, params%md_nsteps, mc_istep, params&
@@ -179,8 +188,7 @@ contains
               & params%exp_data(xps_idx)%n_samples, mag, params&
               &%exp_data(xps_idx)%x, params%exp_data(xps_idx)%y,&
               & params%exp_data(xps_idx)%y_pred,&
-              & y_i_pred_all(site_ids(i_beg:i_end), 1:params &
-              &%exp_data(xps_idx)%n_samples), params%do_forces, &
+              & y_i_pred_all, params%do_forces, &
               & xyz(1:3, j_beg:j_end),&
               & energies_lp(i_beg:i_end), forces_lp, virial_lp, params%exp_similarity_type, rank, size(be_all))
 
@@ -232,6 +240,7 @@ contains
          end if
 
          if (allocated(y_i_pred_all)) deallocate (y_i_pred_all)
+         deallocate (be_own)
          ! sim_exp_pred would be an energy if multiplied by some energy scale \gamma * ( 1 - sim )
          ! sim_exp_pred_der would be the array of forces if multiplied by (- \gamma )
          deallocate (v_neigh_lp)

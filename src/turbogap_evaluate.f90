@@ -272,7 +272,7 @@ contains
       call compute_exp_xps(params, state%n_sites, loop%n_xyz, nl%xyz, nl%neighbors_list, nl%n_neigh, &
                            res%local_properties, res%local_properties_cart_der, model%soap_turbo_hypers, &
                            state%a_box, state%b_box, state%c_box, state%indices, dom%i_beg, dom%i_end, dom%j_beg, &
-                           dom%j_end, comm%rank, &
+                           dom%j_end, comm, &
                            loop%md_istep, loop%mc_istep, model%valid_xps, model%xps_idx, model%core_be_lp_index, &
                            write_condition, overwrite_condition, exp_output, &
                            res%this_energies_lp, res%this_forces_lp, res%this_virial_lp, time, be_all, site_ids)

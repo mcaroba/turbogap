@@ -2964,8 +2964,10 @@ contains
       allocate (xrd(1:n_samples))
       xrd = 0.d0
 
+!     Only the owned atoms' rows: a whole-system array here was most of a
+!     rank's memory, and zeroing and scaling it most of its time.
       if (do_derivatives) then
-         allocate (xrd_der(1:3, 1:n_samples, 1:n_sites0))
+         allocate (xrd_der(1:3, 1:n_samples, i_beg:i_end))
          xrd_der = 0.d0
       end if
 
@@ -3314,8 +3316,11 @@ contains
 
    end subroutine get_xps_spectra_standalone
 
+!  With normalise false, y and y_all come back unnormalised and mag is not set:
+!  a rank broadens only its own sites, and the caller sums y over ranks before
+!  normalise_xps_spectrum.
    subroutine get_xps_spectra(xi, yi, sigma, n_samples, mag, x, y, y_all,&
-        & core_electron_be, broaden)
+        & core_electron_be, broaden, normalise)
       ! This just gets the broadened spectra
       ! xi are the predicted core electron binding energies and x is
       ! the one
@@ -3336,6 +3341,7 @@ contains
       real(dp) :: dx
       real(dp), intent(out) :: mag
       logical, intent(in) :: broaden
+      logical, optional, intent(in) :: normalise
 !     Sites per chunk: each chunk broadens into its own partial spectrum and
 !     the chunks are added in order, so the result does not depend on the
 !     thread count.
@@ -3390,20 +3396,37 @@ contains
 
       end if
 
-      mag = sqrt(dot_product(y, y))  !sum(y * dx) !
+      mag = 0.d0
+      if (present(normalise)) then
+         if (.not. normalise) return
+      end if
+      call normalise_xps_spectrum(x, core_electron_be, y, y_all, mag)
+
+   end subroutine get_xps_spectra
+
+!  be is every site's binding energy, for the error message only.
+   subroutine normalise_xps_spectrum(x, be, y, y_all, mag)
+      implicit none
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(in) :: be(:)
+      real(dp), intent(inout) :: y(:)
+      real(dp), intent(inout) :: y_all(:, :)
+      real(dp), intent(out) :: mag
+
+      mag = sqrt(dot_product(y, y))
 !     A zero spectrum has no direction to normalise to: every predicted line
 !     is outside the experimental energy range, and dividing by it made every
 !     energy and force NaN.
       if (mag <= 0.d0) then
          write (*, '(A,ES12.4,A,ES12.4,A,ES12.4,A,ES12.4)') &
-            'ERROR: no predicted core_electron_be within the XPS energy range ', x_min, ' to ', x_max, &
-            '; predicted ', minval(core_electron_be), ' to ', maxval(core_electron_be)
+            'ERROR: no predicted core_electron_be within the XPS energy range ', x(1), ' to ', x(size(x)), &
+            '; predicted ', minval(be), ' to ', maxval(be)
          call turbogap_abort()
       end if
       y = y/mag
       y_all = y_all/mag
 
-   end subroutine get_xps_spectra
+   end subroutine normalise_xps_spectrum
 
    subroutine broaden_spectrum_derivative(x, x0, x0_der, y, sigma, y_exp, y_tot, mag, dx)
       implicit none
