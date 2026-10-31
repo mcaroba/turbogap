@@ -75,8 +75,9 @@ if [ ! -f "$LIBDIR/libturbogap.a" ]; then
 fi
 cp -f "$HERE/../soap_derivatives/gharness.f90" .
 $MPIFC $FFLAGS -I"$INCDIR" -c gharness.f90 -o gharness.o
+# -fopenmp: the library is threaded unless built with OPENMP=0.
 $MPIFC $FFLAGS -I"$INCDIR" -o madverify "$HERE/madverify.f90" gharness.o \
-       "$LIBDIR/libturbogap.a" $LIBS
+       "$LIBDIR/libturbogap.a" $LIBS -fopenmp
 ./madverify
 
 echo
