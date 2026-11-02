@@ -1,5 +1,6 @@
 """The MCP surface: tool, resource and prompt registration only."""
 
+import atexit
 import functools
 from functools import cache
 from typing import Any, Literal
@@ -8,6 +9,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from . import examples, jobs
+from .calculator import Registry
 from .config import config_path, load_hosts
 from .hosts import HostError, make_host
 from .keywords import KeywordTable
@@ -22,6 +24,8 @@ an unknown keyword aborts the run. Before writing an input, look keywords up wit
 result with `validate_input` for the mode it will run in (predict, md, mc, soap, ipi).
 Runs are asynchronous: `run_start` returns a job id at once; poll it with `run_status`
 and read a summary with `run_results`. turbogap://hosts lists where runs can go.
+For many single-point evaluations of one system, `calc_start` keeps TurboGAP running
+with the potential loaded and `calc_evaluate` costs one force call per geometry.
 """
 
 MAD_OBSERVABLES = {
@@ -33,6 +37,8 @@ MAD_OBSERVABLES = {
 }
 
 server = MCPServer("turbogap", instructions=INSTRUCTIONS)
+calculators = Registry()
+atexit.register(calculators.stop_all)
 
 
 @cache
@@ -146,6 +152,44 @@ def run_cancel(job_id: str) -> dict[str, Any]:
     """Stop a job: TERM its process group, then KILL what is left after 5 s."""
     job, h = job_and_host(job_id)
     return jobs.cancel(h, job)
+
+
+@server.tool()
+@reported
+def calc_start(host: str, input_text: str, atoms_xyz: str, links: list[dict[str, str]] | None = None,
+               files: dict[str, str] | None = None, ranks: int = 1,
+               start_timeout_s: float = 600.0, eval_timeout_s: float = 600.0) -> dict[str, Any]:
+    """Start a live calculator: `turbogap ipi` on a host, kept running with its
+    potential loaded, answering one geometry at a time over an i-PI socket.
+
+    `input_text` is an ipi-mode input (pot_file, n_species, species, masses, e0,
+    atoms_file, ...) without ipi_address, which the calculator sets. `atoms_xyz` is
+    written to its atoms_file and fixes the atoms: every later geometry must have the
+    same species in the same order. `links` and `files` are as for run_start. Returns
+    once TurboGAP has loaded the potential and taken the handshake, which includes one
+    discarded evaluation of atoms_xyz. The calculator lives as long as this server.
+    """
+    return calculators.start(get_host(host), table(), root(), input_text, atoms_xyz,
+                             links=links or [], files=files, ranks=ranks,
+                             start_timeout=start_timeout_s, eval_timeout=eval_timeout_s)
+
+
+@server.tool()
+@reported
+def calc_evaluate(calc_id: str, xyz: str, arrays: bool = True) -> dict[str, Any]:
+    """Energy (eV), forces (eV/A) and virial (eV, TurboGAP's convention) for one
+    extended-XYZ frame (Lattice, species, pos) on a running calculator. The cell may
+    change between calls; the atoms may not. Forces come back for up to 1000 atoms,
+    statistics always. Positions travel in bohr, so they are evaluated as
+    (x / 0.5291772109) * 0.5291772109, which can differ from x in the last bit."""
+    return calculators.get(calc_id).evaluate(xyz, arrays)
+
+
+@server.tool()
+@reported
+def calc_stop(calc_id: str) -> dict[str, Any]:
+    """Stop a calculator: send EXIT, wait for TurboGAP to finish, close the socket."""
+    return calculators.stop(calc_id)
 
 
 @server.resource("turbogap://hosts", mime_type="application/json")

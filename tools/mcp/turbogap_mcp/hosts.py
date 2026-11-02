@@ -72,11 +72,13 @@ class Host:
 
     def poll(self, job_dir):
         """(state, exit code). State is running, done, cancelled, cancelling, or
-        lost: gone without writing an exit code."""
+        lost: gone without writing an exit code. rc is looked at again after the
+        liveness test, which the job can pass, write rc and exit in between."""
         words = self.sh(f"""cd {shlex.quote(job_dir)}
 c=0; [ -f cancelled ] && c=1
 if [ -f rc ]; then echo done $c $(cat rc)
 elif [ -s pid ] && kill -0 $(cat pid) 2>/dev/null; then echo running $c
+elif [ -f rc ]; then echo done $c $(cat rc)
 else echo lost $c
 fi
 """).split()

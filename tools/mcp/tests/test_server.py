@@ -36,7 +36,8 @@ def test_lists_the_surface():
 
     tools, templates, resources = run(session)
     assert {t.name for t in tools.tools} == {"keywords", "validate_input", "run_start", "run_status",
-                                             "run_results", "run_cancel"}
+                                             "run_results", "run_cancel", "calc_start",
+                                             "calc_evaluate", "calc_stop"}
     assert {str(r.uri) for r in resources.resources} == {"turbogap://keywords.md", "turbogap://examples",
                                                          "turbogap://hosts", "turbogap://jobs"}
     assert [t.uri_template for t in templates.resource_templates] == ["turbogap://examples/{case}"]
