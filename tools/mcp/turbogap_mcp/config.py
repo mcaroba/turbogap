@@ -8,6 +8,7 @@
     test_data = "/l/zarrout1/tg_builds/turbogap_tests"
     read_roots = ["/l/zarrout1/tg_builds"]        # links may point here too
     max_ranks = 12
+    omp_threads = 1                               # per rank; results depend on it
 """
 
 import os
@@ -30,6 +31,7 @@ class HostConfig:
     test_data: str = ""
     read_roots: list = field(default_factory=list)
     max_ranks: int = 1
+    omp_threads: int = 1
     timeout: float = 60.0
 
 

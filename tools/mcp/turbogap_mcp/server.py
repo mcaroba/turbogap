@@ -156,6 +156,7 @@ def host_list() -> list:
         ok, why = make_host(config).reachable()
         out.append({"name": name, "ssh": config.ssh or "(this machine)", "bin": config.bin,
                     "runs_root": config.runs_root, "max_ranks": config.max_ranks,
+                    "omp_threads": config.omp_threads,
                     "reachable": ok, "error": why})
     return out
 

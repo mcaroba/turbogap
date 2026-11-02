@@ -23,9 +23,12 @@ class Host:
         return ["bash", "-s"]
 
     def sh(self, script, timeout=None):
-        """Run a bash script on the host and return its stdout."""
+        """Run a bash script on the host and return its stdout. The script is one
+        group, read whole before it runs, so a command reading stdin (mpirun) cannot
+        swallow the lines after it."""
+        wrapped = "{\nset -e\n" + script + "\n} < /dev/null\n"
         try:
-            done = subprocess.run(self.argv(), input="set -e\n" + script, capture_output=True,
+            done = subprocess.run(self.argv(), input=wrapped, capture_output=True,
                                   text=True, timeout=timeout or self.config.timeout)
         except subprocess.TimeoutExpired as e:
             raise HostError(f"{self.name}: no answer within {e.timeout:.0f} s") from None
@@ -59,7 +62,7 @@ class Host:
         inner = "\n".join(filter(None, [
             "echo $$ > pid",
             c.setup,
-            "export OMP_NUM_THREADS=1",
+            f"export OMP_NUM_THREADS={int(c.omp_threads)}",
             f"{run} > out.log 2>&1",
             "echo $? > rc",
         ]))

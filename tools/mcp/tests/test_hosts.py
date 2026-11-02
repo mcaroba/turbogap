@@ -19,7 +19,7 @@ case "$(head -1 input)" in
      printf 'C 0 0 0 1 0 0\\nO 1.2 0 0 -1 0 0\\n' >> trajectory_out.xyz
      printf '#     Step             Time      Temperature                E_kin                E_pot             Pressure\\n' > thermo.log
      printf '0 0.0 300.0 0.1 -1.5 2.0\\n1 1.0 310.0 0.2 -1.4 2.1\\n' >> thermo.log
-     echo "mode $1" ;;
+     echo "mode $1 threads $OMP_NUM_THREADS" ;;
 esac
 """
 
@@ -47,7 +47,7 @@ def executable(path, text):
 def host(request, tmp_path, monkeypatch):
     monkeypatch.setenv("TURBOGAP_MCP_STATE", str(tmp_path / "state"))
     config = HostConfig(name=request.param, bin=executable(tmp_path / "fake_turbogap", FAKE_BIN),
-                        runs_root=str(tmp_path / "runs with space"), max_ranks=2,
+                        runs_root=str(tmp_path / "runs with space"), max_ranks=2, omp_threads=3,
                         read_roots=[str(tmp_path / "shared")], timeout=20)
     if request.param == "ssh":
         config.ssh = "nowhere"
@@ -74,7 +74,7 @@ def test_run_to_completion(host, table, tree):
     job = jobs.load(started["job_id"])
     st = wait(host, job)
     assert (st["state"], st["exit_code"]) == ("done", 0)
-    assert "mode predict" in st["out_log_tail"]
+    assert "mode predict threads 3" in st["out_log_tail"]
     res = jobs.results(host, job)
     assert res["frame"]["energy"] == -1.5
     assert res["frame"]["species"] == {"C": 1, "O": 1}
@@ -141,6 +141,10 @@ def test_put_is_verbatim(host, tmp_path):
     target = str(tmp_path / "put.txt")
     host.put(text, target)
     assert open(target).read() == text
+
+
+def test_a_command_reading_stdin_does_not_eat_the_script(host):
+    assert host.sh("cat\necho after\n").strip() == "after"
 
 
 def test_unreachable_host_times_out(tmp_path):

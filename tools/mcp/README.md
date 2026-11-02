@@ -40,6 +40,7 @@ runs_root = "/l/zarrout1/mcp_runs"            # one directory per job
 test_data = "/l/zarrout1/tg_builds/turbogap_tests"
 read_roots = ["/l/zarrout1/tg_builds"]        # links may point here too
 max_ranks = 12
+omp_threads = 1                               # per rank; results depend on it
 ```
 
 A job runs detached (`setsid`), so it outlives the server; its record is in

@@ -41,11 +41,12 @@ def setup(tree):
 
 
 def suite_run(tree, case, work):
-    """The suite refuses a reference that is the binary under test, so it gets a copy."""
+    """The suite refuses a reference that is the binary under test, so it gets a copy.
+    Threads as the job has them (omp_threads = 1): the sums depend on the count."""
     work.mkdir(parents=True)
     reference = work / "reference_turbogap"
     shutil.copy2(binary(tree), reference)
-    env = dict(os.environ, TURBOGAP_KEEP="1", TMPDIR=str(work), TURBOGAP_BIN=str(binary(tree)),
+    env = dict(os.environ, OMP_NUM_THREADS="1", TURBOGAP_KEEP="1", TMPDIR=str(work), TURBOGAP_BIN=str(binary(tree)),
                TURBOGAP_REF_BIN=str(reference), TURBOGAP_DATA_ROOT=str(data_root(tree)))
     done = subprocess.run([str(tree / "tests" / "regression" / "run.sh"), "--cpu", case],
                           cwd=tree, env=env, capture_output=True, text=True, timeout=900)
