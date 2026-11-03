@@ -53,6 +53,7 @@ program turbogap
    use turbogap_vdw, only: vdw_state, vdw_write_ts_scaling
    use turbogap_soap, only: soap_free_device
    use enhanced_sampling
+   use molecule_identifier, only: remove_particles
 
    implicit none
 
@@ -160,7 +161,7 @@ program turbogap
       if (mode == "ipi") then
          call ipi_driver_exchange(comm%rank, state%n_sites, state%positions, state%positions_prev, state%positions_diff, &
                                   state%velocities, state%a_box, state%b_box, state%c_box, state%indices, params%neighbors_buffer, &
-                                  res%forces, res%energy, res%virial, loop%exit_loop, nl%rebuild_neighbors_list)
+                                  res%forces, res%energy, res%virial, loop%exit_loop, nl%rebuild_neighbors_list, params)
          call domain_sync_after_ipi(dom, comm, state, nl, loop)
       else
          call md_step(dyn, state, res, nl, model, params, loop, smp%i_image, smp%i_nested, comm, time, metad)
@@ -178,6 +179,8 @@ program turbogap
       call exp_end_run(params, loop)
 
       call ir_step_end(ir, params, loop)
+
+      call remove_particles(params, state%positions, state%positions_diff, state%n_sites)
 
       call loop_end_step(loop, state%n_sites, params, comm)
       if (loop%exit_loop) exit

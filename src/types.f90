@@ -1022,6 +1022,10 @@ module types
 !     Write the per-atom bias energies and forces of every step.
       logical :: print_metadynamics_forces = .false.
 
+!     PARTICLE REMOVAL
+      logical :: remove_detached = .false.
+      real(dp) :: removal_height = 0.0
+
    end type input_parameters
 
 ! This is a container for atomic images

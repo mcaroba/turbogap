@@ -45,6 +45,7 @@ module neighbors_skin
 
    use kinds, only: dp
    use error, only: turbogap_abort
+   use types, only: input_parameters
 
    implicit none
    private
@@ -57,10 +58,11 @@ contains
 !  Add this step's displacement to the running total since the last build,
 !  under the minimum image convention of the primitive cell. cell holds the
 !  lattice vectors as its columns.
-   subroutine skin_accumulate(positions, positions_prev, cell, positions_diff)
+   subroutine skin_accumulate(params, positions, positions_prev, cell, positions_diff)
 
       implicit none
 
+      type(input_parameters), intent(in) :: params
       real(dp), intent(in) :: positions(:, :)
       real(dp), intent(in) :: positions_prev(:, :)
       real(dp), intent(in) :: cell(1:3, 1:3)
@@ -72,10 +74,12 @@ contains
       integer :: n
 
       n = size(positions_diff, 2)
-      if (size(positions, 2) < n .or. size(positions_prev, 2) < n) then
-         write (*, *) "ERROR: skin_accumulate was given fewer positions than accumulated displacements <-- ERROR"
-         call turbogap_abort()
-      end if
+      if (.not. params%remove_detached) then
+         if (size(positions, 2) < n .or. size(positions_prev, 2) < n) then
+            write (*, *) "ERROR: skin_accumulate was given fewer positions than accumulated displacements <-- ERROR"
+            call turbogap_abort()
+         end if
+      endif
       call invert_cell(cell, cell_inv)
       do i = 1, n
          dr(1:3) = positions(1:3, i) - positions_prev(1:3, i)

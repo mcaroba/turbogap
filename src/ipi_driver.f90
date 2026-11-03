@@ -61,6 +61,7 @@ module ipi_driver
                          ipi_put_real, ipi_skip_bytes, IPI_MSGLEN
    use neighbors_skin, only: skin_accumulate, skin_needs_rebuild
    use md, only: wrap_pbc
+   use types, only: input_parameters
 #ifdef _MPIF90
    use mpi
 #endif
@@ -127,7 +128,8 @@ contains
 !  i-PI's next configuration and the caller's next pass evaluates it.
    subroutine ipi_driver_exchange(rank, n_sites, positions, positions_prev, positions_diff, &
                                   velocities, a_box, b_box, c_box, indices, neighbors_buffer, &
-                                  forces, energy, virial, exit_loop, rebuild_neighbors_list)
+                                  forces, energy, virial, exit_loop, rebuild_neighbors_list, &
+                                  params)
 
       implicit none
 
@@ -147,6 +149,7 @@ contains
       real(dp), intent(in) :: virial(1:3, 1:3)
       logical, intent(inout) :: exit_loop
       logical, intent(inout) :: rebuild_neighbors_list
+      type(input_parameters), intent(in) :: params
 
       character(len=IPI_MSGLEN) :: header
       real(dp) :: cell(1:3, 1:3)
@@ -298,7 +301,7 @@ contains
 !           accounts displacement since the last neighbour build under the
 !           primitive minimum image, so an atom crossing a boundary contributes
 !           its step and not a box length.
-            call skin_accumulate(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), &
+            call skin_accumulate(params, positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), &
                                  reshape([a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
                                           c_box/dfloat(indices(3))], [3, 3]), positions_diff)
             rebuild_neighbors_list = .false.

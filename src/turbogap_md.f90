@@ -673,7 +673,7 @@ contains
             !     of the primitive cell -- the same cell the positions were wrapped into
             !     a few lines up, so that an atom crossing a boundary contributes its
             !     step and not a box length.
-            call skin_accumulate(positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), &
+            call skin_accumulate(params, positions(1:3, 1:n_sites), positions_prev(1:3, 1:n_sites), &
                                  reshape([a_box/dfloat(indices(1)), b_box/dfloat(indices(2)), &
                                           c_box/dfloat(indices(3))], [3, 3]), positions_diff)
             rebuild_neighbors_list = .false.

@@ -33,6 +33,12 @@
 !  rank 0, the same way as energies_soap and forces_soap.
 !**************************************************************************
 
+! TO DO: 
+! - Identification of functional groups (should probably be in own module)
+! - Removal of decomposed particles / molecules from simulation.
+!     - There should be a switch somewhere in the loop that turns off
+!       particles contributions if they have been marked 
+
 module enhanced_sampling
 
    use kinds
