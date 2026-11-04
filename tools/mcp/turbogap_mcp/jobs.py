@@ -185,6 +185,7 @@ def status(host: Host, job: Job):
            "out_log_tail": host.tail(f"{job.dir}/out.log", 20)}
     if thermo:
         out["thermo_rows"] = int(thermo)
+    out.update(host.describe(job.dir))
     if state == "done" and code != 0:
         out["state"] = "failed"
     return out

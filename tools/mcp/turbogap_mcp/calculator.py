@@ -225,6 +225,9 @@ class Registry:
 
     def start(self, host: Host, table, root, input_text, atoms_xyz, links=(), files=None, ranks=1,
               start_timeout=600.0, eval_timeout=600.0):
+        if host.config.slurm:
+            raise CalcError(f"{host.name} runs batch jobs: the socket is on the login node ssh "
+                            f"reaches, and a compute node cannot connect to it")
         species, _, _ = parse_frame(atoms_xyz)
         name = f"mcp_{secrets.token_hex(4)}"
         text = with_address(input_text, name)

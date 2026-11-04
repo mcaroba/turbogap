@@ -129,8 +129,10 @@ def run_start(host: str, mode: str = "", input_text: str = "", case: str = "",
 @server.tool()
 @reported
 def run_status(job_id: str) -> dict[str, Any]:
-    """State of a job (running, done, failed, cancelled, lost), its exit code, the
-    last 20 lines of its log, and how many thermo.log rows it has written."""
+    """State of a job (queued, running, done, failed, cancelling, cancelled, lost),
+    its exit code, the last 20 lines of its log, and how many thermo.log rows it has
+    written. On a Slurm host also its job id, Slurm state, pending reason or how it
+    ended (TIMEOUT, OUT_OF_MEMORY, ...), nodes and elapsed time."""
     job, h = job_and_host(job_id)
     return jobs.status(h, job)
 
@@ -149,7 +151,8 @@ def run_results(job_id: str, frame: int = -1, arrays: bool = False) -> dict[str,
 @server.tool()
 @reported
 def run_cancel(job_id: str) -> dict[str, Any]:
-    """Stop a job: TERM its process group, then KILL what is left after 5 s."""
+    """Stop a job: TERM its process group, then KILL what is left after 5 s; on a
+    Slurm host, scancel."""
     job, h = job_and_host(job_id)
     return jobs.cancel(h, job)
 
@@ -168,6 +171,7 @@ def calc_start(host: str, input_text: str, atoms_xyz: str, links: list[dict[str,
     same species in the same order. `links` and `files` are as for run_start. Returns
     once TurboGAP has loaded the potential and taken the handshake, which includes one
     discarded evaluation of atoms_xyz. The calculator lives as long as this server.
+    Not on Slurm hosts: the compute node could not reach the socket.
     """
     return calculators.start(get_host(host), table(), root(), input_text, atoms_xyz,
                              links=links or [], files=files, ranks=ranks,
@@ -200,7 +204,7 @@ def host_list() -> list:
         ok, why = make_host(config).reachable()
         out.append({"name": name, "ssh": config.ssh or "(this machine)", "bin": config.bin,
                     "runs_root": config.runs_root, "max_ranks": config.max_ranks,
-                    "omp_threads": config.omp_threads,
+                    "omp_threads": config.omp_threads, "slurm": config.slurm or None,
                     "reachable": ok, "error": why})
     return out
 

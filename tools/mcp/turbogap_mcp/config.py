@@ -9,6 +9,17 @@
     read_roots = ["/l/zarrout1/tg_builds"]        # links may point here too
     max_ranks = 12
     omp_threads = 1                               # per rank; results depend on it
+
+    [roihu]                                       # a batch host
+    ssh = "roihuc"
+    certificate = "~/.ssh/id_lumi_new_ed25519-cert.pub"
+    renew = "roihucer"                            # named when the certificate expires
+    ...
+    [roihu.slurm]
+    account = "project_2003566"
+    partition = "small"
+    time = "00:30:00"
+    options = ["--mem-per-cpu=2G"]                # further #SBATCH lines
 """
 
 import os
@@ -16,6 +27,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+SLURM_KEYS = {"account", "partition", "time", "options"}
 DEFAULT_PATH = Path.home() / ".config" / "turbogap-mcp" / "hosts.toml"
 
 
@@ -32,6 +44,9 @@ class HostConfig:
     read_roots: list = field(default_factory=list)
     max_ranks: int = 1
     omp_threads: int = 1
+    certificate: str = ""
+    renew: str = ""
+    slurm: dict = field(default_factory=dict)
     timeout: float = 60.0
 
 
@@ -52,5 +67,12 @@ def load_hosts(path=None):
         missing = {"bin", "runs_root"} - set(table)
         if missing:
             raise ValueError(f"{path}: [{name}] needs {', '.join(sorted(missing))}")
+        slurm = table.get("slurm", {})
+        unknown = set(slurm) - SLURM_KEYS
+        if unknown:
+            raise ValueError(f"{path}: [{name}.slurm] has unknown key(s) {', '.join(sorted(unknown))}")
+        missing = SLURM_KEYS - {"options"} - set(slurm) if slurm else set()
+        if missing:
+            raise ValueError(f"{path}: [{name}.slurm] needs {', '.join(sorted(missing))}")
         hosts[name] = HostConfig(name=name, **table)
     return hosts

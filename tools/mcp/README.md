@@ -46,6 +46,32 @@ max_ranks = 12
 omp_threads = 1                               # per rank; results depend on it
 ```
 
+A host with a `[name.slurm]` table runs jobs through `sbatch` (`srun` inside), and
+`run_status` reads `squeue` and `sacct`: a job is `queued` until it has a node, and
+one Slurm ended (TIMEOUT, OUT_OF_MEMORY, NODE_FAIL) is `failed` with Slurm's state.
+`run_cancel` is `scancel`. Slurm commands run after `setup`.
+
+```toml
+[roihu]
+ssh = "roihuc"
+certificate = "~/.ssh/id_lumi_new_ed25519-cert.pub"
+renew = "roihucer"                            # named when the certificate expires
+setup = "source /usr/share/lmod/lmod/init/bash; ..."
+bin = "/scratch/project_2003566/zarrout1/turbogap_cpu_pdf"
+runs_root = "/scratch/project_2003566/zarrout1/mcp_runs"
+max_ranks = 384
+
+[roihu.slurm]
+account = "project_2003566"
+partition = "small"
+time = "00:30:00"
+options = ["--mem-per-cpu=2G"]                # optional further #SBATCH lines
+```
+
+With `certificate`, an expired one is reported as such before ssh is tried.
+Calculators need the socket on the node TurboGAP runs on, so they are refused on
+Slurm hosts.
+
 A calculator is a job in mode ipi whose socket is held by this server, so it ends
 with the server: TurboGAP aborts when the socket closes. The server side of the
 protocol is `tests/ipi_socket/refserver.py`, imported. On a remote host `ssh -R`
