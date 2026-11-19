@@ -45,20 +45,19 @@ struct mbd_site_d {
   int i0;
   const int* atom_of_pair; // 0-based row atom of each entry
   const int* own_entry;    // 0-based own entry of each atom
-  const int* neigh;        // mbd_neighbors_list
+  const int* gidx;         // mbd_neighbors_list at each atom's own entry
   const int* p_mbd;        // 1-based column atom, -1 for a duplicate
   const int* k4_start;     // 0-based first nonzero of each pair in COO order, -1 if none
+  const int* mask;         // the pair's nonzeros the host kept, bit 3*c1 + c2
   const double* omegas;
-  const double* a_mbd;
-  const double* o_mbd;
-  const double* r0_scs;
-  const double* f_damp;
+  const double* a_own; // a_mbd, o_mbd, r0_ii_SCS at each atom's own entry
+  const double* o_own;
+  const double* r0_own;
+  const double* r0_nb;  // r0_ii_SCS of the atom as a pair's column atom
+  const double* pos;    // 3 x n_atoms, positions from the central atom
+  const double* pcut;   // per atom
+  const double* f_damp; // per pair entry
   const double* t_lr_mult;
-  const double* rjs;
-  const double* xyz;   // 3 x n_pairs, pair vectors
-  const double* xyz0;  // 3 x n_pairs, positions from the central atom
-  const double* t_mbd; // 9 x n_pairs
-  const double* pcut;
   const double* v1; // val_sym(:, 1), COO order
   const double* v1_csr;
   const int* i_csr;       // 1-based
@@ -87,11 +86,10 @@ void mbd_freq_factors(mbd_site_d s, double* s_d, double* q_d, hipStream_t* strea
       "mbd_freq_factors", n * s.n_freq, stream, TG_LAMBDA(const int idx) {
         int p = idx % n;
         int w = idx / n;
-        int k = s.own_entry[p];
-        double t = s.omegas[w] / s.o_mbd[k];
+        double t = s.omegas[w] / s.o_own[p];
         double den = 1.0 + t * t;
         s_d[idx] = sqrt(1.0 / den);
-        q_d[idx] = sqrt(s.a_mbd[k] / den);
+        q_d[idx] = sqrt(s.a_own[p] / den);
       });
 }
 
@@ -255,12 +253,11 @@ void mbd_freq_derivs(mbd_site_d s, const double* da, const double* dO, double* t
       "mbd_freq_derivs", n * s.n_freq, stream, TG_LAMBDA(const int idx) {
         int p = idx % n;
         int w = idx / n;
-        int k = s.own_entry[p];
         double om = s.omegas[w];
-        double o = s.o_mbd[k];
+        double o = s.o_own[p];
         double t = om / o;
         double den = o * o + om * om;
-        t_d[idx] = da[p] / (1.0 + t * t) + ((s.a_mbd[k] * ((2.0 * (om * om)) * o)) * dO[p]) / (den * den);
+        t_d[idx] = da[p] / (1.0 + t * t) + ((s.a_own[p] * ((2.0 * (om * om)) * o)) * dO[p]) / (den * den);
       });
 }
 
@@ -285,24 +282,36 @@ __global__ void mbd_force_kernel(mbd_site_d s, mbd_consts k, int c3, const doubl
     live = !(k2 == kb || s.p_mbd[k2] == -1);
   }
   double dtv[9];
+  double tm9[9];
   double f = 0.0, tlr = 0.0, pcut_i = 0.0, pcut_next = 0.0;
   double xi[3] = {0.0, 0.0, 0.0}, xn[3] = {0.0, 0.0, 0.0};
   bool dup = false;
+  int msk = 0;
   if (live) {
     q = s.p_mbd[k2] - 1;
     k4 = s.k4_start[k2];
-    int i2 = s.neigh[kb];
-    int j = s.neigh[k2];
-    double rjs = s.rjs[k2];
+    msk = s.mask[k2];
+    int i2 = s.gidx[p];
+    int j = s.gidx[q];
     f = s.f_damp[k2];
     tlr = s.t_lr_mult[k2];
-    const double* x = s.xyz + 3 * k2;
-    double S = k.sR * (s.r0_scs[kb] + s.r0_scs[k2]);
+    // The host's xyz_mbd, rjs_mbd and T_mbd, in its order and without fused
+    // multiply-adds.
+    double x[3];
+    for (int c = 0; c < 3; c++)
+      x[c] = __dsub_rn(s.pos[3 * q + c], s.pos[3 * p + c]);
+    double rjs = sqrt(__dadd_rn(__dadd_rn(__dmul_rn(x[0], x[0]), __dmul_rn(x[1], x[1])), __dmul_rn(x[2], x[2])));
+    double r5t = mbd_pow5(rjs);
+    for (int c1 = 0; c1 < 3; c1++)
+      for (int c2 = 0; c2 < 3; c2++)
+        tm9[3 * c1 + c2] = c1 == c2 ? __dsub_rn(__dmul_rn(__dmul_rn(3.0, x[c1]), x[c1]), __dmul_rn(rjs, rjs)) / r5t
+                                    : __dmul_rn(__dmul_rn(3.0, x[c1]), x[c2]) / r5t;
+    double S = k.sR * (s.r0_own[p] + s.r0_nb[q]);
     double dS = k.sR * (dr0[p] + dr0[q]);
     double e = exp(-k.d * (rjs / S - 1.0));
     double fdds = -((((k.d * rjs) / (S * S)) * (f * f)) * e) * dS;
     for (int c = 0; c < 9; c++)
-      dtv[c] = 0.0 + (s.t_mbd[9 * k2 + c] * fdds) * tlr;
+      dtv[c] = 0.0 + (tm9[c] * fdds) * tlr;
     if (s.i0 == i2 || s.i0 == j) {
       double fdm = ((((k.d / S) * (f * f)) * e) * x[c3m]) / rjs;
       double dtm = 0.0;
@@ -334,7 +343,7 @@ __global__ void mbd_force_kernel(mbd_site_d s, mbd_consts k, int c3, const doubl
             dt = dt + (3.0 / r5) * x[c1];
           if (c1 == c3m)
             dt = dt + (3.0 / r5) * x[c2];
-          double tm = s.t_mbd[9 * k2 + c];
+          double tm = tm9[c];
           if (s.i0 == i2)
             dtv[c] = dtv[c] - (tm * fdm + dt * f) * tlr;
           else if (s.i0 == j)
@@ -347,13 +356,13 @@ __global__ void mbd_force_kernel(mbd_site_d s, mbd_consts k, int c3, const doubl
         for (int c2 = 0; c2 < 3; c2++)
           dtlr_sym_d[c1 + 3 * (3 * q + c2)] = dtv[3 * c1 + c2];
     for (int c = 0; c < 3; c++)
-      xi[c] = s.xyz0[3 * kb + c];
-    pcut_i = s.pcut[kb];
+      xi[c] = s.pos[3 * p + c];
+    pcut_i = s.pcut[p];
     dup = (k2 + 2 < s.n_pairs) && (s.p_mbd[k2 + 1] == -1);
     if (dup) {
       for (int c = 0; c < 3; c++)
-        xn[c] = s.xyz0[3 * (k2 + 1) + c];
-      pcut_next = s.pcut[k2 + 1];
+        xn[c] = s.pos[3 * q + c];
+      pcut_next = s.pcut[q];
     }
   }
   for (int w = 0; w < s.n_freq; w++) {
@@ -367,8 +376,8 @@ __global__ void mbd_force_kernel(mbd_site_d s, mbd_consts k, int c3, const doubl
       int kk = k4;
       for (int c1 = 0; c1 < 3; c1++)
         for (int c2 = 0; c2 < 3; c2++) {
-          double tm = s.t_mbd[9 * k2 + 3 * c1 + c2];
-          if (!(fabs(f * tm * tlr) > 1.0e-20))
+          double tm = tm9[3 * c1 + c2];
+          if (!((msk >> (3 * c1 + c2)) & 1))
             continue;
           double dval = fq_ss * dtv[3 * c1 + c2] + ((fq_gi * f) * tm) * tlr + ((fq_gj * f) * tm) * tlr;
           double val = s_pq * s.v1[kk];
@@ -436,43 +445,31 @@ void mbd_force_reduce(mbd_site_d s, int n_blocks, const double* part_d, double* 
   mbd_force_reduce_kernel<<<8 * s.n_freq, MBD_REDUCE_TPB, 0, stream[0]>>>(n_blocks, part_d, out_d);
 }
 
-template <class T> void grow(T*& p, size_t& cap, size_t n, hipStream_t* stream) {
-  if (n <= cap)
-    return;
-  if (p)
-    gpuErrchk(hipFreeAsync(p, stream[0]));
-  gpuErrchk(hipMallocAsync((void**) &p, sizeof(T) * n, stream[0]));
-  cap = n;
-}
+// Byte offsets of a site's arrays in one allocation, each 256-byte aligned.
+struct mbd_layout {
+  size_t bytes = 0;
+  template <class T> size_t add(size_t n) {
+    size_t at = bytes;
+    bytes += (sizeof(T) * (n > 0 ? n : 1) + 255) / 256 * 256;
+    return at;
+  }
+};
 
-template <class T> void put(T*& p, size_t& cap, const T* host, size_t n, hipStream_t* stream) {
-  grow(p, cap, n > 0 ? n : 1, stream);
-  if (n)
-    gpuErrchk(hipMemcpyAsync(p, host, sizeof(T) * n, hipMemcpyHostToDevice, stream[0]));
-}
-
-// A host thread's stream and buffers, kept between sites and grown when a
-// site needs more.
+// A host thread's stream and its one device allocation, kept between sites
+// and grown, with a quarter to spare, when a site needs more.
 struct mbd_ctx {
   hipStream_t stream;
   mbd_site_d s;
   mbd_consts k;
   int n_blocks;
-  std::vector<int> own, atom_of, k4s;
-  std::vector<double> da_atom, do_atom, dr0_atom, out;
-  int *own_d = nullptr, *atom_of_d = nullptr, *neigh_d = nullptr, *p_mbd_d = nullptr, *k4s_d = nullptr;
-  int *i_csr_d = nullptr, *j_csr_d = nullptr, *perm_d = nullptr;
-  double *omegas_d = nullptr, *a_d = nullptr, *o_d = nullptr, *r0_d = nullptr, *f_d = nullptr, *tlr_d = nullptr;
-  double *rjs_d = nullptr, *xyz_d = nullptr, *xyz0_d = nullptr, *t_mbd_d = nullptr, *pcut_d = nullptr;
-  double *v1_d = nullptr, *v1_csr_d = nullptr, *t_lr_sym_d = nullptr;
-  double *s_d = nullptr, *q_d = nullptr, *t_d = nullptr, *at_d = nullptr, *x_d = nullptr, *y_d = nullptr, *z_d = nullptr;
-  double *pol_d = nullptr, *diag_d = nullptr, *dots_d = nullptr, *integrand_d = nullptr;
-  double *da_d = nullptr, *do_d = nullptr, *dr0_d = nullptr, *part_d = nullptr, *out_d = nullptr, *dtlr_d = nullptr;
-  size_t c_own = 0, c_atom_of = 0, c_neigh = 0, c_p_mbd = 0, c_k4s = 0, c_i_csr = 0, c_j_csr = 0, c_perm = 0;
-  size_t c_omegas = 0, c_a = 0, c_o = 0, c_r0 = 0, c_f = 0, c_tlr = 0, c_rjs = 0, c_xyz = 0, c_xyz0 = 0, c_t_mbd = 0;
-  size_t c_pcut = 0, c_v1 = 0, c_v1_csr = 0, c_t_lr_sym = 0, c_s = 0, c_q = 0, c_t = 0, c_at = 0, c_x = 0, c_y = 0;
-  size_t c_z = 0, c_pol = 0, c_diag = 0, c_dots = 0, c_integrand = 0, c_da = 0, c_do = 0, c_dr0 = 0, c_part = 0;
-  size_t c_out = 0, c_dtlr = 0;
+  char* arena_d = nullptr;
+  size_t c_arena = 0;
+  std::vector<int> own, atom_of, k4s, mask, gidx;
+  std::vector<double> a_own, o_own, r0_own, r0_nb, pos, pcut, da_atom, out;
+  int *own_d, *atom_of_d, *k4s_d, *mask_d, *gidx_d, *p_mbd_d, *i_csr_d, *j_csr_d, *perm_d;
+  double *omegas_d, *a_own_d, *o_own_d, *r0_own_d, *r0_nb_d, *pos_d, *pcut_d, *f_d, *tlr_d, *v1_d, *v1_csr_d;
+  double *t_lr_sym_d, *s_d, *q_d, *t_d, *at_d, *x_d, *y_d, *z_d, *pol_d, *diag_d, *dots_d, *integrand_d;
+  double *da_d, *do_d, *dr0_d, *part_d, *out_d, *dtlr_d;
 };
 
 int g_device = 0;
@@ -491,13 +488,21 @@ mbd_ctx* context(int tid) {
   return g_ctx[tid];
 }
 
-// Own entries, row atoms, and the first nonzero of each pair in the order the
-// host walks them (the filter the host applied when it kept nonzeros).
-void index_pairs(mbd_ctx& c, int n_atoms, int n_pairs, int nnz, const int* n_neigh, const int* p_mbd, const double* f_damp,
-                 const double* t_mbd, const double* tlr) {
+template <class T> void up(T* dev, const T* host, size_t n, hipStream_t* stream) {
+  if (n)
+    gpuErrchk(hipMemcpyAsync(dev, host, sizeof(T) * n, hipMemcpyHostToDevice, stream[0]));
+}
+
+// Own entries, row atoms, the first nonzero of each pair in the order the
+// host walks them and which of its nine the host kept (the host's filter), and
+// what the pair entries hold for one atom, gathered per atom.
+void index_pairs(mbd_ctx& c, int n_atoms, int n_pairs, int nnz, const int* n_neigh, const int* neigh, const int* p_mbd,
+                 const double* a_mbd, const double* o_mbd, const double* r0_scs, const double* xyz0, const double* pcut,
+                 const double* f_damp, const double* t_mbd, const double* tlr) {
   c.own.assign(n_atoms, 0);
   c.atom_of.assign(n_pairs, 0);
   c.k4s.assign(n_pairs, -1);
+  c.mask.assign(n_pairs, 0);
   int k2 = 0;
   for (int p = 0; p < n_atoms; p++) {
     c.own[p] = k2;
@@ -505,15 +510,34 @@ void index_pairs(mbd_ctx& c, int n_atoms, int n_pairs, int nnz, const int* n_nei
       c.atom_of[k2 + j] = p;
     k2 += n_neigh[p];
   }
+  c.gidx.resize(n_atoms);
+  c.a_own.resize(n_atoms);
+  c.o_own.resize(n_atoms);
+  c.r0_own.resize(n_atoms);
+  c.r0_nb.assign(n_atoms, 0.0);
+  c.pos.resize(3 * (size_t) n_atoms);
+  c.pcut.resize(n_atoms);
+  for (int p = 0; p < n_atoms; p++) {
+    int kb = c.own[p];
+    c.gidx[p] = neigh[kb];
+    c.a_own[p] = a_mbd[kb];
+    c.o_own[p] = o_mbd[kb];
+    c.r0_own[p] = r0_scs[kb];
+    for (int cc = 0; cc < 3; cc++)
+      c.pos[3 * p + cc] = xyz0[3 * (size_t) kb + cc];
+    c.pcut[p] = pcut[kb];
+  }
   int k4 = 0;
   for (int p = 0; p < n_atoms; p++) {
     for (int k = c.own[p] + 1; k < c.own[p] + n_neigh[p]; k++) {
       if (p_mbd[k] == -1)
         continue;
+      c.r0_nb[p_mbd[k] - 1] = r0_scs[k];
       bool dup = (k + 2 < n_pairs) && p_mbd[k + 1] == -1;
       for (int cc = 0; cc < 9; cc++) {
         if (!(fabs(f_damp[k] * t_mbd[9 * (size_t) k + cc] * tlr[k]) > 1.0e-20))
           continue;
+        c.mask[k] |= 1 << cc;
         if (c.k4s[k] < 0)
           c.k4s[k] = k4;
         k4 += dup ? 2 : 1;
@@ -524,6 +548,73 @@ void index_pairs(mbd_ctx& c, int n_atoms, int n_pairs, int nnz, const int* n_nei
     fprintf(stderr, "ERROR: MBD on the device counts %d nonzeros where the host kept %d\n", k4, nnz);
     exit(1);
   }
+}
+
+// Every array of a site and of its force passes, in c's one allocation.
+void place_arrays(mbd_ctx& c, int n_atoms, int n_pairs, int nnz, int n_freq, int n_order, hipStream_t* stream) {
+  size_t n = n_atoms;
+  size_t n3f = 9 * n * n_freq;
+  size_t naf = n * n_freq;
+  c.n_blocks = (n_pairs + MBD_FORCE_TPB - 1) / MBD_FORCE_TPB;
+  mbd_layout L;
+  size_t o_own = L.add<int>(n), o_atom_of = L.add<int>(n_pairs), o_k4s = L.add<int>(n_pairs);
+  size_t o_mask = L.add<int>(n_pairs), o_gidx = L.add<int>(n), o_p_mbd = L.add<int>(n_pairs);
+  size_t o_i_csr = L.add<int>(3 * n + 1), o_j_csr = L.add<int>(nnz), o_perm = L.add<int>(nnz);
+  size_t o_omegas = L.add<double>(n_freq), o_a_own = L.add<double>(n), o_o_own = L.add<double>(n);
+  size_t o_r0_own = L.add<double>(n), o_r0_nb = L.add<double>(n), o_pos = L.add<double>(3 * n);
+  size_t o_pcut = L.add<double>(n), o_f = L.add<double>(n_pairs), o_tlr = L.add<double>(n_pairs);
+  size_t o_v1 = L.add<double>(nnz), o_v1_csr = L.add<double>(nnz), o_t_lr_sym = L.add<double>(9 * n);
+  size_t o_s = L.add<double>(naf), o_q = L.add<double>(naf), o_t = L.add<double>(naf);
+  size_t o_at = L.add<double>(n3f), o_x = L.add<double>(n3f), o_y = L.add<double>(n3f), o_z = L.add<double>(n3f);
+  size_t o_pol = L.add<double>(n3f), o_diag = L.add<double>(3 * (size_t) (n_order - 3) * n_freq);
+  size_t o_dots = L.add<double>(6 * (size_t) n_freq), o_integrand = L.add<double>(n_freq);
+  size_t o_da = L.add<double>(3 * n), o_part = L.add<double>(8 * (size_t) c.n_blocks * n_freq);
+  size_t o_out = L.add<double>(8 * (size_t) n_freq), o_dtlr = L.add<double>(9 * n);
+  if (L.bytes > c.c_arena) {
+    if (c.arena_d)
+      gpuErrchk(hipFreeAsync(c.arena_d, stream[0]));
+    c.c_arena = L.bytes + L.bytes / 4;
+    gpuErrchk(hipMallocAsync((void**) &c.arena_d, c.c_arena, stream[0]));
+  }
+  char* a = c.arena_d;
+  c.own_d = (int*) (a + o_own);
+  c.atom_of_d = (int*) (a + o_atom_of);
+  c.k4s_d = (int*) (a + o_k4s);
+  c.mask_d = (int*) (a + o_mask);
+  c.gidx_d = (int*) (a + o_gidx);
+  c.p_mbd_d = (int*) (a + o_p_mbd);
+  c.i_csr_d = (int*) (a + o_i_csr);
+  c.j_csr_d = (int*) (a + o_j_csr);
+  c.perm_d = (int*) (a + o_perm);
+  c.omegas_d = (double*) (a + o_omegas);
+  c.a_own_d = (double*) (a + o_a_own);
+  c.o_own_d = (double*) (a + o_o_own);
+  c.r0_own_d = (double*) (a + o_r0_own);
+  c.r0_nb_d = (double*) (a + o_r0_nb);
+  c.pos_d = (double*) (a + o_pos);
+  c.pcut_d = (double*) (a + o_pcut);
+  c.f_d = (double*) (a + o_f);
+  c.tlr_d = (double*) (a + o_tlr);
+  c.v1_d = (double*) (a + o_v1);
+  c.v1_csr_d = (double*) (a + o_v1_csr);
+  c.t_lr_sym_d = (double*) (a + o_t_lr_sym);
+  c.s_d = (double*) (a + o_s);
+  c.q_d = (double*) (a + o_q);
+  c.t_d = (double*) (a + o_t);
+  c.at_d = (double*) (a + o_at);
+  c.x_d = (double*) (a + o_x);
+  c.y_d = (double*) (a + o_y);
+  c.z_d = (double*) (a + o_z);
+  c.pol_d = (double*) (a + o_pol);
+  c.diag_d = (double*) (a + o_diag);
+  c.dots_d = (double*) (a + o_dots);
+  c.integrand_d = (double*) (a + o_integrand);
+  c.da_d = (double*) (a + o_da);
+  c.do_d = c.da_d + n;
+  c.dr0_d = c.da_d + 2 * n;
+  c.part_d = (double*) (a + o_part);
+  c.out_d = (double*) (a + o_out);
+  c.dtlr_d = (double*) (a + o_dtlr);
 }
 
 } // namespace mbd_gpu
@@ -545,49 +636,35 @@ void mbd_gpu_site(int tid, int n_atoms, int n_pairs, int nnz, int n_freq, int n_
   mbd_ctx& c = *context(tid);
   gpuErrchk(hipSetDevice(g_device));
   hipStream_t* st = &c.stream;
-  index_pairs(c, n_atoms, n_pairs, nnz, n_neigh, p_mbd, f_damp, t_mbd, t_lr_mult);
+  index_pairs(c, n_atoms, n_pairs, nnz, n_neigh, neigh, p_mbd, a_mbd, o_mbd, r0_scs, xyz0, pcut, f_damp, t_mbd, t_lr_mult);
+  place_arrays(c, n_atoms, n_pairs, nnz, n_freq, n_order, st);
   size_t n3f = (size_t) 9 * n_atoms * n_freq;
-  size_t naf = (size_t) n_atoms * n_freq;
-  put(c.own_d, c.c_own, c.own.data(), n_atoms, st);
-  put(c.atom_of_d, c.c_atom_of, c.atom_of.data(), n_pairs, st);
-  put(c.k4s_d, c.c_k4s, c.k4s.data(), n_pairs, st);
-  put(c.neigh_d, c.c_neigh, neigh, n_pairs, st);
-  put(c.p_mbd_d, c.c_p_mbd, p_mbd, n_pairs, st);
-  put(c.i_csr_d, c.c_i_csr, i_csr, 3 * (size_t) n_atoms + 1, st);
-  put(c.j_csr_d, c.c_j_csr, j_csr, nnz, st);
-  put(c.perm_d, c.c_perm, perm, nnz, st);
-  put(c.omegas_d, c.c_omegas, omegas, n_freq, st);
-  put(c.a_d, c.c_a, a_mbd, n_pairs, st);
-  put(c.o_d, c.c_o, o_mbd, n_pairs, st);
-  put(c.r0_d, c.c_r0, r0_scs, n_pairs, st);
-  put(c.f_d, c.c_f, f_damp, n_pairs, st);
-  put(c.tlr_d, c.c_tlr, t_lr_mult, n_pairs, st);
-  put(c.rjs_d, c.c_rjs, rjs, n_pairs, st);
-  put(c.xyz_d, c.c_xyz, xyz, 3 * (size_t) n_pairs, st);
-  put(c.xyz0_d, c.c_xyz0, xyz0, 3 * (size_t) n_pairs, st);
-  put(c.t_mbd_d, c.c_t_mbd, t_mbd, 9 * (size_t) n_pairs, st);
-  put(c.pcut_d, c.c_pcut, pcut, n_pairs, st);
-  put(c.v1_d, c.c_v1, v1, nnz, st);
-  put(c.t_lr_sym_d, c.c_t_lr_sym, t_lr_sym, 9 * (size_t) n_atoms, st);
-  grow(c.v1_csr_d, c.c_v1_csr, nnz > 0 ? nnz : 1, st);
-  grow(c.s_d, c.c_s, naf, st);
-  grow(c.q_d, c.c_q, naf, st);
-  grow(c.t_d, c.c_t, naf, st);
-  grow(c.at_d, c.c_at, n3f, st);
-  grow(c.x_d, c.c_x, n3f, st);
-  grow(c.y_d, c.c_y, n3f, st);
-  grow(c.z_d, c.c_z, n3f, st);
-  grow(c.pol_d, c.c_pol, n3f, st);
-  grow(c.diag_d, c.c_diag, (size_t) 3 * (n_order - 3) * n_freq, st);
-  grow(c.dots_d, c.c_dots, (size_t) 6 * n_freq, st);
-  grow(c.integrand_d, c.c_integrand, n_freq, st);
+  up(c.own_d, c.own.data(), n_atoms, st);
+  up(c.atom_of_d, c.atom_of.data(), n_pairs, st);
+  up(c.k4s_d, c.k4s.data(), n_pairs, st);
+  up(c.mask_d, c.mask.data(), n_pairs, st);
+  up(c.gidx_d, c.gidx.data(), n_atoms, st);
+  up(c.p_mbd_d, p_mbd, n_pairs, st);
+  up(c.i_csr_d, i_csr, 3 * (size_t) n_atoms + 1, st);
+  up(c.j_csr_d, j_csr, nnz, st);
+  up(c.perm_d, perm, nnz, st);
+  up(c.omegas_d, omegas, n_freq, st);
+  up(c.a_own_d, c.a_own.data(), n_atoms, st);
+  up(c.o_own_d, c.o_own.data(), n_atoms, st);
+  up(c.r0_own_d, c.r0_own.data(), n_atoms, st);
+  up(c.r0_nb_d, c.r0_nb.data(), n_atoms, st);
+  up(c.pos_d, c.pos.data(), 3 * (size_t) n_atoms, st);
+  up(c.pcut_d, c.pcut.data(), n_atoms, st);
+  up(c.f_d, f_damp, n_pairs, st);
+  up(c.tlr_d, t_lr_mult, n_pairs, st);
+  up(c.v1_d, v1, nnz, st);
+  up(c.t_lr_sym_d, t_lr_sym, 9 * (size_t) n_atoms, st);
 
   mbd_site_d& s = c.s;
-  s = {n_atoms,   n_pairs,  nnz,        n_freq,   n_order, i0,         c.atom_of_d, c.own_d,   c.neigh_d,
-       c.p_mbd_d, c.k4s_d,  c.omegas_d, c.a_d,    c.o_d,   c.r0_d,     c.f_d,       c.tlr_d,   c.rjs_d,
-       c.xyz_d,   c.xyz0_d, c.t_mbd_d,  c.pcut_d, c.v1_d,  c.v1_csr_d, c.i_csr_d,   c.j_csr_d, c.t_lr_sym_d};
+  s = {n_atoms,   n_pairs, nnz,      n_freq,     n_order,    i0,        c.atom_of_d, c.own_d,     c.gidx_d,
+       c.p_mbd_d, c.k4s_d, c.mask_d, c.omegas_d, c.a_own_d,  c.o_own_d, c.r0_own_d,  c.r0_nb_d,   c.pos_d,
+       c.pcut_d,  c.f_d,   c.tlr_d,  c.v1_d,     c.v1_csr_d, c.i_csr_d, c.j_csr_d,   c.t_lr_sym_d};
   c.k = {d, sR, Bohr, rcut_mbd, rcut_mbd2, r_buf_ij};
-  c.n_blocks = (n_pairs + MBD_FORCE_TPB - 1) / MBD_FORCE_TPB;
 
   mbd_freq_factors(s, c.s_d, c.q_d, st);
   mbd_at_sym(s, c.q_d, c.at_d, st);
@@ -599,9 +676,6 @@ void mbd_gpu_site(int tid, int n_atoms, int n_pairs, int nnz, int n_freq, int n_
     double* t = c.x_d;
     c.x_d = c.y_d;
     c.y_d = t;
-    size_t tc = c.c_x;
-    c.c_x = c.c_y;
-    c.c_y = tc;
   }
   mbd_series_finish(s, c.at_d, c.x_d, c.diag_d, c.dots_d, c.integrand_d, st);
   gpuErrchk(hipMemcpyAsync(integrand, c.integrand_d, sizeof(double) * n_freq, hipMemcpyDeviceToHost, st[0]));
@@ -615,27 +689,21 @@ void mbd_gpu_force(int tid, int c3, const double* da, const double* dO, const do
   gpuErrchk(hipSetDevice(g_device));
   hipStream_t* st = &c.stream;
   mbd_site_d& s = c.s;
-  c.da_atom.resize(s.n_atoms);
-  c.do_atom.resize(s.n_atoms);
-  c.dr0_atom.resize(s.n_atoms);
-  for (int p = 0; p < s.n_atoms; p++) {
+  size_t n = s.n_atoms;
+  c.da_atom.resize(3 * n);
+  for (size_t p = 0; p < n; p++) {
     c.da_atom[p] = da[c.own[p]];
-    c.do_atom[p] = dO[c.own[p]];
-    c.dr0_atom[p] = dr0[c.own[p]];
+    c.da_atom[n + p] = dO[c.own[p]];
+    c.da_atom[2 * n + p] = dr0[c.own[p]];
   }
-  put(c.da_d, c.c_da, c.da_atom.data(), s.n_atoms, st);
-  put(c.do_d, c.c_do, c.do_atom.data(), s.n_atoms, st);
-  put(c.dr0_d, c.c_dr0, c.dr0_atom.data(), s.n_atoms, st);
-  grow(c.part_d, c.c_part, (size_t) 8 * c.n_blocks * s.n_freq, st);
-  grow(c.out_d, c.c_out, (size_t) 8 * s.n_freq, st);
-  grow(c.dtlr_d, c.c_dtlr, 9 * (size_t) s.n_atoms, st);
-  gpuErrchk(hipMemsetAsync(c.dtlr_d, 0, sizeof(double) * 9 * s.n_atoms, st[0]));
+  up(c.da_d, c.da_atom.data(), 3 * n, st);
+  gpuErrchk(hipMemsetAsync(c.dtlr_d, 0, sizeof(double) * 9 * n, st[0]));
   mbd_freq_derivs(s, c.da_d, c.do_d, c.t_d, st);
   mbd_force_kernel<<<c.n_blocks, MBD_FORCE_TPB, 0, st[0]>>>(s, c.k, c3, c.dr0_d, c.s_d, c.q_d, c.t_d, c.part_d, c.dtlr_d);
   mbd_force_reduce(s, c.n_blocks, c.part_d, c.out_d, st);
   c.out.resize(8 * (size_t) s.n_freq);
   gpuErrchk(hipMemcpyAsync(c.out.data(), c.out_d, sizeof(double) * 8 * s.n_freq, hipMemcpyDeviceToHost, st[0]));
-  gpuErrchk(hipMemcpyAsync(dt_lr_sym, c.dtlr_d, sizeof(double) * 9 * s.n_atoms, hipMemcpyDeviceToHost, st[0]));
+  gpuErrchk(hipMemcpyAsync(dt_lr_sym, c.dtlr_d, sizeof(double) * 9 * n, hipMemcpyDeviceToHost, st[0]));
   gpuErrchk(hipStreamSynchronize(st[0]));
   for (int w = 0; w < s.n_freq; w++) {
     dot_2b[w] = c.out[8 * w];
