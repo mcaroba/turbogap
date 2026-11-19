@@ -20,7 +20,9 @@
 
 #define MBD_LANES 32
 #define MBD_ROWS_PER_BLOCK 4
-#define MBD_MAX_COLS 39
+#define MBD_COL_SLOTS 2
+#define MBD_UNROLL 8
+#define MBD_REDUCE_TPB 256
 #define MBD_FORCE_TPB 256
 #define MBD_DOT_TPB 256
 
@@ -110,62 +112,84 @@ void mbd_csr_values(mbd_site_d s, const int* perm_d, double* v1_csr_d, hipStream
   tg_parallel_for("mbd_csr_values", s.nnz, stream, TG_LAMBDA(const int k) { v1_csr_d[k] = s.v1[perm_d[k] - 1]; });
 }
 
-// Z(r, c, w) = s(p(r), w) X(r, c, w).
+// Z(r, c, w) = s(p(r), w) X(r, c, w), stored row by row: the 3 n_freq
+// columns of a row are contiguous.
 void mbd_scale_rows(mbd_site_d s, const double* s_d, const double* x_d, double* z_d, hipStream_t* stream) {
   int n3 = 3 * s.n_atoms;
   int n = s.n_atoms;
+  int ncols = 3 * s.n_freq;
   tg_parallel_for(
-      "mbd_scale_rows", n3 * 3 * s.n_freq, stream, TG_LAMBDA(const int idx) {
-        int r = idx % n3;
-        int w = idx / (3 * n3);
-        z_d[idx] = s_d[r / 3 + n * w] * x_d[idx];
+      "mbd_scale_rows", n3 * ncols, stream, TG_LAMBDA(const int idx) {
+        int gc = idx % ncols;
+        int r = idx / ncols;
+        int w = gc / 3;
+        z_d[idx] = s_d[r / 3 + n * w] * x_d[r + (size_t) n3 * gc];
       });
 }
 
-// Columns c0.. of Y = D A_1 Z: 32 lanes per row, each summing every 32nd entry
-// of the row, then a shuffle tree. Then pol -= k2*res(k2+1)*Y and, past the
-// first power, the diagonal kept for the integrand.
-__global__ void mbd_spmm_cols_kernel(mbd_site_d s, int k2, int c0, double pol_coeff, const double* s_d, const double* z_d,
+// Columns c0.. of Y = D A_1 Z, one warp per row: lane l sums columns c0 + l
+// and c0 + l + 32 over the row's entries in CSR order, so every entry is one
+// contiguous read of Z's row. Then pol -= k2*res(k2+1)*Y and, past the first
+// power, the diagonal kept for the integrand.
+__global__ void mbd_spmm_rows_kernel(mbd_site_d s, int k2, int c0, double pol_coeff, const double* s_d, const double* z_d,
                                      double* y_d, double* pol_d, double* diag_d) {
   int n3 = 3 * s.n_atoms;
   int n = s.n_atoms;
-  int ncol = min(MBD_MAX_COLS, 3 * s.n_freq - c0);
+  int ncols = 3 * s.n_freq;
   int lane = threadIdx.x % MBD_LANES;
   int r = blockIdx.x * MBD_ROWS_PER_BLOCK + threadIdx.x / MBD_LANES;
-  double acc[MBD_MAX_COLS];
+  if (r >= n3)
+    return;
+  double acc[MBD_COL_SLOTS];
 #pragma unroll
-  for (int c = 0; c < MBD_MAX_COLS; c++)
-    acc[c] = 0.0;
-  if (r < n3) {
-    for (int k = s.i_csr[r] - 1 + lane; k < s.i_csr[r + 1] - 1; k += MBD_LANES) {
-      int j = s.j_csr[k] - 1;
-      double v = s.v1_csr[k];
+  for (int m = 0; m < MBD_COL_SLOTS; m++)
+    acc[m] = 0.0;
+  int k = s.i_csr[r] - 1;
+  int k_end = s.i_csr[r + 1] - 1;
+  // MBD_UNROLL entries' loads in flight at once; each column still sums in CSR order.
+  for (; k + MBD_UNROLL <= k_end; k += MBD_UNROLL) {
+    double v[MBD_UNROLL];
+    double z[MBD_UNROLL][MBD_COL_SLOTS];
 #pragma unroll
-      for (int c = 0; c < MBD_MAX_COLS; c++)
-        if (c < ncol)
-          acc[c] = acc[c] + v * z_d[j + (size_t) n3 * (c0 + c)];
+    for (int u = 0; u < MBD_UNROLL; u++) {
+      const double* zr = z_d + (size_t) ncols * (s.j_csr[k + u] - 1);
+      v[u] = s.v1_csr[k + u];
+#pragma unroll
+      for (int m = 0; m < MBD_COL_SLOTS; m++) {
+        int gc = c0 + lane + MBD_LANES * m;
+        z[u][m] = gc < ncols ? zr[gc] : 0.0;
+      }
+    }
+#pragma unroll
+    for (int u = 0; u < MBD_UNROLL; u++)
+#pragma unroll
+      for (int m = 0; m < MBD_COL_SLOTS; m++)
+        acc[m] = acc[m] + v[u] * z[u][m];
+  }
+  for (; k < k_end; k++) {
+    int j = s.j_csr[k] - 1;
+    double v = s.v1_csr[k];
+    const double* zr = z_d + (size_t) ncols * j;
+#pragma unroll
+    for (int m = 0; m < MBD_COL_SLOTS; m++) {
+      int gc = c0 + lane + MBD_LANES * m;
+      if (gc < ncols)
+        acc[m] = acc[m] + v * zr[gc];
     }
   }
-  for (int off = MBD_LANES / 2; off > 0; off /= 2) {
 #pragma unroll
-    for (int c = 0; c < MBD_MAX_COLS; c++)
-      acc[c] = acc[c] + MBD_SHFL_DOWN(acc[c], off);
-  }
-  if (lane == 0 && r < n3) {
-#pragma unroll
-    for (int c = 0; c < MBD_MAX_COLS; c++) {
-      if (c >= ncol)
-        continue;
-      int gc = c0 + c;
-      int w = gc / 3;
-      int cc = gc % 3;
-      size_t at = r + (size_t) n3 * gc;
-      double y = s_d[r / 3 + n * w] * acc[c];
-      y_d[at] = y;
-      pol_d[at] = pol_d[at] - pol_coeff * y;
-      if (k2 > 3 && r == cc)
-        diag_d[(k2 - 4) * 3 + r + 3 * (s.n_order - 3) * w] = y;
-    }
+  for (int m = 0; m < MBD_COL_SLOTS; m++) {
+    int gc = c0 + lane + MBD_LANES * m;
+    if (gc >= ncols)
+      continue;
+    int w = gc / 3;
+    int cc = gc % 3;
+    size_t at = r + (size_t) n3 * gc;
+    double y = s_d[r / 3 + n * w] * acc[m];
+    y_d[at] = y;
+    pol_d[at] = pol_d[at] - pol_coeff * y;
+    if (k2 > 3 && r == cc)
+      diag_d[(k2 - 4) * 3 + r + 3 * (s.n_order - 3) * w] = y;
   }
 }
 
@@ -174,8 +198,8 @@ void mbd_series_step(mbd_site_d s, int k2, const double* s_d, const double* x_d,
   double pol_coeff = (double) k2 * (-1.0 / (double) k2);
   mbd_scale_rows(s, s_d, x_d, z_d, stream);
   int blocks = (3 * s.n_atoms + MBD_ROWS_PER_BLOCK - 1) / MBD_ROWS_PER_BLOCK;
-  for (int c0 = 0; c0 < 3 * s.n_freq; c0 += MBD_MAX_COLS)
-    mbd_spmm_cols_kernel<<<blocks, MBD_ROWS_PER_BLOCK * MBD_LANES, 0, stream[0]>>>(s, k2, c0, pol_coeff, s_d, z_d, y_d, pol_d,
+  for (int c0 = 0; c0 < 3 * s.n_freq; c0 += MBD_LANES * MBD_COL_SLOTS)
+    mbd_spmm_rows_kernel<<<blocks, MBD_ROWS_PER_BLOCK * MBD_LANES, 0, stream[0]>>>(s, k2, c0, pol_coeff, s_d, z_d, y_d, pol_d,
                                                                                    diag_d);
 }
 
@@ -387,17 +411,29 @@ __global__ void mbd_force_kernel(mbd_site_d s, mbd_consts k, int c3, const doubl
   }
 }
 
-// Block sums in block order: out[8*w + c].
+// Block sums, one block per out[8*w + c]: thread t sums blocks t, t + TPB, ...
+// in that order, then a fixed shared-memory tree.
+__global__ void mbd_force_reduce_kernel(int n_blocks, const double* part_d, double* out_d) {
+  __shared__ double sh[MBD_REDUCE_TPB];
+  int idx = blockIdx.x;
+  int c = idx % 8;
+  int w = idx / 8;
+  double t = 0.0;
+  for (int b = threadIdx.x; b < n_blocks; b += MBD_REDUCE_TPB)
+    t = t + part_d[8 * (b + n_blocks * w) + c];
+  sh[threadIdx.x] = t;
+  __syncthreads();
+  for (int off = MBD_REDUCE_TPB / 2; off > 0; off /= 2) {
+    if (threadIdx.x < off)
+      sh[threadIdx.x] = sh[threadIdx.x] + sh[threadIdx.x + off];
+    __syncthreads();
+  }
+  if (threadIdx.x == 0)
+    out_d[idx] = sh[0];
+}
+
 void mbd_force_reduce(mbd_site_d s, int n_blocks, const double* part_d, double* out_d, hipStream_t* stream) {
-  tg_parallel_for(
-      "mbd_force_reduce", 8 * s.n_freq, stream, TG_LAMBDA(const int idx) {
-        int c = idx % 8;
-        int w = idx / 8;
-        double t = 0.0;
-        for (int b = 0; b < n_blocks; b++)
-          t = t + part_d[8 * (b + n_blocks * w) + c];
-        out_d[idx] = t;
-      });
+  mbd_force_reduce_kernel<<<8 * s.n_freq, MBD_REDUCE_TPB, 0, stream[0]>>>(n_blocks, part_d, out_d);
 }
 
 template <class T> void grow(T*& p, size_t& cap, size_t n, hipStream_t* stream) {
@@ -556,10 +592,10 @@ void mbd_gpu_site(int tid, int n_atoms, int n_pairs, int nnz, int n_freq, int n_
   mbd_freq_factors(s, c.s_d, c.q_d, st);
   mbd_at_sym(s, c.q_d, c.at_d, st);
   mbd_csr_values(s, c.perm_d, c.v1_csr_d, st);
-  gpuErrchk(hipMemcpyAsync(c.x_d, c.at_d, sizeof(double) * n3f, hipMemcpyDeviceToDevice, st[0]));
   gpuErrchk(hipMemsetAsync(c.pol_d, 0, sizeof(double) * n3f, st[0]));
   for (int k2 = 3; k2 <= n_order; k2++) {
-    mbd_series_step(s, k2, c.s_d, c.x_d, c.z_d, c.y_d, c.pol_d, c.diag_d, st);
+    const double* x_in = (k2 == 3) ? c.at_d : c.x_d;
+    mbd_series_step(s, k2, c.s_d, x_in, c.z_d, c.y_d, c.pol_d, c.diag_d, st);
     double* t = c.x_d;
     c.x_d = c.y_d;
     c.y_d = t;
