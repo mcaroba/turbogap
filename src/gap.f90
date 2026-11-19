@@ -666,8 +666,8 @@ contains
       n_sites = size(soap, 2)
       n_sites0 = size(forces, 2)
 
+!   No clearing before a dgemm with beta = 0: it writes every element.
       allocate (kernels(1:n_sites, 1:n_sparse))
-      kernels = 0.d0
       allocate (kernels_copy(1:n_sites, 1:n_sparse))
       if (n_sites > 0) then
          call dgemm("t", "n", n_sites, n_sparse, n_soap, 1.d0, soap, n_soap, Qs, n_soap, 0.d0, &
@@ -676,7 +676,11 @@ contains
 !   We copy the kernels because it makes the matmul() operation (WHICH SHOULD BY THE WAY BE WRITTEN
 !   USING LAPACK ROUTINES) a lot faster
       if (is_zeta_int) then
-         kernels_copy = kernels**zeta_int
+         !$omp parallel do default(none) schedule(static) shared(n_sparse, kernels, kernels_copy, zeta_int) private(l)
+         do l = 1, n_sparse
+            kernels_copy(:, l) = kernels(:, l)**zeta_int
+         end do
+         !$omp end parallel do
          energies = matmul(kernels_copy, alphas)
       else
          kernels_copy = kernels**zeta
@@ -695,25 +699,33 @@ contains
          end if
          allocate (kernels_der(1:n_sites, 1:n_sparse))
          allocate (Qss(1:n_sites, 1:n_soap))
-         Qss = 0.d0
          allocate (Qs_copy(1:n_soap, 1:n_sparse))
          allocate (this_Qss(1:n_soap))
 
          Qs_copy = Qs
 
+!        Each element is its own, so the sparse points run in parallel.
          if (is_zeta_int) then
-            kernels_der = kernels**(zeta_int - 1)
+            !$omp parallel do default(none) schedule(static) shared(n_sparse, kernels, kernels_der, zeta_int) private(l)
+            do l = 1, n_sparse
+               kernels_der(:, l) = kernels(:, l)**(zeta_int - 1)
+            end do
+            !$omp end parallel do
          else
             kernels_der = kernels**(zeta - 1.d0)
          end if
          if (n_sites < n_soap) then
-            do i = 1, n_sites
-               kernels_der(i, :) = kernels_der(i, :)*alphas(:)
+            !$omp parallel do default(none) schedule(static) shared(n_sparse, kernels_der, alphas) private(l)
+            do l = 1, n_sparse
+               kernels_der(:, l) = kernels_der(:, l)*alphas(l)
             end do
+            !$omp end parallel do
          else
-            do i = 1, n_soap
-               Qs_copy(i, :) = Qs(i, :)*alphas(:)
+            !$omp parallel do default(none) schedule(static) shared(n_sparse, Qs, Qs_copy, alphas) private(l)
+            do l = 1, n_sparse
+               Qs_copy(:, l) = Qs(:, l)*alphas(l)
             end do
+            !$omp end parallel do
          end if
 
          if (n_sites > 0) then
