@@ -29,6 +29,7 @@
 module vdw
 
    use kinds
+   use error, only: turbogap_abort
 
    use misc
    use nonneg_leastsq
@@ -1448,6 +1449,7 @@ contains
       integer(i64), allocatable :: ia2(:)
       type(csr_index_t) :: csr_a
       type(csr_index_t) :: csr_a2
+      real(dp), allocatable :: vir_site(:, :, :)
       real(dp) :: fq_val(1:n_freq)
       real(dp) :: fq_si(1:n_freq)
       real(dp) :: fq_sj(1:n_freq)
@@ -1568,6 +1570,16 @@ contains
       !  r_buf_2b = r_buffer
       !end if
 
+!     Sites are independent: each writes its own energy and its own atom's force
+!     and local virial. Its share of the virial is kept and added up after the
+!     loop in site order, so the result does not depend on the thread count.
+!     Everything else a site computes is its own, hence default(firstprivate).
+      allocate (vir_site(1:3, 1:3, 1:n_sites))
+      vir_site = 0.d0
+      !$omp parallel do default(firstprivate) schedule(dynamic, 1) &
+      !$omp shared(hirshfeld_v_cart_der_ji, n_neigh, neighbors_list, neighbor_species, rjs, xyz, hirshfeld_v_neigh, &
+      !$omp        c6_ref, r0_ref, alpha0_ref, energies, forces0, virial, local_virial_diag0, central_pol, central_omega, &
+      !$omp        hirshfeld_v_cart_der_H, vir_site, n_sites)
       do i = 1, n_sites
 
          call cpu_time(time1)
@@ -1995,7 +2007,7 @@ contains
                      write (*, *) "cycle for MBD fails. We recommend switching off"
                      write (*, *) "vdW corrections, using Tkatchenko-Scheffler or"
                      write (*, *) "trying to increase the value of vdw_scs_rcut."
-                     return
+                     call turbogap_abort()
                   end if
                end do
                a_iso(:, om) = a_iso(:, om)/3.d0
@@ -2052,7 +2064,7 @@ contains
                      write (*, *) "vdW corrections, using Tkatchenko-Scheffler or"
                      write (*, *) "trying to increase the value of vdw_scs_rcut."
                      write (*, *) "p, om, a_iso", p, om, a_iso(p, om)
-                     return
+                     call turbogap_abort()
                   end if
                end do
                a_iso(:, om) = a_iso(:, om)/3.d0
@@ -5901,12 +5913,12 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                            !i1 = modulo(neighbors_list(n_tot+1)-1, n_sites0) + 1
                            if (.not. cent_appr) then
                               forces0(c3, i0) = forces0(c3, i0) + (1.d0/(2.d0*pi)*integral)*Hartree/Bohr
-                              virial(:, c3) = virial(:, c3) + (1.d0/(pi)*virial_integral)*Hartree
+                              vir_site(:, c3, i) = vir_site(:, c3, i) + (1.d0/(pi)*virial_integral)*Hartree
                             local_virial_diag0(c3, i0) = local_virial_diag0(c3, i0) + (1.d0/(pi)*damped_virial_integral(c3))*Hartree
                            end if
                            if (cent_appr) then
                               forces0(c3, i0) = forces0(c3, i0) + (1.d0/(2.d0*pi)*sym_integral)*Hartree/Bohr
-                              virial(:, c3) = virial(:, c3) + (1.d0/(pi)*virial_integral)*Hartree
+                              vir_site(:, c3, i) = vir_site(:, c3, i) + (1.d0/(pi)*virial_integral)*Hartree
                             local_virial_diag0(c3, i0) = local_virial_diag0(c3, i0) + (1.d0/(pi)*damped_virial_integral(c3))*Hartree
                            end if
 
@@ -6009,6 +6021,14 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
          call cpu_time(time4)
 
       end do
+      !$omp end parallel do
+
+      do i = 1, n_sites
+         do c3 = 1, 3
+            virial(:, c3) = virial(:, c3) + vir_site(:, c3, i)
+         end do
+      end do
+      deallocate (vir_site)
 
       deallocate (hirshfeld_v_cart_der_H)
 

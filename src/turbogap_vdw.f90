@@ -128,7 +128,6 @@ contains
       real(dp), allocatable :: S_xyz_inv(:, :)
       real(dp), allocatable :: hirshfeld_v_cart_der_send(:, :)
       real(dp), allocatable :: hirshfeld_v_cart_der_receive(:, :)
-      real(dp), allocatable :: this_hirshfeld_v_cart_der_receive(:, :)
       real(dp), allocatable :: hirshfeld_v_cart_der_ji(:, :)
       integer, allocatable :: hirshfeld_transfer(:, :)
       integer, allocatable :: this_hirshfeld_transfer(:)
@@ -138,8 +137,8 @@ contains
       integer, allocatable :: k_start(:)
       integer, allocatable :: i_receive(:)
       integer, allocatable :: j_receive(:)
-      integer, allocatable :: this_i_receive(:)
-      integer, allocatable :: this_j_receive(:)
+      integer, allocatable :: send_count(:)
+      integer, allocatable :: send_disp(:)
       integer, allocatable :: hirshfeld_disp(:)
       integer :: i
       integer :: j
@@ -267,39 +266,36 @@ contains
             allocate (j_receive(1:sum(hirshfeld_transfer(rank + 1, 1:ntasks))))
 !         Do the communication | THIS IS SLOW, BUT A RELATIVELY STRAIGHTFORWARD WAY TO IMPLEMENT IT
 !                                CHECK POSSIBLE WAYS TO SPEED THIS UP (REDUCE COMMUNICATION)
+!         One all-to-all per array. Rank r's block for rank k is
+!         hirshfeld_transfer(k+1, r+1) long, and the received blocks are laid
+!         out by source rank, which is the layout the inverse mapping below reads
+!         through hirshfeld_disp.
             allocate (hirshfeld_disp(1:ntasks))
-            do i = 1, ntasks
-               allocate (this_hirshfeld_v_cart_der_receive(1:3, 1:hirshfeld_transfer(rank + 1, i)))
-               allocate (this_i_receive(1:hirshfeld_transfer(rank + 1, i)))
-               allocate (this_j_receive(1:hirshfeld_transfer(rank + 1, i)))
-               hirshfeld_disp(1) = 0
-               do j = 2, ntasks
-                  hirshfeld_disp(j) = hirshfeld_disp(j - 1) + hirshfeld_transfer(j - 1, i)
-               end do
-#ifdef _MPIF90
-               call mpi_scatterv(hirshfeld_v_cart_der_send, 3*hirshfeld_transfer(1:ntasks, i), 3*hirshfeld_disp, &
-                                 MPI_DOUBLE_PRECISION, this_hirshfeld_v_cart_der_receive, &
-                                 3*hirshfeld_transfer(rank + 1, i), MPI_DOUBLE_PRECISION, i - 1, &
-                                 MPI_COMM_WORLD, ierr)
-               call mpi_scatterv(i_send, hirshfeld_transfer(1:ntasks, i), hirshfeld_disp, MPI_INTEGER, this_i_receive, &
-                                 hirshfeld_transfer(rank + 1, i), MPI_INTEGER, i - 1, MPI_COMM_WORLD, ierr)
-               call mpi_scatterv(j_send, hirshfeld_transfer(1:ntasks, i), hirshfeld_disp, MPI_INTEGER, this_j_receive, &
-                                 hirshfeld_transfer(rank + 1, i), MPI_INTEGER, i - 1, MPI_COMM_WORLD, ierr)
-#else
-               this_hirshfeld_v_cart_der_receive = hirshfeld_v_cart_der_send
-               this_i_receive = i_send
-               this_j_receive = j_send
-#endif
-               hirshfeld_disp(1) = 0
-               do j = 2, ntasks
-                  hirshfeld_disp(j) = hirshfeld_disp(j - 1) + hirshfeld_transfer(rank + 1, j - 1)
-               end do
-               hirshfeld_v_cart_der_receive(1:3, hirshfeld_disp(i) + 1:hirshfeld_disp(i) + hirshfeld_transfer(rank + 1, i)) = &
-                  this_hirshfeld_v_cart_der_receive
-               i_receive(hirshfeld_disp(i) + 1:hirshfeld_disp(i) + hirshfeld_transfer(rank + 1, i)) = this_i_receive
-               j_receive(hirshfeld_disp(i) + 1:hirshfeld_disp(i) + hirshfeld_transfer(rank + 1, i)) = this_j_receive
-               deallocate (this_hirshfeld_v_cart_der_receive, this_i_receive, this_j_receive)
+            allocate (send_count(1:ntasks))
+            allocate (send_disp(1:ntasks))
+            send_count = hirshfeld_transfer(1:ntasks, rank + 1)
+            send_disp(1) = 0
+            hirshfeld_disp(1) = 0
+            do j = 2, ntasks
+               send_disp(j) = send_disp(j - 1) + send_count(j - 1)
+               hirshfeld_disp(j) = hirshfeld_disp(j - 1) + hirshfeld_transfer(rank + 1, j - 1)
             end do
+#ifdef _MPIF90
+            call mpi_alltoallv(hirshfeld_v_cart_der_send, 3*send_count, 3*send_disp, MPI_DOUBLE_PRECISION, &
+                               hirshfeld_v_cart_der_receive, 3*hirshfeld_transfer(rank + 1, 1:ntasks), 3*hirshfeld_disp, &
+                               MPI_DOUBLE_PRECISION, MPI_COMM_WORLD, ierr)
+            call mpi_alltoallv(i_send, send_count, send_disp, MPI_INTEGER, &
+                               i_receive, hirshfeld_transfer(rank + 1, 1:ntasks), hirshfeld_disp, &
+                               MPI_INTEGER, MPI_COMM_WORLD, ierr)
+            call mpi_alltoallv(j_send, send_count, send_disp, MPI_INTEGER, &
+                               j_receive, hirshfeld_transfer(rank + 1, 1:ntasks), hirshfeld_disp, &
+                               MPI_INTEGER, MPI_COMM_WORLD, ierr)
+#else
+            hirshfeld_v_cart_der_receive = hirshfeld_v_cart_der_send
+            i_receive = i_send
+            j_receive = j_send
+#endif
+            deallocate (send_count, send_disp)
 !         Now we do the inverse mapping so that we know where to find grad_i(nu_j). Things to note:
 !         *) On this rank, the central atom is i and the neighbor is j
 !         *) i_receive and j_receive contain central and neighbor atoms from the point of view of the rank that
