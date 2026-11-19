@@ -266,6 +266,7 @@ CPU nodes (2 x EPYC 9965, 384 cores) for 308k-atom CO, in seconds per MD step
 | 1 | 1.50 | 0.46 |
 | 2 | 1.10 | 0.25 |
 | 4 | 1.18 | 0.13 |
+| 6 | 1.08 | 0.10 |
 
 | ranks x threads, one node, `rcb` + `domain` | 384 x 1 | 96 x 4 | 48 x 8 | 24 x 16 |
 | --- | ---: | ---: | ---: | ---: |

@@ -59,9 +59,9 @@ columns predate the host build's contract-first SOAP forces (`perf/host-openmp`,
 2026-11-19), which made it about 3.3 times faster. Measured since, 307,671
 atoms:
 
-| | 1 GH200 | 1 CPU node | 2 CPU nodes | 4 CPU nodes |
-| --- | --- | --- | --- | --- |
-| microseconds per atom-step | 2.4 | 1.49 (571) | 0.81 (622) | 0.43 (660) |
+| | 1 GH200 | 1 CPU node | 2 CPU nodes | 4 CPU nodes | 6 CPU nodes |
+| --- | --- | --- | --- | --- | --- |
+| microseconds per atom-step | 2.4 | 1.49 (571) | 0.81 (622) | 0.43 (660) | 0.33 (749) |
 
 A CPU node now does the work of about 1.6 GH200s.
 
