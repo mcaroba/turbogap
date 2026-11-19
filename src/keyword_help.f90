@@ -930,6 +930,18 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
+         write (*, '(A)') '  soap_contract                        [logical, default true]'
+         write (*, '(A)') '      CPU build: compute SOAP forces and local-property gradients by'
+         write (*, '(A)') '      contracting the energy gradient with the descriptor''s expansion,'
+         write (*, '(A)') '      without forming the derivative of every descriptor component for'
+         write (*, '(A)') '      every neighbour. Faster and much smaller in memory; the result is'
+         write (*, '(A)') '      the same up to the order of the sums. .false. forms the derivatives'
+         write (*, '(A)') '      as before. Dipole models and write_derivatives always form them. The'
+         write (*, '(A)') '      GPU build always contracts.'
+         write (*, '(A)') '      -> see do_derivatives'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  soap_radial_legacy_filter            [logical, default true]'
          write (*, '(A)') '      Keep the pre-2026 seed of the SOAP radial filter recursion. That'
          write (*, '(A)') '      seed drops the surface term at rcut_hard, which leaves the radial'

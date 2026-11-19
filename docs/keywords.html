@@ -240,12 +240,12 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">361 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">362 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
 <a href="#general"><span>General</span><span class="n">60</span></a>
-<a href="#run-control"><span>Run control</span><span class="n">19</span></a>
+<a href="#run-control"><span>Run control</span><span class="n">20</span></a>
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">23</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
 <a href="#monte-carlo"><span>Monte Carlo</span><span class="n">35</span></a>
@@ -951,6 +951,15 @@ footer {
 <td class="mo">all</td>
 <td class="de">Convergence threshold on the pressure during a cell relaxation.</td>
 <td class="dp"><span class="dep">needs <code>optimize</code></span><span class="dep">see <code>e_tol</code></span><span class="dep">see <code>f_tol</code></span></td>
+</tr>
+<tr data-h="soap_contract cpu build: compute soap forces and local-property gradients by contracting the energy gradient with the descriptor&#x27;s expansion, without forming the derivative of every descriptor component for every neighbour. faster and much smaller in memory; the result is the same up to the order of the sums. .false. forms the derivatives as before. dipole models and write_derivatives always form them. the gpu build always contracts." data-m="predict md mc soap ipi">
+<td class="kw"><code>soap_contract</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">CPU build: compute SOAP forces and local-property gradients by contracting the energy gradient with the descriptor&#x27;s expansion, without forming the derivative of every descriptor component for every neighbour. Faster and much smaller in memory; the result is the same up to the order of the sums. .false. forms the derivatives as before. Dipole models and write_derivatives always form them. The GPU build always contracts.</td>
+<td class="dp"><span class="dep">see <code>do_derivatives</code></span></td>
 </tr>
 <tr data-h="soap_radial_legacy_filter keep the pre-2026 seed of the soap radial filter recursion. that seed drops the surface term at rcut_hard, which leaves the radial derivatives disagreeing with a finite difference of the coefficients by about exp(-nf^2/2) -- 5e-6 relative near the hard cutoff for the default nf. setting this to .false. restores the term, which makes the derivatives finite-difference exact and the expansion slightly faster, at the cost of moving energies by ~3e-8 relative and forces by ~3e-6 ev/a, so existing baselines have to be regenerated. second radial derivatives require .false." data-m="predict md mc soap ipi">
 <td class="kw"><code>soap_radial_legacy_filter</code></td>

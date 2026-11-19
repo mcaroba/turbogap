@@ -2533,6 +2533,19 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_derivatives
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_derivatives", params%do_derivatives)
+         !> @kw soap_contract
+         !> CPU build: compute SOAP forces and local-property gradients by contracting the energy
+         !> gradient with the descriptor's expansion, without forming the derivative of every
+         !> descriptor component for every neighbour. Faster and much smaller in memory; the
+         !> result is the same up to the order of the sums. .false. forms the derivatives as
+         !> before. Dipole models and write_derivatives always form them. The GPU build always
+         !> contracts.
+         !> @see do_derivatives
+      else if (keyword == 'soap_contract') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%soap_contract
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("soap_contract", params%soap_contract)
          !> @kw do_derivatives_fd
          !> Compute the descriptor derivatives by finite differences instead of analytically. A
          !> correctness check on the analytic route, far slower, and not meant for production.

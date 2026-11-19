@@ -6,10 +6,10 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 
 ## Contents
 
-**The input file** &mdash; 302 keywords
+**The input file** &mdash; 303 keywords
 
 - [General](#general) (60)
-- [Run control](#run-control) (19)
+- [Run control](#run-control) (20)
 - [Molecular dynamics](#molecular-dynamics) (23)
 - [Nested sampling](#nested-sampling) (6)
 - [Monte Carlo](#monte-carlo) (35)
@@ -120,6 +120,7 @@ What is computed, and how a relaxation is driven.
 | `max_opt_step_eps` | real |  |  | all | **Accepted and ignored.** Largest strain any cell vector could take in one step of the old alternating cell relaxation. gd-box now relaxes positions and lattice together in one preconditioned descent with a single step length, taken from max_opt_step, so this is read and discarded. Use gd_box_weight to change how far the cell moves per step. | see `max_opt_step`; see `gd_box_weight` |
 | `optimize` | string | `vv` |  | md, mc | How the geometry is driven: "vv" for velocity-Verlet dynamics, "gd" for gradient descent on the positions, "gd-box" to relax the cell as well, and "gd-box-ortho" to relax the cell keeping it orthorhombic. Anything else aborts the run. |  |
 | `p_tol` | real | `0.01` | bar | all | Convergence threshold on the pressure during a cell relaxation. | needs `optimize`; see `e_tol`; see `f_tol` |
+| `soap_contract` | logical | `true` |  | all | CPU build: compute SOAP forces and local-property gradients by contracting the energy gradient with the descriptor's expansion, without forming the derivative of every descriptor component for every neighbour. Faster and much smaller in memory; the result is the same up to the order of the sums. .false. forms the derivatives as before. Dipole models and write_derivatives always form them. The GPU build always contracts. | see `do_derivatives` |
 | `soap_radial_legacy_filter` | logical | `true` |  | all | Keep the pre-2026 seed of the SOAP radial filter recursion. That seed drops the surface term at rcut_hard, which leaves the radial derivatives disagreeing with a finite difference of the coefficients by about exp(-nf^2/2) -- 5e-6 relative near the hard cutoff for the default nf. Setting this to .false. restores the term, which makes the derivatives finite-difference exact and the expansion slightly faster, at the cost of moving energies by ~3e-8 relative and forces by ~3e-6 eV/A, so existing baselines have to be regenerated. Second radial derivatives require .false. | see `do_derivatives` |
 | `target_pos_step` | real |  | A | md | Displacement the variable time step aims for: the step is rescaled so that the fastest atom moves about this far. Naming this keyword is what enables the variable time step. | sets `variable_time_step`; see `tau_dt` |
 | `tau_dt` | real | `100.0` | fs | md | Relaxation time over which the variable time step is allowed to change, so that the step size follows target_pos_step smoothly instead of jumping. | needs `target_pos_step` |

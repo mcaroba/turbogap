@@ -44,6 +44,9 @@ module turbogap_soap
    use turbogap_setup, only: model_t
    use turbogap_results, only: results_t
    use turbogap_loop, only: loop_t
+#ifndef _GPU
+   use gap_interface, only: soap_contract_on
+#endif
 #ifdef _GPU
    use iso_c_binding
    use F_B_C, only: gpu_malloc_async, cpy_htod, gpu_free_async
@@ -315,6 +318,7 @@ contains
 !$omp end parallel
             cur = 3 - cur
 #else
+            soap_contract_on = params%soap_contract
             call soap_backend_begin(model%soap_turbo_hypers(i))
             call get_gap_soap(state%n_sites, this_n_sites_mpi, nl%n_neigh(this_i_beg:this_i_end), &
                nl%neighbors_list(this_j_beg:this_j_end), &

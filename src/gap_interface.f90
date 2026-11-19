@@ -757,6 +757,11 @@ contains
       use types
       use mad_ir, only: mad_ir_collect, mad_ir_dmu_dr, mad_ir_need_dmu
       use mad_ir_xl, only: mad_ir_xl_active, mad_ir_xl_collect, mad_ir_xl_site_w, mad_ir_xl_force
+
+!     Forces and local-property gradients from soap_contract rather than from
+!     soap_cart_der, which is then never formed. Set from the soap_contract
+!     keyword before each descriptor pass.
+      logical, public, save :: soap_contract_on = .true.
    contains
 
       subroutine get_gap_soap(n_total_sites, n_sites0, n_neigh0, neighbors_list0, n_species, species_types, &
@@ -891,6 +896,7 @@ contains
          integer :: n_all_sites
          integer :: i4
          logical :: lp_der
+         logical :: contract
          integer :: n_sites_supercell
          integer :: j3
          logical, allocatable :: mask(:, :)
@@ -1040,7 +1046,12 @@ contains
             soap(:, i) = 0.d0
          end do
          !$omp end parallel do
-         if (do_derivatives) then
+!   Only the dipole model and write_derivatives need dq/dr itself; everything
+!   else contracts against the expansion get_soap keeps.
+         contract = do_derivatives .and. soap_contract_on .and. .not. write_derivatives .and. .not. is_dipole_model
+         if (contract) then
+            allocate (soap_cart_der(1:3, 1:1, 1:1))
+         else if (do_derivatives) then
             allocate (soap_cart_der(1:3, 1:n_soap, 1:n_atom_pairs))
             !$omp parallel do default(none) shared(n_atom_pairs, soap_cart_der) private(k)
             do k = 1, n_atom_pairs
@@ -1068,7 +1079,7 @@ contains
                           atom_sigma_r, atom_sigma_r_scaling, atom_sigma_t, atom_sigma_t_scaling, &
                           amplitude_scaling, radial_enhancement, central_weight, basis, scaling_mode, do_timing, &
                           do_derivatives, compress_soap, compress_P_nonzero, compress_P_i, compress_P_j, &
-                          compress_P_el, soap, soap_cart_der)
+                          compress_P_el, soap, soap_cart_der, contract)
          end if
          soap_hessian_enabled = .false.
 
@@ -1142,7 +1153,7 @@ contains
                     & lp_der, soap_cart_der, n_neigh,&
                     & local_properties_cart_der,&
                     & local_property_models(i4)%zero_trunc,&
-                    & trim(local_property_models(i4)%label))
+                    & trim(local_property_models(i4)%label), contract)
 
                ! call local_property_predict( soap, Qs, alphas, V0, delta, zeta, &
                !      local_property, do_derivatives, soap_cart_der, n_neigh_out, &
@@ -1204,7 +1215,7 @@ contains
             if (n_sites > 0) then
                call get_soap_energy_and_forces(soap, soap_cart_der, delta, zeta, 0.d0, &
                                                n_neigh, neighbors_list, xyz, do_forces, do_timing, &
-                                               energies, forces, virial)
+                                               energies, forces, virial, contract)
             end if
 
             do i = 1, n_sites
