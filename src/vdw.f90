@@ -668,6 +668,10 @@ contains
 
       call cpu_time(time1)
 
+!     Sites are independent and each writes only its own central_pol and central_omega.
+      !$omp parallel do default(firstprivate) schedule(dynamic, 1) &
+      !$omp shared(n_neigh, neighbors_list, neighbor_species, rjs, xyz, hirshfeld_v_neigh, &
+      !$omp        c6_ref, r0_ref, alpha0_ref, central_pol, central_omega, forces0)
       do i = 1, n_sites
 
          n_tot = sum(n_neigh(1:i)) - n_neigh(i)
@@ -946,7 +950,7 @@ contains
                      write (*, *) "one of the central polarizabilities."
                      write (*, *) "You can try using a larger value for"
                      write (*, *) "vdw_omega_ref or larger vdw_scs_rcut."
-                     return
+                     call turbogap_abort()
                   else
                      central_omega(i) = vdw_omega_ref*omega_ref/sqrt(central_pol(i)/pol1 - 1.d0)
                   end if
@@ -973,7 +977,7 @@ contains
                      write (*, *) "cycle for MBD fails. We recommend switching off"
                      write (*, *) "vdW corrections, using Tkatchenko-Scheffler or"
                      write (*, *) "trying to increase the value of vdw_scs_rcut."
-                     return
+                     call turbogap_abort()
                   end if
                   pol1 = pol1/3.d0
                   central_pol(i) = 0.d0
@@ -993,7 +997,7 @@ contains
                      write (*, *) "cycle for MBD fails. We recommend switching off"
                      write (*, *) "vdW corrections, using Tkatchenko-Scheffler or"
                      write (*, *) "trying to increase the value of vdw_scs_rcut."
-                     return
+                     call turbogap_abort()
                   end if
                   central_pol(i) = central_pol(i)/3.d0
                   if (central_pol(i) .le. pol1) then
@@ -1001,7 +1005,7 @@ contains
                      write (*, *) "one of the central polarizabilities."
                      write (*, *) "You can try using a larger value for"
                      write (*, *) "vdw_omega_ref."
-                     return
+                     call turbogap_abort()
                   else
                      central_omega(i) = vdw_omega_ref*omega_ref/sqrt(central_pol(i)/pol1 - 1.d0)
                   end if
@@ -1017,6 +1021,7 @@ contains
          deallocate (b_i, d_vec)
 
       end do
+      !$omp end parallel do
 
       call cpu_time(time2)
 
@@ -1455,6 +1460,8 @@ contains
       real(dp) :: fq_sj(1:n_freq)
       real(dp) :: fq_ti(1:n_freq)
       real(dp) :: fq_tj(1:n_freq)
+      real(dp) :: dval_om(1:n_freq)
+      real(dp) :: dot_2b(1:n_freq)
       real(dp) :: pcut_i
       real(dp) :: pcut_next
       integer(i64), allocatable :: ja2(:) !
@@ -1463,7 +1470,6 @@ contains
       real(dp), allocatable :: val(:, :)
       real(dp), allocatable :: val2(:)
       real(dp), allocatable :: val_sym(:, :)
-      real(dp), allocatable :: dval(:, :) !
       real(dp), allocatable :: val_sym_test(:, :)  !
 
       ac4 = 8.d0*(2.d0)**(1.d0/2.d0) - 8.d0
@@ -2248,8 +2254,6 @@ contains
                            allocate (G_sym(1:3, 1:3*n_mbd_sites, 1:n_freq))
                         end if
                         if (cent_appr .and. include_2b) then
-                           allocate (dval(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
-                           dval = 0.d0
                            allocate (virial_integrand_2b(1:3, 1:n_freq))
                            allocate (damped_virial_integrand_2b(1:3, 1:n_freq))
                         end if
@@ -3354,9 +3358,7 @@ contains
                            if (n_order > 2) then
                            do k2 = 3, n_order
                               if (.not. cent_appr) then
-                                 do c1 = 1, 3
-                                    call sparse_mul_csr(val(1:nnz, i2), AT_power(:, c1), csr_a, temp_mat(:, c1))
-                                 end do
+                                 call sparse_mul3_csr(val(1:nnz, i2), AT_power, csr_a, temp_mat)
                                  AT_power = temp_mat
                                  if (k2 > 3) then
                                  do c1 = 1, 3
@@ -3366,9 +3368,7 @@ contains
                               end if ! .not. cent_appr
                               if (cent_appr) then
                                  call cpu_time(time5)
-                                 do c1 = 1, 3
-                                    call sparse_mul_csr(val_sym(1:nnz, i2), AT_sym_power(:, c1), csr_a, temp_mat(:, c1))
-                                 end do
+                                 call sparse_mul3_csr(val_sym(1:nnz, i2), AT_sym_power, csr_a, temp_mat)
                                  AT_sym_power = temp_mat
                                  if (k2 > 3) then
                                  do c1 = 1, 3
@@ -4122,6 +4122,7 @@ contains
                         if (cent_appr .and. include_2b) then
                            virial_integrand_2b = 0.d0
                            damped_virial_integrand_2b = 0.d0
+                           dot_2b = 0.d0
                         end if
                         k2 = 0
                         k4 = 0
@@ -4525,29 +4526,31 @@ contains
                                           if (abs(f_damp_SCS(k2)*T_mbd(k3) &
                                                   *T_LR_mult_ij(k2)) > 1.d-20) then
                                              k4 = k4 + 1
+!                                            dot_2b sums val_sym*dval in the order sum() did.
                                              do i_om = 1, n_freq
-                                                dval(k4, i_om) = fq_si(i_om)*fq_sj(i_om)*dT_LR_val(c1, c2) + &
-                                                                 1.d0/2.d0*1.d0/fq_si(i_om)*fq_ti(i_om)*fq_sj(i_om)* &
-                                                                 f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2) + &
-                                                                 1.d0/2.d0*1.d0/fq_sj(i_om)*fq_tj(i_om)*fq_si(i_om)* &
-                                                                 f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2)
-                                         virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_i*dval(k4, i_om)* &
+                                                dval_om(i_om) = fq_si(i_om)*fq_sj(i_om)*dT_LR_val(c1, c2) + &
+                                                                1.d0/2.d0*1.d0/fq_si(i_om)*fq_ti(i_om)*fq_sj(i_om)* &
+                                                                f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2) + &
+                                                                1.d0/2.d0*1.d0/fq_sj(i_om)*fq_tj(i_om)*fq_si(i_om)* &
+                                                                f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2)
+                                          virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_i*dval_om(i_om)* &
                                                                                val_sym(k4, i_om)
                                           damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0*xyz_i* &
-                                                                                      dval(k4, i_om)* &
+                                                                                      dval_om(i_om)* &
                                                                                       val_sym(k4, i_om)*pcut_i
+                                                dot_2b(i_om) = dot_2b(i_om) + val_sym(k4, i_om)*dval_om(i_om)
                                              end do
                                              if (k2 + 1 < n_mbd_pairs) then
                                                 if (p_mbd(k2 + 1) == -1) then
                                                    k4 = k4 + 1
                                                    do i_om = 1, n_freq
-                                                      dval(k4, i_om) = dval(k4 - 1, i_om)
                                          virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_0_mbd(:, k2 + 1)* &
-                                                                                     dval(k4, i_om)*val_sym(k4, i_om)
+                                                                                     dval_om(i_om)*val_sym(k4, i_om)
                                                 damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0* &
                                                                                             xyz_0_mbd(:, k2 + 1)* &
-                                                                                            dval(k4, i_om)*val_sym(k4, i_om)* &
+                                                                                            dval_om(i_om)*val_sym(k4, i_om)* &
                                                                                             pcut_next
+                                                      dot_2b(i_om) = dot_2b(i_om) + val_sym(k4, i_om)*dval_om(i_om)
 !                                                              poly_cut(rjs_0_mbd(k2+1)*Bohr,x_min,x_max)
                                                       !val_sym_test(k4,i_om) = val_sym_test(k4-1,i_om)
                                                    end do
@@ -5672,7 +5675,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                               end if !.not. cent_appr
                               if (cent_appr) then
                                  if (include_2b) then
-                                    integrand_sym(i2) = integrand_sym(i2) + sum(val_sym(:, i2)*dval(:, i2))
+                                    integrand_sym(i2) = integrand_sym(i2) + dot_2b(i2)
                                  end if
                                  if (n_order > 2) then
                                     do c1 = 1, 3
@@ -5969,7 +5972,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                         end if
                         deallocate (dT_LR_sym)
                         if (cent_appr .and. include_2b) then
-                           deallocate (dval, virial_integrand_2b, damped_virial_integrand_2b) !, val_sym_test )
+                           deallocate (virial_integrand_2b, damped_virial_integrand_2b) !, val_sym_test )
                         end if
                      end if
                   end if

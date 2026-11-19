@@ -365,6 +365,42 @@ contains
 
    end subroutine sparse_mul_csr
 
+!  sparse_mul_csr on the three columns of v, reading A and the index once.
+   subroutine sparse_mul3_csr(A, v, idx, res)
+
+      implicit none
+
+      real(dp), intent(in) :: A(:)
+      real(dp), intent(in) :: v(:, :)
+      type(csr_index_t), intent(in) :: idx
+      real(dp), intent(inout) :: res(:, :)
+      real(dp) :: a_k
+      real(dp) :: s1
+      real(dp) :: s2
+      real(dp) :: s3
+      integer :: i
+      integer :: j
+      integer :: k
+
+      res(:, 1:3) = 0.d0
+      do i = 1, idx%dim
+         s1 = 0.d0
+         s2 = 0.d0
+         s3 = 0.d0
+         do k = idx%i_csr(i), idx%i_csr(i + 1) - 1
+            a_k = A(idx%perm(k))
+            j = idx%j_csr(k)
+            s1 = s1 + a_k*v(j, 1)
+            s2 = s2 + a_k*v(j, 2)
+            s3 = s3 + a_k*v(j, 3)
+         end do
+         res(i, 1) = s1
+         res(i, 2) = s2
+         res(i, 3) = s3
+      end do
+
+   end subroutine sparse_mul3_csr
+
 !  power_iteration with the CSR index built beforehand.
    subroutine power_iteration_csr(val, idx, n_iter, b)
 
