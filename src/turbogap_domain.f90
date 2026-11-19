@@ -36,7 +36,7 @@ module turbogap_domain
    use turbogap_comm, only: comm_t, comm_bcast, comm_allgather, comm_sum_to_root, comm_with_mpi, comm_gather, &
                             comm_sum_all, comm_any_all
    use fingerprint, only: fingerprint_of
-   use types, only: input_parameters, any_has_local_properties, contribution_ref
+   use types, only: input_parameters, any_has_local_properties, contribution_ref, perform_t
    use timing, only: times_t, time_start, time_end
    use turbogap_structure, only: state_t
    use turbogap_setup, only: model_t
@@ -1100,13 +1100,18 @@ contains
 !  Complete every contribution family: each rank holds partial sums for the
 !  sites it owns and the neighbours they touch. Replicated data: one packed
 !  reduce to rank 0, whose totals are the ones the rest of the step reads.
-   subroutine domain_complete_contributions(dom, comm, res, state, params, model, time)
+!  Energies and virials are reduced per family, which is what is printed. The
+!  forces are summed over the families on each rank first, in the order
+!  evaluate adds them, so one force array goes through the reduce instead of
+!  one per family. With per-family forces to print they are reduced as before.
+   subroutine domain_complete_contributions(dom, comm, res, state, params, model, perform, time)
       type(domain_t), intent(inout) :: dom
       type(comm_t), intent(in) :: comm
       type(results_t), target, intent(inout) :: res
       type(state_t), intent(inout) :: state
       type(input_parameters), intent(in) :: params
       type(model_t), intent(in) :: model
+      type(perform_t), intent(in) :: perform
       type(times_t), intent(inout) :: time
       real(dp), allocatable :: all_energies(:, :)
       real(dp), allocatable :: all_forces(:, :, :)
@@ -1114,6 +1119,7 @@ contains
       real(dp), allocatable :: all_this_energies(:, :)
       real(dp), allocatable :: all_this_forces(:, :, :)
       real(dp), allocatable :: all_this_virial(:, :, :)
+      real(dp), allocatable :: family_sum(:, :)
       logical :: contrib_on(1:N_CONTRIB)
       type(contribution_ref) :: contrib(1:N_CONTRIB)
       integer :: family(1:N_CONTRIB)
@@ -1121,6 +1127,7 @@ contains
       integer :: i_contrib
       integer :: counter2
 
+      res%forces_summed = .false.
       if (dom%dd_type == DD_LEGACY) then
          call legacy_complete(dom, comm, res, state, params, model, time)
          return
@@ -1128,13 +1135,20 @@ contains
       call time_start(time%mpi_ef)
       call contributions_list(res, params, model, contrib_on, contrib, n_active, family)
 
+      if (params%do_forces .and. .not. params%print_vdw_forces) then
+         call sum_family_forces(contrib, family, n_active, state%n_sites, model, perform, family_sum)
+         res%forces_summed = allocated(family_sum)
+      end if
+
       counter2 = n_active
 
       allocate (all_energies(1:state%n_sites, 1:counter2))
       allocate (all_this_energies(1:state%n_sites, 1:counter2))
       if (params%do_forces) then
-         allocate (all_forces(1:3, 1:state%n_sites, 1:counter2))
-         allocate (all_this_forces(1:3, 1:state%n_sites, 1:counter2))
+         if (.not. res%forces_summed) then
+            allocate (all_forces(1:3, 1:state%n_sites, 1:counter2))
+            allocate (all_this_forces(1:3, 1:state%n_sites, 1:counter2))
+         end if
          allocate (all_virial(1:3, 1:3, 1:counter2))
          allocate (all_this_virial(1:3, 1:3, 1:counter2))
       end if
@@ -1147,10 +1161,14 @@ contains
       do i_contrib = 1, n_active
          all_energies(1:state%n_sites, i_contrib) = contrib(i_contrib)%e_src(1:state%n_sites)
          if (contrib(i_contrib)%forces) then
-            all_forces(1:3, 1:state%n_sites, i_contrib) = contrib(i_contrib)%f_src(1:3, 1:state%n_sites)
+            if (.not. res%forces_summed) then
+               all_forces(1:3, 1:state%n_sites, i_contrib) = contrib(i_contrib)%f_src(1:3, 1:state%n_sites)
+            end if
             all_virial(1:3, 1:3, i_contrib) = contrib(i_contrib)%v_src(1:3, 1:3)
          else if (params%do_forces) then
-            all_forces(1:3, 1:state%n_sites, i_contrib) = 0.d0
+            if (.not. res%forces_summed) then
+               all_forces(1:3, 1:state%n_sites, i_contrib) = 0.d0
+            end if
             all_virial(1:3, 1:3, i_contrib) = 0.d0
          end if
       end do
@@ -1158,7 +1176,11 @@ contains
       !       Here we communicate
       call comm_sum_to_root(comm, all_energies, all_this_energies, state%n_sites*counter2)
       if (params%do_forces) then
-         call comm_sum_to_root(comm, all_forces, all_this_forces, 3*state%n_sites*counter2)
+         if (res%forces_summed) then
+            call comm_sum_to_root(comm, family_sum, res%forces, 3*state%n_sites)
+         else
+            call comm_sum_to_root(comm, all_forces, all_this_forces, 3*state%n_sites*counter2)
+         end if
          call comm_sum_to_root(comm, all_virial, all_this_virial, 9*counter2)
       end if
 
@@ -1167,7 +1189,9 @@ contains
       do i_contrib = 1, n_active
          contrib(i_contrib)%e_dst(1:state%n_sites) = all_this_energies(1:state%n_sites, i_contrib)
          if (contrib(i_contrib)%forces) then
-            contrib(i_contrib)%f_dst(1:3, 1:state%n_sites) = all_this_forces(1:3, 1:state%n_sites, i_contrib)
+            if (.not. res%forces_summed) then
+               contrib(i_contrib)%f_dst(1:3, 1:state%n_sites) = all_this_forces(1:3, 1:state%n_sites, i_contrib)
+            end if
             contrib(i_contrib)%v_dst(1:3, 1:3) = all_this_virial(1:3, 1:3, i_contrib)
          end if
       end do
@@ -1177,11 +1201,65 @@ contains
       !       Clean up
       deallocate (all_energies, all_this_energies)
       if (params%do_forces) then
-         deallocate (all_forces, all_this_forces, all_virial, all_this_virial)
+         if (allocated(all_forces)) deallocate (all_forces, all_this_forces)
+         if (allocated(family_sum)) deallocate (family_sum)
+         deallocate (all_virial, all_this_virial)
       end if
 
       call time_end(time%mpi_ef)
    end subroutine domain_complete_contributions
+
+!  This rank's share of the total force, added up family by family in the
+!  order and under the conditions evaluate uses for the total. An inactive
+!  family's arrays are zero, so it is skipped. If a family evaluate would add
+!  has no forces here, family_sum is left unallocated and the caller reduces
+!  family by family instead.
+   subroutine sum_family_forces(contrib, family, n_active, n_sites, model, perform, family_sum)
+      type(contribution_ref), intent(in) :: contrib(1:N_CONTRIB)
+      integer, intent(in) :: family(1:N_CONTRIB)
+      integer, intent(in) :: n_active
+      integer, intent(in) :: n_sites
+      type(model_t), intent(in) :: model
+      type(perform_t), intent(in) :: perform
+      real(dp), allocatable, intent(out) :: family_sum(:, :)
+!     Added whenever active, and those added only on a condition.
+      logical :: always(1:N_CONTRIB)
+      logical :: wanted(1:N_CONTRIB)
+      integer :: order(1:N_CONTRIB)
+      integer :: slot(1:N_CONTRIB)
+      integer :: i_contrib
+      integer :: n
+
+      order = [C_SOAP, C_2B, C_3B, C_CP, C_VDW, C_ESTAT, C_LP, C_PDF, C_SF, C_XRD, C_ND]
+      always = .false.
+      always([C_SOAP, C_2B, C_3B, C_CP, C_VDW]) = .true.
+      wanted = always
+      wanted(C_ESTAT) = model%valid_estat_charges
+      wanted(C_LP) = perform%xps_forces
+      wanted(C_PDF) = perform%pdf_forces
+      wanted(C_SF) = perform%sf_forces
+      wanted(C_XRD) = perform%xrd_forces
+      wanted(C_ND) = perform%nd_forces
+
+      slot = 0
+      do i_contrib = 1, n_active
+         if (contrib(i_contrib)%forces) then
+            slot(family(i_contrib)) = i_contrib
+         end if
+      end do
+      if (any(wanted .and. .not. always .and. slot == 0)) then
+         return
+      end if
+
+      allocate (family_sum(1:3, 1:n_sites))
+      family_sum = 0.d0
+      do n = 1, N_CONTRIB
+         if (.not. wanted(order(n)) .or. slot(order(n)) == 0) then
+            cycle
+         end if
+         family_sum(1:3, 1:n_sites) = family_sum(1:3, 1:n_sites) + contrib(slot(order(n)))%f_src(1:3, 1:n_sites)
+      end do
+   end subroutine sum_family_forces
 
 !  The families active this step, as source and destination arrays. Built from
 !  one evaluation of the eleven predicates, so the pack and unpack walks cannot
