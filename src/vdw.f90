@@ -4289,13 +4289,17 @@ contains
                         if (cent_appr) then
                            dT_LR_sym = 0.d0
                         end if
-                        dT_LR_mult_0i = 0.d0
-                        dT_LR_mult_0j = 0.d0
-                        dT_LR_mult_ij = 0.d0
-                        dT_LR_mult_ij0 = 0.d0
-                        da_mbd = 0.d0
-                        do_mbd = 0.d0
-                        dr0_ii_SCS = 0.d0
+!                       On the device path the host writes only own entries, each
+!                       direction, so these need zeroing once per site.
+                        if (.not. mbd_dev .or. c3 == 1) then
+                           dT_LR_mult_0i = 0.d0
+                           dT_LR_mult_0j = 0.d0
+                           dT_LR_mult_ij = 0.d0
+                           dT_LR_mult_ij0 = 0.d0
+                           da_mbd = 0.d0
+                           do_mbd = 0.d0
+                           dr0_ii_SCS = 0.d0
+                        end if
                         if (cent_appr .and. include_2b) then
                            virial_integrand_2b = 0.d0
                            damped_virial_integrand_2b = 0.d0

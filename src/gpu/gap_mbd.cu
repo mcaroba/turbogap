@@ -22,7 +22,7 @@
 #define MBD_LANES 32
 #define MBD_ROWS_PER_BLOCK 4
 #define MBD_COL_SLOTS 2
-#define MBD_UNROLL 8
+#define MBD_BLK_UNROLL 4
 #define MBD_REDUCE_TPB 256
 #define MBD_FORCE_TPB 256
 #define MBD_DOT_TPB 256
@@ -49,7 +49,8 @@ struct mbd_site_d {
   const int* p_mbd;        // 1-based column atom, -1 for a duplicate
   const int* bptr;         // block row p is blocks bptr[p] .. bptr[p+1]-1
   const int* bcol;         // a block's column atom
-  const int* bsrc;         // the pair entry whose 3 x 3 values a block holds
+  const int* bpos;         // a pair entry's block, -1 for own entries and duplicates
+  const int* bdup;         // the block a central pair's duplicate fills, else -1
   const double* omegas;
   const double* a_own; // a_mbd, o_mbd, r0_ii_SCS at each atom's own entry
   const double* o_own;
@@ -60,7 +61,7 @@ struct mbd_site_d {
   const double* pcut; // per atom
   double* f_damp;     // per pair entry, formed here
   double* t_lr_mult;
-  double* blk;            // 9 per pair entry: the frequency-1 values, 0 where the host would drop one
+  double* blk;            // 9 per block, in block order: frequency-1 values, 0 where the host drops one
   int* mask;              // the nonzeros, bit 3*c1 + c2
   const double* t_lr_sym; // 3 x 3N
 };
@@ -145,9 +146,13 @@ void mbd_pair_values(mbd_site_d s, mbd_consts k, hipStream_t* stream) {
           }
           double f = 1.0 / (1.0 + exp(-k.d * (rjs / (k.sR * (s.r0_own[p] + s.r0_nb[q])) - 1.0)));
           double sa = sqrt(s.a_own[p]) * sqrt(s.a_nb[q]);
+          double* vb = s.blk + 9 * (size_t) s.bpos[k2];
+          double* vd = s.bdup[k2] >= 0 ? s.blk + 9 * (size_t) s.bdup[k2] : nullptr;
           for (int c = 0; c < 9; c++) {
             bool keep = fabs((f * tm9[c]) * tlr) > 1.0e-20;
-            s.blk[9 * (size_t) k2 + c] = keep ? ((sa * f) * tm9[c]) * tlr : 0.0;
+            vb[c] = keep ? ((sa * f) * tm9[c]) * tlr : 0.0;
+            if (vd)
+              vd[c] = vb[c];
             if (keep)
               msk |= 1 << c;
           }
@@ -192,14 +197,41 @@ __global__ void mbd_spmm_blocks_kernel(mbd_site_d s, int k2, int c0, double pol_
 #pragma unroll
     for (int m = 0; m < MBD_COL_SLOTS; m++)
       acc[c1][m] = 0.0;
-#pragma unroll 2
-  for (int b = s.bptr[p]; b < s.bptr[p + 1]; b++) {
-    const double* v = s.blk + 9 * (size_t) s.bsrc[b];
-    const double* zr = z_d + (size_t) ncols * 3 * s.bcol[b];
-    double v9[9];
+  int b = s.bptr[p];
+  int b_end = s.bptr[p + 1];
+  // MBD_BLK_UNROLL blocks' loads in flight at once; each output still sums the blocks in order.
+  for (; b + MBD_BLK_UNROLL <= b_end; b += MBD_BLK_UNROLL) {
+    double v[MBD_BLK_UNROLL][9];
+    double z[MBD_BLK_UNROLL][3][MBD_COL_SLOTS];
 #pragma unroll
-    for (int c = 0; c < 9; c++)
-      v9[c] = v[c];
+    for (int u = 0; u < MBD_BLK_UNROLL; u++) {
+      const double* vb = s.blk + 9 * (size_t) (b + u);
+      const double* zr = z_d + (size_t) ncols * 3 * s.bcol[b + u];
+#pragma unroll
+      for (int c = 0; c < 9; c++)
+        v[u][c] = vb[c];
+#pragma unroll
+      for (int m = 0; m < MBD_COL_SLOTS; m++) {
+        int gc = c0 + lane + MBD_LANES * m;
+#pragma unroll
+        for (int c2 = 0; c2 < 3; c2++)
+          z[u][c2][m] = gc < ncols ? zr[c2 * ncols + gc] : 0.0;
+      }
+    }
+#pragma unroll
+    for (int u = 0; u < MBD_BLK_UNROLL; u++)
+#pragma unroll
+      for (int m = 0; m < MBD_COL_SLOTS; m++)
+#pragma unroll
+        for (int c1 = 0; c1 < 3; c1++) {
+          acc[c1][m] = acc[c1][m] + v[u][3 * c1] * z[u][0][m];
+          acc[c1][m] = acc[c1][m] + v[u][3 * c1 + 1] * z[u][1][m];
+          acc[c1][m] = acc[c1][m] + v[u][3 * c1 + 2] * z[u][2][m];
+        }
+  }
+  for (; b < b_end; b++) {
+    const double* vb = s.blk + 9 * (size_t) b;
+    const double* zr = z_d + (size_t) ncols * 3 * s.bcol[b];
 #pragma unroll
     for (int m = 0; m < MBD_COL_SLOTS; m++) {
       int gc = c0 + lane + MBD_LANES * m;
@@ -209,9 +241,9 @@ __global__ void mbd_spmm_blocks_kernel(mbd_site_d s, int k2, int c0, double pol_
         double z2 = zr[2 * ncols + gc];
 #pragma unroll
         for (int c1 = 0; c1 < 3; c1++) {
-          acc[c1][m] = acc[c1][m] + v9[3 * c1] * z0;
-          acc[c1][m] = acc[c1][m] + v9[3 * c1 + 1] * z1;
-          acc[c1][m] = acc[c1][m] + v9[3 * c1 + 2] * z2;
+          acc[c1][m] = acc[c1][m] + vb[3 * c1] * z0;
+          acc[c1][m] = acc[c1][m] + vb[3 * c1 + 1] * z1;
+          acc[c1][m] = acc[c1][m] + vb[3 * c1 + 2] * z2;
         }
       }
     }
@@ -408,7 +440,7 @@ __global__ void mbd_force_kernel(mbd_site_d s, mbd_consts k, int c3, const doubl
       double fq_gi = ((0.5 / fq_si) * t_d[p + n * w]) * fq_sj;
       double fq_gj = ((0.5 / fq_sj) * t_d[q + n * w]) * fq_si;
       double s_pq = s_d[p + n * w] * s_d[q + n * w];
-      const double* v = s.blk + 9 * (size_t) k2;
+      const double* v = s.blk + 9 * (size_t) s.bpos[k2];
       for (int c1 = 0; c1 < 3; c1++)
         for (int c2 = 0; c2 < 3; c2++) {
           double tm = tm9[3 * c1 + c2];
@@ -497,9 +529,9 @@ struct mbd_ctx {
   int n_blocks;
   char* arena_d = nullptr;
   size_t c_arena = 0;
-  std::vector<int> own, atom_of, gidx, bptr, bcol, bsrc;
+  std::vector<int> own, atom_of, gidx, bptr, bcol, bpos, bdup;
   std::vector<double> a_own, o_own, r0_own, pos, pcut, da_atom, out;
-  int *own_d, *atom_of_d, *gidx_d, *p_mbd_d, *bptr_d, *bcol_d, *bsrc_d, *mask_d;
+  int *own_d, *atom_of_d, *gidx_d, *p_mbd_d, *bptr_d, *bcol_d, *bpos_d, *bdup_d, *mask_d;
   double *omegas_d, *a_own_d, *o_own_d, *r0_own_d, *a_nb_d, *r0_nb_d, *pos_d, *pcut_d, *f_d, *tlr_d, *blk_d;
   double *t_lr_sym_d, *s_d, *q_d, *t_d, *at_d, *x_d, *y_d, *z_d, *pol_d, *diag_d, *dots_d, *integrand_d;
   double *da_d, *do_d, *dr0_d, *part_d, *out_d, *dtlr_d;
@@ -569,7 +601,8 @@ void index_pairs(mbd_ctx& c, int n_atoms, int n_pairs, const int* n_neigh, const
   for (int p = 0; p < n_atoms; p++)
     c.bptr[p + 1] += c.bptr[p];
   c.bcol.resize(c.bptr[n_atoms]);
-  c.bsrc.resize(c.bptr[n_atoms]);
+  c.bpos.assign(n_pairs, -1);
+  c.bdup.assign(n_pairs, -1);
   std::vector<int> fill(c.bptr.begin(), c.bptr.end() - 1);
   for (int p = 0; p < n_atoms; p++)
     for (int k = c.own[p] + 1; k < c.own[p] + n_neigh[p]; k++) {
@@ -577,10 +610,10 @@ void index_pairs(mbd_ctx& c, int n_atoms, int n_pairs, const int* n_neigh, const
         continue;
       int q = p_mbd[k] - 1;
       c.bcol[fill[p]] = q;
-      c.bsrc[fill[p]++] = k;
+      c.bpos[k] = fill[p]++;
       if (k + 1 < n_pairs && p_mbd[k + 1] == -1) {
         c.bcol[fill[q]] = p;
-        c.bsrc[fill[q]++] = k;
+        c.bdup[k] = fill[q]++;
       }
     }
 }
@@ -595,11 +628,11 @@ void place_arrays(mbd_ctx& c, int n_atoms, int n_pairs, int n_freq, int n_order,
   mbd_layout L;
   size_t o_own = L.add<int>(n), o_atom_of = L.add<int>(n_pairs), o_gidx = L.add<int>(n);
   size_t o_p_mbd = L.add<int>(n_pairs), o_bptr = L.add<int>(n + 1), o_bcol = L.add<int>(n_blk);
-  size_t o_bsrc = L.add<int>(n_blk), o_mask = L.add<int>(n_pairs);
+  size_t o_bpos = L.add<int>(n_pairs), o_bdup = L.add<int>(n_pairs), o_mask = L.add<int>(n_pairs);
   size_t o_omegas = L.add<double>(n_freq), o_a_own = L.add<double>(n), o_o_own = L.add<double>(n);
   size_t o_r0_own = L.add<double>(n), o_a_nb = L.add<double>(n), o_r0_nb = L.add<double>(n);
   size_t o_pos = L.add<double>(3 * n), o_pcut = L.add<double>(n), o_f = L.add<double>(n_pairs);
-  size_t o_tlr = L.add<double>(n_pairs), o_blk = L.add<double>(9 * (size_t) n_pairs), o_t_lr_sym = L.add<double>(9 * n);
+  size_t o_tlr = L.add<double>(n_pairs), o_blk = L.add<double>(9 * n_blk), o_t_lr_sym = L.add<double>(9 * n);
   size_t o_s = L.add<double>(naf), o_q = L.add<double>(naf), o_t = L.add<double>(naf);
   size_t o_at = L.add<double>(n3f), o_x = L.add<double>(n3f), o_y = L.add<double>(n3f), o_z = L.add<double>(n3f);
   size_t o_pol = L.add<double>(n3f), o_diag = L.add<double>(3 * (size_t) (n_order - 3) * n_freq);
@@ -619,7 +652,8 @@ void place_arrays(mbd_ctx& c, int n_atoms, int n_pairs, int n_freq, int n_order,
   c.p_mbd_d = (int*) (a + o_p_mbd);
   c.bptr_d = (int*) (a + o_bptr);
   c.bcol_d = (int*) (a + o_bcol);
-  c.bsrc_d = (int*) (a + o_bsrc);
+  c.bpos_d = (int*) (a + o_bpos);
+  c.bdup_d = (int*) (a + o_bdup);
   c.mask_d = (int*) (a + o_mask);
   c.omegas_d = (double*) (a + o_omegas);
   c.a_own_d = (double*) (a + o_a_own);
@@ -679,7 +713,8 @@ void mbd_gpu_site(int tid, int n_atoms, int n_pairs, int n_freq, int n_order, in
   up(c.p_mbd_d, p_mbd, n_pairs, st);
   up(c.bptr_d, c.bptr.data(), n_atoms + 1, st);
   up(c.bcol_d, c.bcol.data(), c.bcol.size(), st);
-  up(c.bsrc_d, c.bsrc.data(), c.bsrc.size(), st);
+  up(c.bpos_d, c.bpos.data(), n_pairs, st);
+  up(c.bdup_d, c.bdup.data(), n_pairs, st);
   up(c.omegas_d, omegas, n_freq, st);
   up(c.a_own_d, c.a_own.data(), n_atoms, st);
   up(c.o_own_d, c.o_own.data(), n_atoms, st);
@@ -691,9 +726,9 @@ void mbd_gpu_site(int tid, int n_atoms, int n_pairs, int n_freq, int n_order, in
   up(c.t_lr_sym_d, t_lr_sym, 9 * (size_t) n_atoms, st);
 
   mbd_site_d& s = c.s;
-  s = {n_atoms,  n_pairs,  n_freq,   n_order,    i0,        c.atom_of_d, c.own_d,     c.gidx_d, c.p_mbd_d,
-       c.bptr_d, c.bcol_d, c.bsrc_d, c.omegas_d, c.a_own_d, c.o_own_d,   c.r0_own_d,  c.a_nb_d, c.r0_nb_d,
-       c.pos_d,  c.pcut_d, c.f_d,    c.tlr_d,    c.blk_d,   c.mask_d,    c.t_lr_sym_d};
+  s = {n_atoms,   n_pairs,  n_freq,   n_order,  i0,         c.atom_of_d, c.own_d,   c.gidx_d,    c.p_mbd_d,
+       c.bptr_d,  c.bcol_d, c.bpos_d, c.bdup_d, c.omegas_d, c.a_own_d,   c.o_own_d, c.r0_own_d,  c.a_nb_d,
+       c.r0_nb_d, c.pos_d,  c.pcut_d, c.f_d,    c.tlr_d,    c.blk_d,     c.mask_d,  c.t_lr_sym_d};
   c.k = {d, sR, Bohr, rcut_mbd, rcut_mbd2, r_buf_ij};
 
   mbd_pair_values(s, c.k, st);
