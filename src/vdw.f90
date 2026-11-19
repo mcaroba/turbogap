@@ -1480,6 +1480,27 @@ contains
       real(dp), allocatable :: pcut_mbd(:)
       integer :: mbd_tid
       logical :: mbd_dev
+      logical :: mbd_one_freq
+      logical :: mbd_compact
+      real(dp) :: lim_sqrd
+      real(dp) :: d_sqrd
+      real(dp) :: r0_q
+      real(dp) :: alpha0_q
+      real(dp) :: fq_out(1:n_freq)
+      real(dp), allocatable :: xyz_c(:, :)
+      logical, allocatable :: in_c(:)
+      integer, allocatable :: q_of(:)
+      real(dp), allocatable :: a_in(:)
+      real(dp), allocatable :: o_in(:)
+      real(dp), allocatable :: r0_in(:)
+      real(dp), allocatable :: s_out(:, :)
+      real(dp), allocatable :: s_in(:, :)
+      real(dp) :: fq_hi(1:n_freq)
+      real(dp) :: fq_v(1:n_freq)
+      real(dp) :: val_k(1:n_freq)
+      real(dp), allocatable :: sj_tab(:, :)
+      real(dp), allocatable :: hj_tab(:, :)
+      logical, allocatable :: fq_done(:)
       integer(i64), allocatable :: ja2(:) !
       integer(i64), allocatable :: myidx(:)
       !real(psb_dpk_),
@@ -1603,6 +1624,11 @@ contains
       if (mbd_dev) call mbd_gpu_init()
       if (mbd_dev) mbd_device_used = .true.
 #endif
+!     On the default path every reader forms each frequency's element from the
+!     first's, as the build does: only that is stored.
+      mbd_compact = cent_appr .and. default_coeff .and. n_order > 2 .and. &
+                    .not. do_log .and. .not. series_expansion .and. .not. lanczos .and. .not. do_total_energy
+      mbd_one_freq = mbd_compact
       allocate (vir_site(1:3, 1:3, 1:n_sites))
       vir_site = 0.d0
       !$omp parallel do default(firstprivate) schedule(dynamic, 1) &
@@ -2160,6 +2186,20 @@ contains
                   n_force_sites = 0
                   !n_ene_sites = 0
 
+!                 The cluster's members, their cluster index and their
+!                 positions in Bohr, once for the all-pairs scans below.
+                  if (allocated(xyz_c)) deallocate (xyz_c, in_c, q_of)
+                  allocate (xyz_c(1:3, 1:n_neigh(i)))
+                  allocate (in_c(1:n_neigh(i)))
+                  allocate (q_of(1:n_neigh(i)))
+                  q = 0
+                  do j3 = 1, n_neigh(i)
+                     in_c(j3) = rjs(n_tot + j3) .le. rcut_tot
+                     if (in_c(j3)) q = q + 1
+                     q_of(j3) = q
+                     xyz_c(:, j3) = xyz(:, n_tot + j3)/Bohr
+                  end do
+
                   k_i = 0
                   do i3 = 1, n_neigh(i)
                      k_i = k_i + 1
@@ -2169,27 +2209,25 @@ contains
                         if (rjs(n_tot + k_i) .le. rcut_force) then
                            n_force_sites = n_force_sites + 1
                         end if
-                        xyz_i = xyz(:, n_tot + k_i)/Bohr
-                        k_j = 0
+                        xyz_i = xyz_c(:, i3)
+!                       Skip the square root where the squared distance already rules a pair out.
+                        if (i3 == 1) then
+                           lim_sqrd = 1.000001d0*(rcut_mbd/Bohr)**2
+                        else
+                           lim_sqrd = 1.000001d0*(rcut_mbd2/Bohr)**2
+                        end if
                         do j3 = 1, n_neigh(i)
-                           k_j = k_j + 1
+                           if (.not. in_c(j3) .or. i3 == j3) cycle
+                           if (i3 .ne. 1 .and. j3 == 1) cycle
+                           d_sqrd = sum((xyz_c(:, j3) - xyz_i)**2)
+                           if (d_sqrd > lim_sqrd) cycle
                            if (i3 == 1) then
-                              if (rjs(n_tot + k_j) .le. rcut_tot) then
-                                 if (i3 .ne. j3) then
-                                    xyz_j = xyz(:, n_tot + k_j)/Bohr
-                                    if (sqrt(sum((xyz_j - xyz_i)**2)) .le. (rcut_mbd)/Bohr) then
-                                       n_mbd_pairs = n_mbd_pairs + 2
-                                    end if
-                                 end if
+                              if (sqrt(d_sqrd) .le. (rcut_mbd)/Bohr) then
+                                 n_mbd_pairs = n_mbd_pairs + 2
                               end if
                            else
-                              if (rjs(n_tot + k_j) .le. rcut_tot) then
-                                 if (i3 .ne. j3 .and. j3 .ne. 1) then
-                                    xyz_j = xyz(:, n_tot + k_j)/Bohr
-                                    if (sqrt(sum((xyz_j - xyz_i)**2)) .le. (rcut_mbd2)/Bohr) then
-                                       n_mbd_pairs = n_mbd_pairs + 1
-                                    end if
-                                 end if
+                              if (sqrt(d_sqrd) .le. (rcut_mbd2)/Bohr) then
+                                 n_mbd_pairs = n_mbd_pairs + 1
                               end if
                            end if
                         end do
@@ -2283,7 +2321,13 @@ contains
                      if (allocated(val_sym)) then
                         if (size(val_sym, 1) < 9*(n_mbd_pairs - n_mbd_sites)) deallocate (val_sym)
                      end if
-                     if (.not. allocated(val_sym)) allocate (val_sym(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
+                     if (.not. allocated(val_sym)) then
+                        if (mbd_one_freq) then
+                           allocate (val_sym(1:9*(n_mbd_pairs - n_mbd_sites), 1:1))
+                        else
+                           allocate (val_sym(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
+                        end if
+                     end if
                      allocate (AT_sym(1:3*n_mbd_sites, 1:3, 1:n_freq))
                      allocate (integrand_sym(1:n_freq))
                      allocate (T_LR_sym(1:3, 1:3*n_mbd_sites))
@@ -2364,6 +2408,71 @@ contains
                   rcut_mbd_sqrd = (rcut_mbd/Bohr)**2
                   rcut_mbd2_sqrd = (rcut_mbd2/Bohr)**2
 
+!                 What the pair blocks below give each neighbour, the same for
+!                 every pair it is in: formed once per atom, the same way.
+                  if (allocated(a_in)) deallocate (a_in, o_in, r0_in, s_out, s_in, sj_tab, hj_tab, fq_done)
+                  allocate (sj_tab(1:n_freq, 1:n_mbd_sites))
+                  allocate (hj_tab(1:n_freq, 1:n_mbd_sites))
+                  allocate (fq_done(1:n_mbd_sites))
+                  allocate (a_in(1:n_mbd_sites))
+                  allocate (o_in(1:n_mbd_sites))
+                  allocate (r0_in(1:n_mbd_sites))
+                  allocate (s_out(2:n_freq, 1:n_mbd_sites))
+                  allocate (s_in(2:n_freq, 1:n_mbd_sites))
+                  a_in = 0.d0
+                  o_in = 0.d0
+                  r0_in = 0.d0
+                  do j3 = 1, n_neigh(i)
+                     if (.not. in_c(j3)) cycle
+                     q = q_of(j3)
+                     j = neighbors_list(n_tot + j3)
+                     j1 = modulo(j - 1, n_sites0) + 1
+                     s = neighbor_species(n_tot + j3)
+                     r0_q = r0_ref(s)/Bohr
+                     alpha0_q = alpha0_ref(s)/Bohr**3
+                     if (rjs(n_tot + j3) .le. rcut_loc - r_buf_loc) then
+                        r = findloc(sub_neighbors_list(1:n_sub_neigh(1)), j, 1)
+                        a_in(q) = a_iso(r, 2)
+                        o_in(q) = o_p(r)
+                        r0_in(q) = r0_q*(a_iso(r, 2)/alpha0_q)**(1.d0/3.d0)
+                     else if (rjs(n_tot + j3) .le. rcut_loc .and. rjs(n_tot + j3) > rcut - r_buf_loc) then
+                        r = findloc(sub_neighbors_list(1:n_sub_neigh(1)), j, 1)
+                        rb = (rjs(n_tot + j3) - rcut_loc + r_buf_loc)/r_buf_loc
+                        a_in(q) = a_iso(r, 2)* &
+                                  (1.d0 - 10.d0*rb**3 &
+                                   + 15.d0*rb**4 &
+                                   - 6.d0*rb**5) + &
+                                  central_pol(j1)* &
+                                  (+10.d0*rb**3 &
+                                   - 15.d0*rb**4 &
+                                   + 6.d0*rb**5)
+                        o_in(q) = o_p(r)* &
+                                  (1.d0 - 10.d0*rb**3 &
+                                   + 15.d0*rb**4 &
+                                   - 6.d0*rb**5) + &
+                                  central_omega(j1)* &
+                                  (+10.d0*rb**3 &
+                                   - 15.d0*rb**4 &
+                                   + 6.d0*rb**5)
+                        r0_in(q) = r0_q*(a_iso(r, 2)/alpha0_q)**(1.d0/3.d0)* &
+                                   (1.d0 - 10.d0*rb**3 &
+                                    + 15.d0*rb**4 &
+                                    - 6.d0*rb**5) + &
+                                   r0_q &
+                                   *(central_pol(j1)/alpha0_q)**(1.d0/3.d0)* &
+                                   (+10.d0*rb**3 &
+                                    - 15.d0*rb**4 &
+                                    + 6.d0*rb**5)
+                     else if (rjs(n_tot + j3) > rcut_loc .and. rjs(n_tot + j3) .le. rcut_tot) then
+                        a_in(q) = central_pol(j1)
+                        o_in(q) = central_omega(j1)
+                        r0_in(q) = r0_q*(central_pol(j1)/alpha0_q)**(1.d0/3.d0)
+                     end if
+                     do i_om = 2, n_freq
+                        s_in(i_om, q) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_in(q))**2))
+                     end do
+                  end do
+
                   k2 = 0
                   k_i = 0
                   p = 0
@@ -2441,6 +2550,10 @@ contains
                         if (do_timing) call cpu_time(time3)
                         a_mbd_i = a_mbd(k2)
                         o_mbd_i = o_mbd(k2)
+                        do i_om = 2, n_freq
+                           fq_out(i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))
+                           s_out(i_om, p) = fq_out(i_om)
+                        end do
                         T_LR_mult_i = T_LR_mult_0i(k2)
                         r_vdw_i = r0_ii_SCS(k2)
                         k_j = 0
@@ -2450,10 +2563,10 @@ contains
                         do j3 = 1, n_neigh(i)
                            k_j = k_j + 1
                            if (i3 == 1) then
-                           if (rjs(n_tot + k_j) .le. rcut_tot) then
+                           if (in_c(j3)) then
                               q = q + 1
                               if (i3 .ne. j3) then
-                                 xyz_j = xyz(:, n_tot + k_j)/Bohr
+                                 xyz_j = xyz_c(:, j3)
                                  if (sum((xyz_j - xyz_i)**2) .le. rcut_mbd_sqrd) then
                                     if (do_timing) call cpu_time(time3)
                                     n_mbd_neigh(p) = n_mbd_neigh(p) + 1
@@ -2470,7 +2583,7 @@ contains
                                     xyz_mbd(:, k2) = xyz_j - xyz_i
                                     rjs_mbd(k2) = sqrt(sum((xyz_j - xyz_i)**2))
                                     rjs_0_mbd(k2) = rjs(n_tot + k_j)/Bohr
-                                    xyz_0_mbd(:, k2) = xyz(:, n_tot + k_j)/Bohr
+                                    xyz_0_mbd(:, k2) = xyz_c(:, j3)
                                     hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot + k_j)
                                     neighbor_alpha0_mbd(k2) = alpha0_ref(s)/Bohr**3 !* hirshfeld_v_neigh(n_tot+k_j)
                                     if (do_timing) call cpu_time(time4)
@@ -2573,18 +2686,20 @@ contains
                                                                  f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                                  *T_LR_mult_ij(k2)
                                              end if
-                                             do i_om = 2, n_freq
-                                                if (.not. cent_appr) then
-                                                   val(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                   sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
-                                                                   val(k4, 1)
-                                                end if
-                                                if (cent_appr) then
-                                                   val_sym(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                       sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
-                                                                       val_sym(k4, 1)
-                                                end if
-                                             end do
+                                             if (.not. mbd_one_freq) then
+                                                do i_om = 2, n_freq
+                                                   if (.not. cent_appr) then
+                                                      val(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
+                                                                      sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
+                                                                      val(k4, 1)
+                                                   end if
+                                                   if (cent_appr) then
+                                                      val_sym(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
+                                                                          sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
+                                                                          val_sym(k4, 1)
+                                                   end if
+                                                end do
+                                             end if
                                           end if
                                           if (abs(f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                   *T_LR_mult_ij(k2)) > 1.d-20) then
@@ -2601,18 +2716,20 @@ contains
                                                                  f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                                  *T_LR_mult_ij(k2)
                                              end if
-                                             do i_om = 2, n_freq
-                                                if (.not. cent_appr) then
-                                                   val(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                   sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
-                                                                   val(k4, 1)
-                                                end if
-                                                if (cent_appr) then
-                                                   val_sym(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                       sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
-                                                                       val_sym(k4, 1)
-                                                end if
-                                             end do
+                                             if (.not. mbd_one_freq) then
+                                                do i_om = 2, n_freq
+                                                   if (.not. cent_appr) then
+                                                      val(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
+                                                                      sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
+                                                                      val(k4, 1)
+                                                   end if
+                                                   if (cent_appr) then
+                                                      val_sym(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
+                                                                          sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
+                                                                          val_sym(k4, 1)
+                                                   end if
+                                                end do
+                                             end if
                                           end if
                                        end do
                                     end do
@@ -2626,10 +2743,10 @@ contains
                               end if
                            end if
                            else
-                           if (rjs(n_tot + k_j) .le. rcut_tot) then
+                           if (in_c(j3)) then
                               q = q + 1
                               if (i3 .ne. j3 .and. j3 .ne. 1) then
-                                 xyz_j = xyz(:, n_tot + k_j)/Bohr
+                                 xyz_j = xyz_c(:, j3)
                                  if (sum((xyz_j - xyz_i)**2) .le. rcut_mbd2_sqrd) then
                                     if (do_timing) call cpu_time(time3)
                                     n_mbd_neigh(p) = n_mbd_neigh(p) + 1
@@ -2646,56 +2763,15 @@ contains
                                     xyz_mbd(:, k2) = xyz_j - xyz_i
                                     rjs_mbd(k2) = sqrt(sum((xyz_j - xyz_i)**2))
                                     rjs_0_mbd(k2) = rjs(n_tot + k_j)/Bohr
-                                    xyz_0_mbd(:, k2) = xyz(:, n_tot + k_j)/Bohr
+                                    xyz_0_mbd(:, k2) = xyz_c(:, j3)
                                     hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot + k_j)
                                     neighbor_alpha0_mbd(k2) = alpha0_ref(s)/Bohr**3 !* hirshfeld_v_neigh(n_tot+k_j)
                                     if (do_timing) call cpu_time(time4)
                                     if (do_timing) time_tot4 = time_tot4 + time4 - time3
                                     if (do_timing) call cpu_time(time3)
-                                    if (rjs(n_tot + k_j) .le. rcut_loc - r_buf_loc) then
-                                       r = findloc(sub_neighbors_list(1:n_sub_neigh(1)), j, 1)
-                                       a_mbd(k2) = a_iso(r, 2)
-                                       o_mbd(k2) = o_p(r)
-                                       r0_ii_SCS(k2) = r0_ii_mbd(k2)*(a_iso(r, 2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
-                                    else if (rjs(n_tot + k_j) .le. rcut_loc .and. rjs(n_tot + k_j) > rcut - r_buf_loc) then
-                                       r = findloc(sub_neighbors_list(1:n_sub_neigh(1)), j, 1)
-                                       rb = (rjs(n_tot + k_j) - rcut_loc + r_buf_loc)/r_buf_loc
-                                       a_mbd(k2) = a_iso(r, 2)* &
-                                                   (1.d0 - 10.d0*rb**3 &
-                                                    + 15.d0*rb**4 &
-                                                    - 6.d0*rb**5) + &
-                                                   !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2) * &
-                                                   central_pol(j1)* &
-                                                   (+10.d0*rb**3 &
-                                                    - 15.d0*rb**4 &
-                                                    + 6.d0*rb**5)
-                                       o_mbd(k2) = o_p(r)* &
-                                                   (1.d0 - 10.d0*rb**3 &
-                                                    + 15.d0*rb**4 &
-                                                    - 6.d0*rb**5) + &
-                                                   central_omega(j1)* &
-                                                   (+10.d0*rb**3 &
-                                                    - 15.d0*rb**4 &
-                                                    + 6.d0*rb**5)
-                                       r0_ii_SCS(k2) = r0_ii_mbd(k2)*(a_iso(r, 2)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)* &
-                                                       (1.d0 - 10.d0*rb**3 &
-                                                        + 15.d0*rb**4 &
-                                                        - 6.d0*rb**5) + &
-                                                       r0_ii_mbd(k2) &
-                                                       *(central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)* &
-                                                       !* r0_ii_mbd(k2) * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0) * &
-                                                       (+10.d0*rb**3 &
-                                                        - 15.d0*rb**4 &
-                                                        + 6.d0*rb**5)
-                                    else if (rjs(n_tot + k_j) > rcut_loc .and. rjs(n_tot + k_j) .le. rcut_tot) then
-                                       a_mbd(k2) = &
-                                          central_pol(j1)
-                                       !neighbor_alpha0_mbd(k2) * hirshfeld_mbd_neigh(k2)
-                                       o_mbd(k2) = central_omega(j1)
-                                       r0_ii_SCS(k2) = r0_ii_mbd(k2) &
-                                                       *(central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
-                                       ! * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
-                                    end if
+                                    a_mbd(k2) = a_in(q)
+                                    o_mbd(k2) = o_in(q)
+                                    r0_ii_SCS(k2) = r0_in(q)
                                     if (do_timing) call cpu_time(time4)
                                     if (do_timing) time_tot2 = time_tot2 + time4 - time3
                                     if (do_timing) call cpu_time(time3)
@@ -2717,10 +2793,11 @@ contains
                                     if (do_timing) call cpu_time(time3)
 !                                   The frequency factor of this pair's elements,
 !                                   once rather than for each of the nine.
-                                    do i_om = 2, n_freq
-                                       fq_val(i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                      sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))
-                                    end do
+                                    if (.not. mbd_one_freq) then
+                                       do i_om = 2, n_freq
+                                          fq_val(i_om) = fq_out(i_om)*s_in(i_om, q)
+                                       end do
+                                    end if
                                     do c1 = 1, 3
                                        do c2 = 1, 3
                                           k3 = k3 + 1
@@ -2748,14 +2825,16 @@ contains
                                                                  f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                                  *T_LR_mult_ij(k2)
                                              end if
-                                             do i_om = 2, n_freq
-                                                if (.not. cent_appr) then
-                                                   val(k4, i_om) = fq_val(i_om)*val(k4, 1)
-                                                end if
-                                                if (cent_appr) then
-                                                   val_sym(k4, i_om) = fq_val(i_om)*val_sym(k4, 1)
-                                                end if
-                                             end do
+                                             if (.not. mbd_one_freq) then
+                                                do i_om = 2, n_freq
+                                                   if (.not. cent_appr) then
+                                                      val(k4, i_om) = fq_val(i_om)*val(k4, 1)
+                                                   end if
+                                                   if (cent_appr) then
+                                                      val_sym(k4, i_om) = fq_val(i_om)*val_sym(k4, 1)
+                                                   end if
+                                                end do
+                                             end if
                                           end if
                                        end do
                                     end do
@@ -2772,7 +2851,9 @@ contains
 !                 The pattern, and the pattern with the diagonal that the
 !                 eigenvalue estimates add, are multiplied many times below.
                   call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a)
-                  call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a2, diag=.true.)
+                  if (.not. default_coeff) then
+                     call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a2, diag=.true.)
+                  end if
 
                   if (do_timing) call cpu_time(time2)
 
@@ -3158,6 +3239,13 @@ contains
                                              csr_a%perm, T_LR_sym, integrand_sym, pol_sym)
                            deallocate (pcut_mbd)
 #endif
+                        else if (mbd_compact) then
+                           res_sym(1) = 0.d0
+                           do k2 = 3, n_order + 1
+                              res_sym(k2) = -1.d0/(k2 - 1)
+                           end do
+                           call mbd_series_freqs(val_sym(1:nnz, 1), csr_a, s_out, s_in, AT_sym, n_freq, n_order, res_sym, &
+                                                 include_2b, do_derivatives, integrand_sym, pol_sym)
                         else
                            do i2 = 1, n_freq
                               if (.not. cent_appr) then
@@ -4196,6 +4284,7 @@ contains
                            virial_integrand_2b = 0.d0
                            damped_virial_integrand_2b = 0.d0
                            dot_2b = 0.d0
+                           fq_done = .false.
                         end if
                         k2 = 0
                         k4 = 0
@@ -4317,6 +4406,17 @@ contains
                            if (mbd_dev) then
                               k2 = k2 + n_mbd_neigh(p) - 1
                               cycle
+                           end if
+!                          The 2b terms' factors that depend on this atom only.
+                           if (cent_appr .and. include_2b) then
+                              pcut_i = poly_cut(sqrt(xyz_i(1)**2 + xyz_i(2)**2 + xyz_i(3)**2)*Bohr, x_min, x_max)
+                              do i_om = 1, n_freq
+                                 fq_si(i_om) = sqrt(a_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))
+                                 fq_ti(i_om) = (da_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2) + &
+                                                a_mbd_i*(2.d0*omegas_mbd(i_om)**2*o_mbd_i)* &
+                                                do_mbd_i/(o_mbd_i**2 + omegas_mbd(i_om)**2)**2)
+                                 fq_hi(i_om) = 1.d0/2.d0*1.d0/fq_si(i_om)*fq_ti(i_om)
+                              end do
                            end if
                            do j3 = 2, n_mbd_neigh(p)
                               k2 = k2 + 1
@@ -4582,24 +4682,33 @@ contains
                                  if (cent_appr .and. include_2b) then
 !                                   What depends on the pair and the frequency
 !                                   only, once rather than for each component.
-                                    pcut_i = poly_cut(sqrt(xyz_i(1)**2 + xyz_i(2)**2 + xyz_i(3)**2)*Bohr, x_min, x_max)
                                     if (k2 + 1 < n_mbd_pairs) then
-                                       pcut_next = poly_cut(sqrt(xyz_0_mbd(1, k2 + 1)**2 + xyz_0_mbd(2, k2 + 1)**2 + &
-                                                                 xyz_0_mbd(3, k2 + 1)**2)*Bohr, x_min, x_max)
+                                       if (p_mbd(k2 + 1) == -1) then
+                                          pcut_next = poly_cut(sqrt(xyz_0_mbd(1, k2 + 1)**2 + xyz_0_mbd(2, k2 + 1)**2 + &
+                                                                    xyz_0_mbd(3, k2 + 1)**2)*Bohr, x_min, x_max)
+                                       end if
                                     end if
+!                                   The partner's factors are the same in every pair it is in.
+                                    if (.not. fq_done(q)) then
+                                       do i_om = 1, n_freq
+                                          fq_sj(i_om) = sqrt(a_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2))
+                                          fq_tj(i_om) = (da_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2) + &
+                                                         a_mbd_j*(2.d0*omegas_mbd(i_om)**2*o_mbd_j)* &
+                                                         do_mbd_j/(o_mbd_j**2 + omegas_mbd(i_om)**2)**2)
+                                          sj_tab(i_om, q) = fq_sj(i_om)
+                                          hj_tab(i_om, q) = 1.d0/2.d0*1.d0/fq_sj(i_om)*fq_tj(i_om)
+                                       end do
+                                       fq_done(q) = .true.
+                                    end if
+!                                   The leading factors of each term below, evaluated in the same order.
                                     do i_om = 1, n_freq
-                                       fq_si(i_om) = sqrt(a_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))
-                                       fq_sj(i_om) = sqrt(a_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2))
-                                       fq_ti(i_om) = (da_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2) + &
-                                                      a_mbd_i*(2.d0*omegas_mbd(i_om)**2*o_mbd_i)* &
-                                                      do_mbd_i/(o_mbd_i**2 + omegas_mbd(i_om)**2)**2)
-                                       fq_tj(i_om) = (da_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2) + &
-                                                      a_mbd_j*(2.d0*omegas_mbd(i_om)**2*o_mbd_j)* &
-                                                      do_mbd_j/(o_mbd_j**2 + omegas_mbd(i_om)**2)**2)
-!                                      The leading factors of each term below, evaluated in the same order.
-                                       fq_ss(i_om) = fq_si(i_om)*fq_sj(i_om)
-                                       fq_gi(i_om) = 1.d0/2.d0*1.d0/fq_si(i_om)*fq_ti(i_om)*fq_sj(i_om)
-                                       fq_gj(i_om) = 1.d0/2.d0*1.d0/fq_sj(i_om)*fq_tj(i_om)*fq_si(i_om)
+                                       fq_ss(i_om) = fq_si(i_om)*sj_tab(i_om, q)
+                                       fq_gi(i_om) = fq_hi(i_om)*sj_tab(i_om, q)
+                                       fq_gj(i_om) = hj_tab(i_om, q)*fq_si(i_om)
+                                    end do
+!                                   Each frequency's element is the first's times this, as the build formed it.
+                                    do i_om = 2, n_freq
+                                       fq_v(i_om) = s_out(i_om, p)*s_in(i_om, q)
                                     end do
                                     k3 = 9*(k2 - 1)
                                     do c1 = 1, 3
@@ -4608,29 +4717,37 @@ contains
                                           if (abs(f_damp_SCS(k2)*T_mbd(k3) &
                                                   *T_LR_mult_ij(k2)) > 1.d-20) then
                                              k4 = k4 + 1
+                                             val_k(1) = val_sym(k4, 1)
+                                             do i_om = 2, n_freq
+                                                val_k(i_om) = fq_v(i_om)*val_sym(k4, 1)
+                                             end do
 !                                            dot_2b sums val_sym*dval in the order sum() did.
                                              do i_om = 1, n_freq
                                                 dval_om(i_om) = fq_ss(i_om)*dT_LR_val(c1, c2) + &
                                                                 fq_gi(i_om)*f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2) + &
                                                                 fq_gj(i_om)*f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2)
                                           virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_i*dval_om(i_om)* &
-                                                                               val_sym(k4, i_om)
+                                                                               val_k(i_om)
                                           damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0*xyz_i* &
                                                                                       dval_om(i_om)* &
-                                                                                      val_sym(k4, i_om)*pcut_i
-                                                dot_2b(i_om) = dot_2b(i_om) + val_sym(k4, i_om)*dval_om(i_om)
+                                                                                      val_k(i_om)*pcut_i
+                                                dot_2b(i_om) = dot_2b(i_om) + val_k(i_om)*dval_om(i_om)
                                              end do
                                              if (k2 + 1 < n_mbd_pairs) then
                                                 if (p_mbd(k2 + 1) == -1) then
                                                    k4 = k4 + 1
+                                                   val_k(1) = val_sym(k4, 1)
+                                                   do i_om = 2, n_freq
+                                                      val_k(i_om) = fq_v(i_om)*val_sym(k4, 1)
+                                                   end do
                                                    do i_om = 1, n_freq
                                          virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_0_mbd(:, k2 + 1)* &
-                                                                                     dval_om(i_om)*val_sym(k4, i_om)
+                                                                                     dval_om(i_om)*val_k(i_om)
                                                 damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0* &
                                                                                             xyz_0_mbd(:, k2 + 1)* &
-                                                                                            dval_om(i_om)*val_sym(k4, i_om)* &
+                                                                                            dval_om(i_om)*val_k(i_om)* &
                                                                                             pcut_next
-                                                      dot_2b(i_om) = dot_2b(i_om) + val_sym(k4, i_om)*dval_om(i_om)
+                                                      dot_2b(i_om) = dot_2b(i_om) + val_k(i_om)*dval_om(i_om)
 !                                                              poly_cut(rjs_0_mbd(k2+1)*Bohr,x_min,x_max)
                                                       !val_sym_test(k4,i_om) = val_sym_test(k4-1,i_om)
                                                    end do
@@ -6201,5 +6318,118 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
       end if
 
    end subroutine
+
+!  The default path's polarizability series for every frequency at once, one
+!  pass over the frequency-1 elements per power. Frequency w's element is
+!  (row factor * column factor) * the first's, the product the MBD build forms;
+!  an element in the central atom's column pairs the central atom's row factor
+!  with its row atom's column factor. Each frequency's sums run in the order
+!  of the per-frequency loop in get_mbd_energies_and_forces.
+   subroutine mbd_series_freqs(val1, idx, s_out, s_in, AT_sym, n_freq, n_order, res_sym, include_2b, &
+                               do_derivatives, integrand_sym, pol_sym)
+
+      implicit none
+
+      real(dp), intent(in) :: val1(:)
+      type(csr_index_t), intent(in) :: idx
+      real(dp), intent(in) :: s_out(2:, :)
+      real(dp), intent(in) :: s_in(2:, :)
+      real(dp), intent(in) :: AT_sym(:, :, :)
+      integer, intent(in) :: n_freq
+      integer, intent(in) :: n_order
+      real(dp), intent(in) :: res_sym(:)
+      logical, intent(in) :: include_2b
+      logical, intent(in) :: do_derivatives
+      real(dp), intent(inout) :: integrand_sym(:)
+      real(dp), allocatable, intent(inout) :: pol_sym(:, :, :)
+      real(dp), allocatable :: pw(:, :, :)
+      real(dp), allocatable :: pw_next(:, :, :)
+      real(dp), allocatable :: col(:)
+      real(dp) :: acc(1:n_freq, 1:3)
+      real(dp) :: f(1:n_freq)
+      real(dp) :: a_w(1:n_freq)
+      real(dp) :: a_k
+      real(dp) :: coef
+      integer :: n3
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: w
+      integer :: c1
+      integer :: k2
+      integer :: pr
+      integer :: pc
+      integer :: pc_last
+
+      n3 = idx%dim
+      allocate (pw(1:n_freq, 1:3, 1:n3))
+      allocate (pw_next(1:n_freq, 1:3, 1:n3))
+      allocate (col(1:n3))
+      do w = 1, n_freq
+         do c1 = 1, 3
+            pw(w, c1, :) = AT_sym(:, c1, w)
+         end do
+      end do
+!     1 times the first frequency's element is that element, exactly.
+      f(1) = 1.d0
+
+      do k2 = 3, n_order
+         do i = 1, n3
+            pr = (i - 1)/3 + 1
+            acc = 0.d0
+            pc_last = 0
+            do k = idx%i_csr(i), idx%i_csr(i + 1) - 1
+               j = idx%j_csr(k)
+               pc = (j - 1)/3 + 1
+               if (pc /= pc_last) then
+                  if (pc == 1) then
+                     f(2:n_freq) = s_in(2:n_freq, pr)*s_out(2:n_freq, 1)
+                  else
+                     f(2:n_freq) = s_out(2:n_freq, pr)*s_in(2:n_freq, pc)
+                  end if
+                  pc_last = pc
+               end if
+               a_k = val1(idx%perm(k))
+               do w = 1, n_freq
+                  a_w(w) = f(w)*a_k
+               end do
+               do c1 = 1, 3
+                  do w = 1, n_freq
+                     acc(w, c1) = acc(w, c1) + a_w(w)*pw(w, c1, j)
+                  end do
+               end do
+            end do
+            pw_next(:, :, i) = acc
+         end do
+         pw = pw_next
+         coef = k2*res_sym(k2 + 1)
+         do w = 1, n_freq
+            if (k2 > 3) then
+               do c1 = 1, 3
+                  integrand_sym(w) = integrand_sym(w) + res_sym(k2)*pw(w, c1, c1)
+               end do
+            end if
+            if (do_derivatives) then
+               do c1 = 1, 3
+                  pol_sym(:, c1, w) = pol_sym(:, c1, w) - coef*pw(w, c1, :)
+               end do
+            end if
+         end do
+      end do
+
+      do w = 1, n_freq
+         do c1 = 1, 3
+            col(:) = pw(w, c1, :)
+            integrand_sym(w) = integrand_sym(w) + res_sym(n_order + 1)*dot_product(AT_sym(:, c1, w), col)
+         end do
+         if (include_2b) then
+            do c1 = 1, 3
+               integrand_sym(w) = integrand_sym(w) + res_sym(3)*dot_product(AT_sym(:, c1, w), AT_sym(:, c1, w))
+            end do
+         end if
+      end do
+      deallocate (pw, pw_next, col)
+
+   end subroutine mbd_series_freqs
 
 end module
