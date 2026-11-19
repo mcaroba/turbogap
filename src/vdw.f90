@@ -1482,6 +1482,19 @@ contains
       logical :: mbd_dev
       logical :: mbd_one_freq
       logical :: mbd_compact
+      logical :: mbd_blocks
+      integer :: nnz_cap
+      integer :: cap_pairs
+      integer :: cap_der
+      integer :: cap_hir
+      real(dp) :: blk_v
+      real(dp) :: sum_a
+      real(dp) :: sum_b
+      real(dp) :: fb_pair
+      real(dp) :: x_om
+      real(dp) :: sum_p(1:n_freq)
+      real(dp), allocatable :: blk(:, :)
+      integer, allocatable :: cpair(:)
       real(dp) :: lim_sqrd
       real(dp) :: d_sqrd
       real(dp) :: r0_q
@@ -1631,6 +1644,12 @@ contains
       mbd_compact = cent_appr .and. default_coeff .and. n_order > 2 .and. &
                     .not. do_log .and. .not. series_expansion .and. .not. lanczos .and. .not. do_total_energy
       mbd_one_freq = mbd_compact
+!     On the host the default path keeps each pair's nine values as one block.
+      mbd_blocks = mbd_compact .and. .not. mbd_dev
+!     Each thread's per-pair arrays, kept from site to site (firstprivate copies).
+      cap_pairs = 0
+      cap_der = 0
+      cap_hir = 0
       allocate (vir_site(1:3, 1:3, 1:n_sites))
       vir_site = 0.d0
       !$omp parallel do default(firstprivate) schedule(dynamic, 1) &
@@ -2259,32 +2278,44 @@ contains
                   if (.not. cent_appr) then
                      allocate (T_LR(1:3*n_mbd_sites, 1:3*n_mbd_sites))
                   end if
-                  allocate (r0_ii_SCS(1:n_mbd_pairs))
-                  allocate (f_damp_SCS(1:n_mbd_pairs))
-                  allocate (e_damp(1:n_mbd_pairs))
+!                 The per-pair arrays are kept from site to site and grown, with
+!                 an eighth to spare, when a site has more pairs: allocated and
+!                 freed per site, the allocator handed their pages back and the
+!                 next site faulted them in again.
+                  if (n_mbd_pairs > cap_pairs) then
+                     if (cap_pairs > 0) then
+                        deallocate (r0_ii_SCS, f_damp_SCS, e_damp, mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, &
+                                    xyz_mbd, rjs_mbd, T_mbd, a_mbd, o_mbd, rjs_0_mbd, xyz_0_mbd, &
+                                    hirshfeld_mbd_neigh, T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji)
+                     end if
+                     cap_pairs = n_mbd_pairs + n_mbd_pairs/8
+                     allocate (r0_ii_SCS(1:cap_pairs))
+                     allocate (f_damp_SCS(1:cap_pairs))
+                     allocate (e_damp(1:cap_pairs))
+                     allocate (mbd_neighbors_list(1:cap_pairs))
+                     allocate (p_mbd(1:cap_pairs))
+                     allocate (r0_ii_mbd(1:cap_pairs))
+                     allocate (neighbor_alpha0_mbd(1:cap_pairs))
+                     allocate (xyz_mbd(1:3, cap_pairs))
+                     allocate (rjs_mbd(cap_pairs))
+                     allocate (T_mbd(1:9*cap_pairs))
+                     allocate (a_mbd(1:cap_pairs))
+                     allocate (o_mbd(1:cap_pairs))
+                     allocate (rjs_0_mbd(1:cap_pairs))
+                     allocate (xyz_0_mbd(1:3, cap_pairs))
+                     allocate (hirshfeld_mbd_neigh(1:cap_pairs))
+                     allocate (T_LR_mult_0i(1:cap_pairs))
+                     allocate (T_LR_mult_0j(1:cap_pairs))
+                     allocate (T_LR_mult_ij(1:cap_pairs))
+                     allocate (T_LR_mult_0ij(1:cap_pairs))
+                     allocate (T_LR_mult_0ji(1:cap_pairs))
+                  end if
                   if (.not. cent_appr) then
                      allocate (AT(1:3*n_mbd_sites, 1:3*n_mbd_sites, 1:n_freq))
                   end if
                   allocate (omegas_mbd(1:n_freq))
                   allocate (integrand(1:n_freq))
                   allocate (n_mbd_neigh(1:n_mbd_sites))
-                  allocate (mbd_neighbors_list(1:n_mbd_pairs))
-                  allocate (p_mbd(1:n_mbd_pairs))
-                  allocate (r0_ii_mbd(1:n_mbd_pairs))
-                  allocate (neighbor_alpha0_mbd(1:n_mbd_pairs))
-                  allocate (xyz_mbd(1:3, n_mbd_pairs))
-                  allocate (rjs_mbd(n_mbd_pairs))
-                  allocate (T_mbd(1:9*n_mbd_pairs))
-                  allocate (a_mbd(1:n_mbd_pairs))
-                  allocate (o_mbd(1:n_mbd_pairs))
-                  allocate (rjs_0_mbd(1:n_mbd_pairs))
-                  allocate (xyz_0_mbd(1:3, n_mbd_pairs))
-                  allocate (hirshfeld_mbd_neigh(1:n_mbd_pairs))
-                  allocate (T_LR_mult_0i(1:n_mbd_pairs))
-                  allocate (T_LR_mult_0j(1:n_mbd_pairs))
-                  allocate (T_LR_mult_ij(1:n_mbd_pairs))
-                  allocate (T_LR_mult_0ij(1:n_mbd_pairs))
-                  allocate (T_LR_mult_0ji(1:n_mbd_pairs))
 !                 The device's cutoff weight of each entry's atom, filled as the build places it.
                   if (mbd_dev) then
                      allocate (pcut_mbd(1:n_mbd_pairs))
@@ -2292,35 +2323,58 @@ contains
                   end if
                   hirshfeld_mbd_neigh = 0.d0
                   if (do_derivatives) then
-                     allocate (da_mbd(1:n_mbd_pairs))
-                     allocate (dT_mbd(1:9*n_mbd_pairs))
-                     allocate (f_damp_der_mbd(1:n_mbd_pairs))
-                     allocate (f_damp_der_SCS(1:n_mbd_pairs))
+                     if (n_mbd_pairs > cap_der) then
+                        if (cap_der > 0) then
+                           deallocate (da_mbd, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, do_mbd, &
+                                       dr0_ii_SCS, dT_LR_mult_0i, dT_LR_mult_0j, dT_LR_mult_ij, dT_LR_mult_ij0)
+                        end if
+                        cap_der = n_mbd_pairs + n_mbd_pairs/8
+                        allocate (da_mbd(1:cap_der))
+                        allocate (dT_mbd(1:9*cap_der))
+                        allocate (f_damp_der_mbd(1:cap_der))
+                        allocate (f_damp_der_SCS(1:cap_der))
+                        allocate (do_mbd(1:cap_der))
+                        allocate (dr0_ii_SCS(1:cap_der))
+                        allocate (dT_LR_mult_0i(1:cap_der))
+                        allocate (dT_LR_mult_0j(1:cap_der))
+                        allocate (dT_LR_mult_ij(1:cap_der))
+                        allocate (dT_LR_mult_ij0(1:cap_der))
+                     end if
                      if (.not. cent_appr) then
                         allocate (dT_LR(1:3*n_mbd_sites, 1:3*n_mbd_sites))
                      end if
                      if (do_total_energy) then
                         allocate (total_integrand(1:n_freq))
                      end if
-                     allocate (do_mbd(1:n_mbd_pairs))
-                     allocate (dr0_ii_SCS(1:n_mbd_pairs))
-                     allocate (dT_LR_mult_0i(1:n_mbd_pairs))
-                     allocate (dT_LR_mult_0j(1:n_mbd_pairs))
-                     allocate (dT_LR_mult_ij(1:n_mbd_pairs))
-                     allocate (dT_LR_mult_ij0(1:n_mbd_pairs))
                   end if
                   if (do_derivatives .and. do_hirshfeld_gradients) then
-                     allocate (hirshfeld_v_mbd_der(1:3, 1:n_mbd_pairs))
+                     if (n_mbd_pairs > cap_hir) then
+                        if (cap_hir > 0) deallocate (hirshfeld_v_mbd_der)
+                        cap_hir = n_mbd_pairs + n_mbd_pairs/8
+                        allocate (hirshfeld_v_mbd_der(1:3, 1:cap_hir))
+                     end if
                      hirshfeld_v_mbd_der = 0.d0
                   end if
 !                 Kept from site to site and grown when a site needs more: a site
-!                 writes entries 1:nnz before reading them.
+!                 writes entries 1:nnz before reading them. On the compact paths
+!                 only the central atom's pairs (and their duplicates) are kept here.
+                  nnz_cap = 9*(n_mbd_pairs - n_mbd_sites)
+                  if (mbd_compact) nnz_cap = 18*n_mbd_sites
                   if (allocated(ia)) then
-                     if (size(ia) < 9*(n_mbd_pairs - n_mbd_sites)) deallocate (ia, ja)
+                     if (size(ia) < nnz_cap) deallocate (ia, ja)
                   end if
                   if (.not. allocated(ia)) then
-                     allocate (ia(1:9*(n_mbd_pairs - n_mbd_sites)))
-                     allocate (ja(1:9*(n_mbd_pairs - n_mbd_sites)))
+                     allocate (ia(1:nnz_cap))
+                     allocate (ja(1:nnz_cap))
+                  end if
+                  if (mbd_blocks) then
+                     if (allocated(blk)) then
+                        if (size(blk, 2) < n_mbd_pairs) deallocate (blk)
+                     end if
+                     if (.not. allocated(blk)) allocate (blk(1:9, 1:n_mbd_pairs))
+                     if (allocated(cpair)) deallocate (cpair)
+                     allocate (cpair(1:n_mbd_sites))
+                     cpair = 0
                   end if
 !                 val is read only without cent_appr; with it, val_sym.
                   if (.not. cent_appr) then
@@ -2331,13 +2385,13 @@ contains
                   end if
                   if (cent_appr) then
                      if (allocated(val_sym)) then
-                        if (size(val_sym, 1) < 9*(n_mbd_pairs - n_mbd_sites)) deallocate (val_sym)
+                        if (size(val_sym, 1) < nnz_cap) deallocate (val_sym)
                      end if
                      if (.not. allocated(val_sym)) then
                         if (mbd_one_freq) then
-                           allocate (val_sym(1:9*(n_mbd_pairs - n_mbd_sites), 1:1))
+                           allocate (val_sym(1:nnz_cap, 1:1))
                         else
-                           allocate (val_sym(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
+                           allocate (val_sym(1:nnz_cap, 1:n_freq))
                         end if
                      end if
                      allocate (AT_sym(1:3*n_mbd_sites, 1:3, 1:n_freq))
@@ -2589,6 +2643,7 @@ contains
                                     s = neighbor_species(n_tot + k_j)
                                     mbd_neighbors_list(k2) = j
                                     p_mbd(k2) = q
+                                    if (mbd_blocks) cpair(q) = k2
                                     if (do_derivatives .and. do_hirshfeld_gradients) then
                                        hirshfeld_v_mbd_der(1:3, k2) = hirshfeld_v_cart_der_H(1:3, n_tot + k_j)
                                     end if
@@ -2685,6 +2740,16 @@ contains
                                           if (cent_appr) then
                                        T_LR_sym(3*(p - 1) + c1, 3*(q - 1) + c2) = f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                                                         *T_LR_mult_ij(k2)
+                                          end if
+                                          if (mbd_blocks) then
+                                             if (abs(f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
+                                                     *T_LR_mult_ij(k2)) > 1.d-20) then
+                                                blk(3*(c1 - 1) + c2, k2) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
+                                                                           f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
+                                                                           *T_LR_mult_ij(k2)
+                                             else
+                                                blk(3*(c1 - 1) + c2, k2) = 0.d0
+                                             end if
                                           end if
                                           if (abs(f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                   *T_LR_mult_ij(k2)) > 1.d-20) then
@@ -2830,6 +2895,17 @@ contains
                                            T_LR(3*(p - 1) + c1, 3*(q - 1) + c2) = f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                                                     *T_LR_mult_ij(k2)
                                           end if
+                                          if (mbd_blocks) then
+                                             if (abs(f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
+                                                     *T_LR_mult_ij(k2)) > 1.d-20) then
+                                                blk(3*(c1 - 1) + c2, k2) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
+                                                                           f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
+                                                                           *T_LR_mult_ij(k2)
+                                             else
+                                                blk(3*(c1 - 1) + c2, k2) = 0.d0
+                                             end if
+                                             cycle
+                                          end if
                                           if (abs(f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                   *T_LR_mult_ij(k2)) > 1.d-20) then
                                              k4 = k4 + 1
@@ -2870,7 +2946,7 @@ contains
                   nnz = k4
 !                 The pattern, and the pattern with the diagonal that the
 !                 eigenvalue estimates add, are multiplied many times below.
-                  if (.not. mbd_dev) then
+                  if (.not. mbd_compact) then
                      call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a)
                   end if
                   if (.not. default_coeff) then
@@ -3260,8 +3336,8 @@ contains
                            do k2 = 3, n_order + 1
                               res_sym(k2) = -1.d0/(k2 - 1)
                            end do
-                           call mbd_series_freqs(val_sym(1:nnz, 1), csr_a, s_out, s_in, AT_sym, n_freq, n_order, res_sym, &
-                                                 include_2b, do_derivatives, integrand_sym, pol_sym)
+                           call mbd_series_blocks(n_mbd_neigh, p_mbd, blk, cpair, s_out, AT_sym, n_freq, n_order, res_sym, &
+                                                  include_2b, do_derivatives, integrand_sym, pol_sym)
                         else
                            do i2 = 1, n_freq
                               if (.not. cent_appr) then
@@ -4429,6 +4505,7 @@ contains
                            end if
 !                          The 2b terms' factors that depend on this atom only.
                            if (cent_appr .and. include_2b) then
+                              sum_p = 0.d0
                               pcut_i = poly_cut(sqrt(xyz_i(1)**2 + xyz_i(2)**2 + xyz_i(3)**2)*Bohr, x_min, x_max)
                               do i_om = 1, n_freq
                                  fq_si(i_om) = sqrt(a_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))
@@ -4730,52 +4807,83 @@ contains
                                     do i_om = 2, n_freq
                                        fq_v(i_om) = s_out(i_om, p)*s_in(i_om, q)
                                     end do
-                                    k3 = 9*(k2 - 1)
-                                    do c1 = 1, 3
-                                       do c2 = 1, 3
-                                          k3 = k3 + 1
-                                          if (abs(f_damp_SCS(k2)*T_mbd(k3) &
-                                                  *T_LR_mult_ij(k2)) > 1.d-20) then
-                                             k4 = k4 + 1
-                                             val_k(1) = val_sym(k4, 1)
-                                             do i_om = 2, n_freq
-                                                val_k(i_om) = fq_v(i_om)*val_sym(k4, 1)
-                                             end do
-!                                            dot_2b sums val_sym*dval in the order sum() did.
-                                             do i_om = 1, n_freq
-                                                dval_om(i_om) = fq_ss(i_om)*dT_LR_val(c1, c2) + &
-                                                                fq_gi(i_om)*f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2) + &
-                                                                fq_gj(i_om)*f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2)
-                                          virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_i*dval_om(i_om)* &
-                                                                               val_k(i_om)
-                                          damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0*xyz_i* &
-                                                                                      dval_om(i_om)* &
-                                                                                      val_k(i_om)*pcut_i
-                                                dot_2b(i_om) = dot_2b(i_om) + val_k(i_om)*dval_om(i_om)
-                                             end do
-                                             if (k2 + 1 < n_mbd_pairs) then
-                                                if (p_mbd(k2 + 1) == -1) then
-                                                   k4 = k4 + 1
-                                                   val_k(1) = val_sym(k4, 1)
-                                                   do i_om = 2, n_freq
-                                                      val_k(i_om) = fq_v(i_om)*val_sym(k4, 1)
-                                                   end do
-                                                   do i_om = 1, n_freq
-                                         virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_0_mbd(:, k2 + 1)* &
-                                                                                     dval_om(i_om)*val_k(i_om)
-                                                damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0* &
-                                                                                            xyz_0_mbd(:, k2 + 1)* &
-                                                                                            dval_om(i_om)*val_k(i_om)* &
-                                                                                            pcut_next
-                                                      dot_2b(i_om) = dot_2b(i_om) + val_k(i_om)*dval_om(i_om)
-!                                                              poly_cut(rjs_0_mbd(k2+1)*Bohr,x_min,x_max)
-                                                      !val_sym_test(k4,i_om) = val_sym_test(k4-1,i_om)
-                                                   end do
-                                                end if
+                                    if (mbd_blocks) then
+!                                      The pair's elements enter its 2b terms only through
+!                                      two sums over its nine: of v dT_LR_val and of v T.
+                                       sum_a = 0.d0
+                                       sum_b = 0.d0
+                                       k3 = 9*(k2 - 1)
+                                       do c1 = 1, 3
+                                          do c2 = 1, 3
+                                             k3 = k3 + 1
+                                             blk_v = blk(3*(c1 - 1) + c2, k2)
+                                             sum_a = sum_a + blk_v*dT_LR_val(c1, c2)
+                                             sum_b = sum_b + blk_v*T_mbd(k3)
+                                          end do
+                                       end do
+                                       fb_pair = f_damp_SCS(k2)*T_LR_mult_ij(k2)*sum_b
+                                       do i_om = 1, n_freq
+                                          x_om = fq_ss(i_om)*sum_a + (fq_gi(i_om) + fq_gj(i_om))*fb_pair
+                                          if (i_om > 1) x_om = fq_v(i_om)*x_om
+                                          sum_p(i_om) = sum_p(i_om) + x_om
+                                          if (k2 + 1 < n_mbd_pairs) then
+                                             if (p_mbd(k2 + 1) == -1) then
+                                                dot_2b(i_om) = dot_2b(i_om) + x_om
+                                                virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - &
+                                                                               0.5d0*xyz_0_mbd(:, k2 + 1)*x_om
+                                                damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - &
+                                                                                      0.5d0*xyz_0_mbd(:, k2 + 1)*x_om*pcut_next
                                              end if
                                           end if
                                        end do
-                                    end do
+                                    else
+                                       k3 = 9*(k2 - 1)
+                                       do c1 = 1, 3
+                                          do c2 = 1, 3
+                                             k3 = k3 + 1
+                                             if (abs(f_damp_SCS(k2)*T_mbd(k3) &
+                                                     *T_LR_mult_ij(k2)) > 1.d-20) then
+                                                k4 = k4 + 1
+                                                val_k(1) = val_sym(k4, 1)
+                                                do i_om = 2, n_freq
+                                                   val_k(i_om) = fq_v(i_om)*val_sym(k4, 1)
+                                                end do
+!                                            dot_2b sums val_sym*dval in the order sum() did.
+                                                do i_om = 1, n_freq
+                                                   dval_om(i_om) = fq_ss(i_om)*dT_LR_val(c1, c2) + &
+                                                                   fq_gi(i_om)*f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2) + &
+                                                                   fq_gj(i_om)*f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2)
+                                          virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_i*dval_om(i_om)* &
+                                                                                  val_k(i_om)
+                                          damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0*xyz_i* &
+                                                                                         dval_om(i_om)* &
+                                                                                         val_k(i_om)*pcut_i
+                                                   dot_2b(i_om) = dot_2b(i_om) + val_k(i_om)*dval_om(i_om)
+                                                end do
+                                                if (k2 + 1 < n_mbd_pairs) then
+                                                   if (p_mbd(k2 + 1) == -1) then
+                                                      k4 = k4 + 1
+                                                      val_k(1) = val_sym(k4, 1)
+                                                      do i_om = 2, n_freq
+                                                         val_k(i_om) = fq_v(i_om)*val_sym(k4, 1)
+                                                      end do
+                                                      do i_om = 1, n_freq
+                                         virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_0_mbd(:, k2 + 1)* &
+                                                                                        dval_om(i_om)*val_k(i_om)
+                                                damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0* &
+                                                                                               xyz_0_mbd(:, k2 + 1)* &
+                                                                                               dval_om(i_om)*val_k(i_om)* &
+                                                                                               pcut_next
+                                                         dot_2b(i_om) = dot_2b(i_om) + val_k(i_om)*dval_om(i_om)
+!                                                              poly_cut(rjs_0_mbd(k2+1)*Bohr,x_min,x_max)
+                                                         !val_sym_test(k4,i_om) = val_sym_test(k4-1,i_om)
+                                                      end do
+                                                   end if
+                                                end if
+                                             end if
+                                          end do
+                                       end do
+                                    end if
                                  end if
                                  if (k2 + 1 < n_mbd_pairs) then
                                     if (p_mbd(k2 + 1) == -1) then
@@ -4787,6 +4895,14 @@ contains
                                  end if
                               end if ! q .ne. -1
                            end do
+                           if (mbd_blocks .and. cent_appr .and. include_2b) then
+                              do i_om = 1, n_freq
+                                 dot_2b(i_om) = dot_2b(i_om) + sum_p(i_om)
+                                 virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_i*sum_p(i_om)
+                                 damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - &
+                                                                       0.5d0*xyz_i*sum_p(i_om)*pcut_i
+                              end do
+                           end if
                         end do
 #ifdef _GPU
                         if (mbd_dev) call mbd_gpu_force(mbd_tid, c3, da_mbd, do_mbd, dr0_ii_SCS, dot_2b, &
@@ -6181,10 +6297,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 
             if (abs(rcut_tsscs) < 1.d-10) then
                if (om == 2) then
-                  deallocate (r0_ii_SCS, f_damp_SCS, e_damp, omegas_mbd, integrand, n_mbd_neigh, &
-                              mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
-                              rjs_0_mbd, xyz_0_mbd, o_mbd, hirshfeld_mbd_neigh, &
-                              T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji)
+                  deallocate (omegas_mbd, integrand, n_mbd_neigh)
                   if (.not. cent_appr) then
                      deallocate (T_LR, AT)
                   end if
@@ -6203,17 +6316,11 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                end if
 
                if (do_derivatives .and. om == 2) then
-                  deallocate (da_mbd, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, &
-                              do_mbd, dr0_ii_SCS, dT_LR_mult_0i, dT_LR_mult_0j, &
-                              dT_LR_mult_ij, dT_LR_mult_ij0)
                   if (.not. cent_appr) then
                      deallocate (dT_LR)
                   end if
                   if (do_total_energy) then
                      deallocate (total_integrand)
-                  end if
-                  if (do_hirshfeld_gradients) then
-                     deallocate (hirshfeld_v_mbd_der)
                   end if
                   if (.not. series_expansion) then
                      if (.not. cent_appr) then
@@ -6339,21 +6446,21 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 
    end subroutine
 
-!  The default path's polarizability series for every frequency at once, one
-!  pass over the frequency-1 elements per power. Frequency w's element is
-!  (row factor * column factor) * the first's, the product the MBD build forms;
-!  an element in the central atom's column pairs the central atom's row factor
-!  with its row atom's column factor. Each frequency's sums run in the order
-!  of the per-frequency loop in get_mbd_energies_and_forces.
-   subroutine mbd_series_freqs(val1, idx, s_out, s_in, AT_sym, n_freq, n_order, res_sym, include_2b, &
-                               do_derivatives, integrand_sym, pol_sym)
+!  The default path's polarizability series for every frequency at once:
+!  A_w = D_w A_1 D_w, with D_w the atoms' factors s(w, p) (1 at w = 1) and A_1
+!  one 3 x 3 block per pair, blk(:, k) for atom p's pair k with atom p_mbd(k);
+!  an atom q paired with the central atom also has that pair's block at (q, 1).
+!  Each power is one walk over the blocks for all frequencies.
+   subroutine mbd_series_blocks(n_neigh, p_mbd, blk, cpair, s_out, AT_sym, n_freq, n_order, res_sym, include_2b, &
+                                do_derivatives, integrand_sym, pol_sym)
 
       implicit none
 
-      real(dp), intent(in) :: val1(:)
-      type(csr_index_t), intent(in) :: idx
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: p_mbd(:)
+      real(dp), intent(in) :: blk(:, :)
+      integer, intent(in) :: cpair(:)
       real(dp), intent(in) :: s_out(2:, :)
-      real(dp), intent(in) :: s_in(2:, :)
       real(dp), intent(in) :: AT_sym(:, :, :)
       integer, intent(in) :: n_freq
       integer, intent(in) :: n_order
@@ -6363,65 +6470,77 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
       real(dp), intent(inout) :: integrand_sym(:)
       real(dp), allocatable, intent(inout) :: pol_sym(:, :, :)
       real(dp), allocatable :: pw(:, :, :)
-      real(dp), allocatable :: pw_next(:, :, :)
+      real(dp), allocatable :: zw(:, :, :)
+      real(dp), allocatable :: dw(:, :)
       real(dp), allocatable :: col(:)
-      real(dp) :: acc(1:n_freq, 1:3)
-      real(dp) :: f(1:n_freq)
-      real(dp) :: a_w(1:n_freq)
-      real(dp) :: a_k
+      real(dp) :: y(1:n_freq, 1:3, 1:3)
+      real(dp) :: v
       real(dp) :: coef
+      integer :: n_atoms
       integer :: n3
-      integer :: i
-      integer :: j
+      integer :: p
+      integer :: q
       integer :: k
-      integer :: w
+      integer :: kb
+      integer :: c
       integer :: c1
+      integer :: c2
+      integer :: w
       integer :: k2
-      integer :: pr
-      integer :: pc
-      integer :: pc_last
 
-      n3 = idx%dim
+      n_atoms = size(n_neigh)
+      n3 = 3*n_atoms
       allocate (pw(1:n_freq, 1:3, 1:n3))
-      allocate (pw_next(1:n_freq, 1:3, 1:n3))
+      allocate (zw(1:n_freq, 1:3, 1:n3))
+      allocate (dw(1:n_freq, 1:n_atoms))
       allocate (col(1:n3))
+      do p = 1, n_atoms
+         dw(1, p) = 1.d0
+         dw(2:n_freq, p) = s_out(2:n_freq, p)
+      end do
       do w = 1, n_freq
-         do c1 = 1, 3
-            pw(w, c1, :) = AT_sym(:, c1, w)
+         do c = 1, 3
+            pw(w, c, :) = AT_sym(:, c, w)
          end do
       end do
-!     1 times the first frequency's element is that element, exactly.
-      f(1) = 1.d0
 
       do k2 = 3, n_order
-         do i = 1, n3
-            pr = (i - 1)/3 + 1
-            acc = 0.d0
-            pc_last = 0
-            do k = idx%i_csr(i), idx%i_csr(i + 1) - 1
-               j = idx%j_csr(k)
-               pc = (j - 1)/3 + 1
-               if (pc /= pc_last) then
-                  if (pc == 1) then
-                     f(2:n_freq) = s_in(2:n_freq, pr)*s_out(2:n_freq, 1)
-                  else
-                     f(2:n_freq) = s_out(2:n_freq, pr)*s_in(2:n_freq, pc)
-                  end if
-                  pc_last = pc
-               end if
-               a_k = val1(idx%perm(k))
-               do w = 1, n_freq
-                  a_w(w) = f(w)*a_k
+         do p = 1, n_atoms
+            do c2 = 1, 3
+               do c = 1, 3
+                  zw(:, c, 3*(p - 1) + c2) = dw(:, p)*pw(:, c, 3*(p - 1) + c2)
                end do
-               do c1 = 1, 3
-                  do w = 1, n_freq
-                     acc(w, c1) = acc(w, c1) + a_w(w)*pw(w, c1, j)
+            end do
+         end do
+         kb = 0
+         do p = 1, n_atoms
+            y = 0.d0
+            do k = kb + 2, kb + n_neigh(p)
+               q = p_mbd(k)
+               if (q == -1) cycle
+               do c2 = 1, 3
+                  do c1 = 1, 3
+                     v = blk(3*(c1 - 1) + c2, k)
+                     y(:, :, c1) = y(:, :, c1) + v*zw(:, :, 3*(q - 1) + c2)
                   end do
                end do
             end do
-            pw_next(:, :, i) = acc
+            if (cpair(p) > 0) then
+               k = cpair(p)
+               do c2 = 1, 3
+                  do c1 = 1, 3
+                     v = blk(3*(c1 - 1) + c2, k)
+                     y(:, :, c1) = y(:, :, c1) + v*zw(:, :, c2)
+                  end do
+               end do
+            end if
+            do c1 = 1, 3
+               do c = 1, 3
+                  pw(:, c, 3*(p - 1) + c1) = dw(:, p)*y(:, c, c1)
+               end do
+            end do
+            kb = kb + n_neigh(p)
          end do
-         pw = pw_next
          coef = k2*res_sym(k2 + 1)
          do w = 1, n_freq
             if (k2 > 3) then
@@ -6448,8 +6567,8 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
             end do
          end if
       end do
-      deallocate (pw, pw_next, col)
+      deallocate (pw, zw, dw, col)
 
-   end subroutine mbd_series_freqs
+   end subroutine mbd_series_blocks
 
 end module
