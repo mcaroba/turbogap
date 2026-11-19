@@ -2244,12 +2244,18 @@ contains
 !                 Kept from site to site and grown when a site needs more: a site
 !                 writes entries 1:nnz before reading them.
                   if (allocated(ia)) then
-                     if (size(ia) < 9*(n_mbd_pairs - n_mbd_sites)) deallocate (ia, ja, val)
+                     if (size(ia) < 9*(n_mbd_pairs - n_mbd_sites)) deallocate (ia, ja)
                   end if
                   if (.not. allocated(ia)) then
                      allocate (ia(1:9*(n_mbd_pairs - n_mbd_sites)))
                      allocate (ja(1:9*(n_mbd_pairs - n_mbd_sites)))
-                     allocate (val(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
+                  end if
+!                 val is read only without cent_appr; with it, val_sym.
+                  if (.not. cent_appr) then
+                     if (allocated(val)) then
+                        if (size(val, 1) < 9*(n_mbd_pairs - n_mbd_sites)) deallocate (val)
+                     end if
+                     if (.not. allocated(val)) allocate (val(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
                   end if
                   if (cent_appr) then
                      if (allocated(val_sym)) then
@@ -2535,18 +2541,22 @@ contains
                                              k4 = k4 + 1
                                              ia(k4) = 3*(p - 1) + c1
                                              ja(k4) = 3*(q - 1) + c2
-                                             val(k4, 1) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
-                                                          f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
-                                                          *T_LR_mult_ij(k2)
+                                             if (.not. cent_appr) then
+                                                val(k4, 1) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
+                                                             f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
+                                                             *T_LR_mult_ij(k2)
+                                             end if
                                              if (cent_appr) then
                                                 val_sym(k4, 1) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
                                                                  f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                                  *T_LR_mult_ij(k2)
                                              end if
                                              do i_om = 2, n_freq
-                                                val(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
-                                                                val(k4, 1)
+                                                if (.not. cent_appr) then
+                                                   val(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
+                                                                   sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
+                                                                   val(k4, 1)
+                                                end if
                                                 if (cent_appr) then
                                                    val_sym(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
                                                                        sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
@@ -2559,18 +2569,22 @@ contains
                                              k4 = k4 + 1
                                              ia(k4) = 3*(q - 1) + c1
                                              ja(k4) = 3*(p - 1) + c2
-                                             val(k4, 1) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
-                                                          f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
-                                                          *T_LR_mult_ij(k2)
+                                             if (.not. cent_appr) then
+                                                val(k4, 1) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
+                                                             f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
+                                                             *T_LR_mult_ij(k2)
+                                             end if
                                              if (cent_appr) then
                                                 val_sym(k4, 1) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
                                                                  f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                                  *T_LR_mult_ij(k2)
                                              end if
                                              do i_om = 2, n_freq
-                                                val(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
-                                                                val(k4, 1)
+                                                if (.not. cent_appr) then
+                                                   val(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
+                                                                   sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
+                                                                   val(k4, 1)
+                                                end if
                                                 if (cent_appr) then
                                                    val_sym(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
                                                                        sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
@@ -2702,16 +2716,20 @@ contains
                                              k4 = k4 + 1
                                              ia(k4) = 3*(p - 1) + c1
                                              ja(k4) = 3*(q - 1) + c2
-                                             val(k4, 1) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
-                                                          f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
-                                                          *T_LR_mult_ij(k2)
+                                             if (.not. cent_appr) then
+                                                val(k4, 1) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
+                                                             f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
+                                                             *T_LR_mult_ij(k2)
+                                             end if
                                              if (cent_appr) then
                                                 val_sym(k4, 1) = sqrt(a_mbd_i)*sqrt(a_mbd(k2))* &
                                                                  f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_i*T_LR_mult_j &
                                                                  *T_LR_mult_ij(k2)
                                              end if
                                              do i_om = 2, n_freq
-                                                val(k4, i_om) = fq_val(i_om)*val(k4, 1)
+                                                if (.not. cent_appr) then
+                                                   val(k4, i_om) = fq_val(i_om)*val(k4, 1)
+                                                end if
                                                 if (cent_appr) then
                                                    val_sym(k4, i_om) = fq_val(i_om)*val_sym(k4, 1)
                                                 end if
@@ -3015,12 +3033,14 @@ contains
                         stop
                      else
                         if (do_timing) call cpu_time(time5)
-                        allocate (ia2(1:nnz + 3*n_mbd_sites))
-                        allocate (ja2(1:nnz + 3*n_mbd_sites))
-                        allocate (val2(1:nnz + 3*n_mbd_sites))
-                        ia2 = 0
-                        ja2 = 0
-                        val2 = 0.d0
+                        if (.not. default_coeff) then
+                           allocate (ia2(1:nnz + 3*n_mbd_sites))
+                           allocate (ja2(1:nnz + 3*n_mbd_sites))
+                           allocate (val2(1:nnz + 3*n_mbd_sites))
+                           ia2 = 0
+                           ja2 = 0
+                           val2 = 0.d0
+                        end if
                         if (cent_appr) then
                            allocate (res_sym(1:n_order + 1))
                            allocate (AT_sym_power(1:3*n_mbd_sites, 1:3))
@@ -3032,7 +3052,6 @@ contains
                         allocate (Ab(1:3*n_mbd_sites))
                         b_vec = 0.d0
                         Ab = 0.d0
-                        allocate (I_mat(1:3*n_mbd_sites, 1:3*n_mbd_sites))
                         allocate (l_vals(1:1001))
                         allocate (log_vals(1:1001))
                         l_vals = 0.d0
@@ -3048,21 +3067,21 @@ contains
                         AT_power = 0.d0
                         temp_mat = 0.d0
                         ! Log stuff:
-                        allocate (AT_copy(1:3*n_mbd_sites, 1:3*n_mbd_sites))
-                        AT_copy = 0.d0
-                        allocate (WR(1:3*n_mbd_sites))
-                        allocate (WI(1:3*n_mbd_sites))
-                        allocate (VR(1:3*n_mbd_sites, 1:3*n_mbd_sites))
-                        allocate (VR_inv(1:3*n_mbd_sites, 1:3*n_mbd_sites))
-                        allocate (work_mbd(1:24*n_mbd_sites))
-                        allocate (ipiv_mbd(1:3*n_mbd_sites))
-                        WR = 0.d0
-                        WI = 0.d0
-                        VR = 0.d0
-                        VR_inv = 0.d0
-                        work_mbd = 0.d0
-                        ipiv_mbd = 0
                         if (do_log) then
+                           allocate (AT_copy(1:3*n_mbd_sites, 1:3*n_mbd_sites))
+                           AT_copy = 0.d0
+                           allocate (WR(1:3*n_mbd_sites))
+                           allocate (WI(1:3*n_mbd_sites))
+                           allocate (VR(1:3*n_mbd_sites, 1:3*n_mbd_sites))
+                           allocate (VR_inv(1:3*n_mbd_sites, 1:3*n_mbd_sites))
+                           allocate (work_mbd(1:24*n_mbd_sites))
+                           allocate (ipiv_mbd(1:3*n_mbd_sites))
+                           WR = 0.d0
+                           WI = 0.d0
+                           VR = 0.d0
+                           VR_inv = 0.d0
+                           work_mbd = 0.d0
+                           ipiv_mbd = 0
                            allocate (log_integrand(1:n_freq))
                            allocate (temp_mat_full(1:3*n_mbd_sites, 1:3*n_mbd_sites))
                            log_integrand = 0.d0
@@ -3093,10 +3112,13 @@ contains
                            end if
                         end if
 
-                        I_mat = 0.d0
-                        do p = 1, 3*n_mbd_sites
-                           I_mat(p, p) = 1.d0
-                        end do
+                        if (.not. default_coeff) then
+                           allocate (I_mat(1:3*n_mbd_sites, 1:3*n_mbd_sites))
+                           I_mat = 0.d0
+                           do p = 1, 3*n_mbd_sites
+                              I_mat(p, p) = 1.d0
+                           end do
+                        end if
                         if (do_timing) call cpu_time(time6)
                         do i2 = 1, n_freq
                            if (.not. cent_appr) then
@@ -3549,10 +3571,12 @@ contains
                            end if
                         end do
 
-                        deallocate (b_vec, Ab, I_mat, l_vals, log_vals, lsq_mat, res_mat, ipiv_lsq, AT_power, temp_mat, &
-                                    AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, ia2, ja2, val2)
+                        deallocate (b_vec, Ab, l_vals, log_vals, lsq_mat, res_mat, ipiv_lsq, AT_power, temp_mat)
+                        if (.not. default_coeff) then
+                           deallocate (I_mat, ia2, ja2, val2)
+                        end if
                         if (do_log) then
-                           deallocate (temp_mat_full)
+                           deallocate (temp_mat_full, AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd)
                         end if
                         if (cent_appr) then
                            deallocate (AT_sym_power, res_sym)
@@ -5576,22 +5600,24 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                               E_tot = (E_tot/(2.d0*pi) + E_TS_tot)*Hartree
                            end if
                         else
-                           ! Diagonalization stuff:
-                           allocate (AT_copy(1:3*n_mbd_sites, 1:3*n_mbd_sites))
-                           allocate (WR(1:3*n_mbd_sites))
-                           allocate (WI(1:3*n_mbd_sites))
-                           AT_copy = 0.d0
-                           WR = 0.d0
-                           WI = 0.d0
-                           allocate (VR(1:3*n_mbd_sites, 1:3*n_mbd_sites))
-                           allocate (VR_inv(1:3*n_mbd_sites, 1:3*n_mbd_sites))
-                           allocate (work_mbd(1:24*n_mbd_sites))
-                           VR = 0.d0
-                           VR_inv = 0.d0
-                           work_mbd = 0.d0
-                           allocate (ipiv_mbd(1:3*n_mbd_sites))
-                           allocate (temp_mat(1:3*n_mbd_sites, 1:3*n_mbd_sites))
-                           temp_mat = 0.d0
+                           ! Diagonalization stuff, for the exact-log check only:
+                           if (do_log) then
+                              allocate (AT_copy(1:3*n_mbd_sites, 1:3*n_mbd_sites))
+                              allocate (WR(1:3*n_mbd_sites))
+                              allocate (WI(1:3*n_mbd_sites))
+                              AT_copy = 0.d0
+                              WR = 0.d0
+                              WI = 0.d0
+                              allocate (VR(1:3*n_mbd_sites, 1:3*n_mbd_sites))
+                              allocate (VR_inv(1:3*n_mbd_sites, 1:3*n_mbd_sites))
+                              allocate (work_mbd(1:24*n_mbd_sites))
+                              VR = 0.d0
+                              VR_inv = 0.d0
+                              work_mbd = 0.d0
+                              allocate (ipiv_mbd(1:3*n_mbd_sites))
+                              allocate (temp_mat(1:3*n_mbd_sites, 1:3*n_mbd_sites))
+                              temp_mat = 0.d0
+                           end if
                            allocate (log_integrand(1:n_freq))
                            allocate (integrand_pol(1:n_freq))
                            allocate (virial_integrand(1:3, 1:n_freq))
@@ -5717,7 +5743,9 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                  end if
                               end if
                            end do
-                           deallocate (AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat)
+                           if (do_log) then
+                              deallocate (AT_copy, WR, WI, VR, VR_inv, work_mbd, ipiv_mbd, temp_mat)
+                           end if
                            if (.not. cent_appr) then
                               deallocate (G_mat)
                            end if
