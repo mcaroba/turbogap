@@ -1446,6 +1446,15 @@ contains
       integer(i64), allocatable :: ia(:)
       integer(i64), allocatable :: ja(:)
       integer(i64), allocatable :: ia2(:)
+      type(csr_index_t) :: csr_a
+      type(csr_index_t) :: csr_a2
+      real(dp) :: fq_val(1:n_freq)
+      real(dp) :: fq_si(1:n_freq)
+      real(dp) :: fq_sj(1:n_freq)
+      real(dp) :: fq_ti(1:n_freq)
+      real(dp) :: fq_tj(1:n_freq)
+      real(dp) :: pcut_i
+      real(dp) :: pcut_next
       integer(i64), allocatable :: ja2(:) !
       integer(i64), allocatable :: myidx(:)
       !real(psb_dpk_),
@@ -2645,6 +2654,12 @@ contains
                                     call cpu_time(time4)
                                     time_tot4 = time_tot4 + time4 - time3
                                     call cpu_time(time3)
+!                                   The frequency factor of this pair's elements,
+!                                   once rather than for each of the nine.
+                                    do i_om = 2, n_freq
+                                       fq_val(i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
+                                                      sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))
+                                    end do
                                     do c1 = 1, 3
                                        do c2 = 1, 3
                                           k3 = k3 + 1
@@ -2671,13 +2686,9 @@ contains
                                                                  *T_LR_mult_ij(k2)
                                              end if
                                              do i_om = 2, n_freq
-                                                val(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
-                                                                val(k4, 1)
+                                                val(k4, i_om) = fq_val(i_om)*val(k4, 1)
                                                 if (cent_appr) then
-                                                   val_sym(k4, i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                       sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd(k2))**2))* &
-                                                                       val_sym(k4, 1)
+                                                   val_sym(k4, i_om) = fq_val(i_om)*val_sym(k4, 1)
                                                 end if
                                              end do
                                           end if
@@ -2693,6 +2704,10 @@ contains
                      end if
                   end do
                   nnz = k4
+!                 The pattern, and the pattern with the diagonal that the
+!                 eigenvalue estimates add, are multiplied many times below.
+                  call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a)
+                  call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a2, diag=.true.)
 
                   call cpu_time(time2)
 
@@ -2953,8 +2968,7 @@ contains
                            at_vec = AT(:, c1, i2)
                            if (n_order > 2) then
                               do k2 = 1, n_order - 2
-                                 call sparse_mul(val(1:nnz, i2), at_vec, 3*n_mbd_sites, ia(1:nnz), &
-                                                 ja(1:nnz), at_n_vec)
+                                 call sparse_mul_csr(val(1:nnz, i2), at_vec, csr_a, at_n_vec)
                                  at_vec = at_n_vec
                                  !integrand_sp(i2) = integrand_sp(i2) - 1.d0/(k2+1) * at_n_vec(c1)
                                  integrand(i2) = integrand(i2) - 1.d0/(k2 + 1)*at_n_vec(c1)
@@ -3069,7 +3083,7 @@ contains
                                  end do
                               else
                                  call cpu_time(time5)
-                                 call power_iteration(val(1:nnz, i2), ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, 60, b_vec) !myidx, nnz, 20, b_vec )
+                                 call power_iteration_csr(val(1:nnz, i2), csr_a, 60, b_vec) !myidx, nnz, 20, b_vec )
                                  call cpu_time(time6)
                                  b_norm = dot_product(b_vec, b_vec)
                                  call cpu_time(time5)
@@ -3082,7 +3096,7 @@ contains
                                  !call psb_cdasb(desc_a, info_psb)
                                  !call psb_spasb(A_sp, desc_a, info_psb)
                                  !call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                                 call sparse_mul(val(1:nnz, i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab)
+                                 call sparse_mul_csr(val(1:nnz, i2), b_vec, csr_a, Ab)
                                  call cpu_time(time6)
                                  l_dom = dot_product(b_vec, Ab)/b_norm
                                  if (l_dom < 0.d0) then
@@ -3100,8 +3114,7 @@ contains
                                     val2(nnz + p) = -l_dom
                                  end do
                                  call cpu_time(time5)
-                                 call power_iteration(val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
-                                                      3*n_mbd_sites, 60, b_vec) !myidx, nnz2, 20, b_vec )
+                                 call power_iteration_csr(val2(1:nnz2), csr_a2, 60, b_vec) !myidx, nnz2, 20, b_vec )
                                  call cpu_time(time6)
                                  b_norm = dot_product(b_vec, b_vec)
                                  call cpu_time(time5)
@@ -3114,8 +3127,7 @@ contains
                                  !call psb_cdasb(desc_a, info_psb)
                                  !call psb_spasb(A_sp, desc_a, info_psb)
                                  !call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                                 call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
-                                                 ja2(1:nnz2), Ab)
+                                 call sparse_mul_csr(val2(1:nnz2), b_vec, csr_a2, Ab)
                                  call cpu_time(time6)
                                  if (l_dom < 0.d0) then
                                     l_max = dot_product(b_vec, Ab)/b_norm + l_dom + 0.01d0
@@ -3158,8 +3170,7 @@ contains
                               else
                                  if (.not. lanczos) then
                                     call cpu_time(time5)
-                                    call power_iteration(val_sym(1:nnz, i2), ia(1:nnz), ja(1:nnz), &
-                                                         3*n_mbd_sites, 60, b_vec) !myidx, nnz, 20, b_vec )
+                                    call power_iteration_csr(val_sym(1:nnz, i2), csr_a, 60, b_vec) !myidx, nnz, 20, b_vec )
                                     call cpu_time(time6)
                                     if (do_timing) then
                                        write (*, *) "Power iteration timing", time6 - time5
@@ -3175,7 +3186,7 @@ contains
                                     !call psb_cdasb(desc_a, info_psb)
                                     !call psb_spasb(A_sp_sym, desc_a, info_psb)
                                     !call psb_spmm(1.d0, A_sp_sym, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                                    call sparse_mul(val_sym(1:nnz, i2), b_vec, 3*n_mbd_sites, ia(1:nnz), ja(1:nnz), Ab)
+                                    call sparse_mul_csr(val_sym(1:nnz, i2), b_vec, csr_a, Ab)
                                     call cpu_time(time6)
                                     l_dom = dot_product(b_vec, Ab)/b_norm
                                     if (l_dom < 0.d0) then
@@ -3193,8 +3204,7 @@ contains
                                        val2(nnz + p) = -l_dom
                                     end do
                                     call cpu_time(time5)
-                                    call power_iteration(val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
-                                                         3*n_mbd_sites, 60, b_vec) !myidx, nnz2, 20, b_vec )
+                                    call power_iteration_csr(val2(1:nnz2), csr_a2, 60, b_vec) !myidx, nnz2, 20, b_vec )
                                     call cpu_time(time6)
                                     if (do_timing) then
                                        write (*, *) "Power iteration timing second", time6 - time5
@@ -3210,8 +3220,7 @@ contains
                                     !call psb_cdasb(desc_a, info_psb)
                                     !call psb_spasb(A_sp_sym, desc_a, info_psb)
                                     !call psb_spmm(1.d0, A_sp_sym, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
-                                    call sparse_mul(val2(1:nnz2), b_vec, 3*n_mbd_sites, ia2(1:nnz2), &
-                                                    ja2(1:nnz2), Ab)
+                                    call sparse_mul_csr(val2(1:nnz2), b_vec, csr_a2, Ab)
                                     call cpu_time(time6)
                                     if (l_dom < 0.d0) then
                                        l_max = dot_product(b_vec, Ab)/b_norm + l_dom + 0.01d0
@@ -3334,8 +3343,7 @@ contains
                            do k2 = 3, n_order
                               if (.not. cent_appr) then
                                  do c1 = 1, 3
-                                    call sparse_mul(val(1:nnz, i2), AT_power(:, c1), 3*n_mbd_sites, &
-                                                    ia(1:nnz), ja(1:nnz), temp_mat(:, c1))
+                                    call sparse_mul_csr(val(1:nnz, i2), AT_power(:, c1), csr_a, temp_mat(:, c1))
                                  end do
                                  AT_power = temp_mat
                                  if (k2 > 3) then
@@ -3347,8 +3355,7 @@ contains
                               if (cent_appr) then
                                  call cpu_time(time5)
                                  do c1 = 1, 3
-                                    call sparse_mul(val_sym(1:nnz, i2), AT_sym_power(:, c1), 3*n_mbd_sites, &
-                                                    ia(1:nnz), ja(1:nnz), temp_mat(:, c1))
+                                    call sparse_mul_csr(val_sym(1:nnz, i2), AT_sym_power(:, c1), csr_a, temp_mat(:, c1))
                                  end do
                                  AT_sym_power = temp_mat
                                  if (k2 > 3) then
@@ -3377,9 +3384,8 @@ contains
                                     if (rjs_0_mbd(k3 + 1) .le. (rcut_force)/Bohr) then
                                        q = q + 1
                                        do c1 = 1, 3
-                                          call sparse_mul(val(1:nnz, i2), AT_power_full(:, 3*(q - 1) + c1), &
-                                                          3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
-                                                          temp_mat_forces(:, 3*(q - 1) + c1))
+                                          call sparse_mul_csr(val(1:nnz, i2), AT_power_full(:, 3*(q - 1) + c1), csr_a, &
+                                                              temp_mat_forces(:, 3*(q - 1) + c1))
                                        end do
                                     end if
                                     if (p .ne. n_mbd_sites) then
@@ -3429,9 +3435,8 @@ contains
                                  if (rjs_0_mbd(k3 + 1) .le. (rcut_force)/Bohr) then
                                     q = q + 1
                                     do c1 = 1, 3
-                                       call sparse_mul(val(1:nnz, i2), AT_power_full(:, 3*(q - 1) + c1), &
-                                                       3*n_mbd_sites, ia(1:nnz), ja(1:nnz), &
-                                                       temp_mat_forces(:, 3*(q - 1) + c1))
+                                       call sparse_mul_csr(val(1:nnz, i2), AT_power_full(:, 3*(q - 1) + c1), csr_a, &
+                                                           temp_mat_forces(:, 3*(q - 1) + c1))
                                     end do
                                  end if
                                  if (p .ne. n_mbd_sites) then
@@ -4484,6 +4489,23 @@ contains
                                     end do
                                  end if
                                  if (cent_appr .and. include_2b) then
+!                                   What depends on the pair and the frequency
+!                                   only, once rather than for each component.
+                                    pcut_i = poly_cut(sqrt(xyz_i(1)**2 + xyz_i(2)**2 + xyz_i(3)**2)*Bohr, x_min, x_max)
+                                    if (k2 + 1 < n_mbd_pairs) then
+                                       pcut_next = poly_cut(sqrt(xyz_0_mbd(1, k2 + 1)**2 + xyz_0_mbd(2, k2 + 1)**2 + &
+                                                                 xyz_0_mbd(3, k2 + 1)**2)*Bohr, x_min, x_max)
+                                    end if
+                                    do i_om = 1, n_freq
+                                       fq_si(i_om) = sqrt(a_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))
+                                       fq_sj(i_om) = sqrt(a_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2))
+                                       fq_ti(i_om) = (da_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2) + &
+                                                      a_mbd_i*(2.d0*omegas_mbd(i_om)**2*o_mbd_i)* &
+                                                      do_mbd_i/(o_mbd_i**2 + omegas_mbd(i_om)**2)**2)
+                                       fq_tj(i_om) = (da_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2) + &
+                                                      a_mbd_j*(2.d0*omegas_mbd(i_om)**2*o_mbd_j)* &
+                                                      do_mbd_j/(o_mbd_j**2 + omegas_mbd(i_om)**2)**2)
+                                    end do
                                     k3 = 9*(k2 - 1)
                                     do c1 = 1, 3
                                        do c2 = 1, 3
@@ -4492,30 +4514,16 @@ contains
                                                   *T_LR_mult_ij(k2)) > 1.d-20) then
                                              k4 = k4 + 1
                                              do i_om = 1, n_freq
-                                                dval(k4, i_om) = sqrt(a_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                 sqrt(a_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2))* &
-                                                                 dT_LR_val(c1, c2) + &
-                                                                 1.d0/2.d0* &
-                                                                 1.d0/sqrt(a_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                 (da_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2) + &
-                                                                  a_mbd_i*(2.d0*omegas_mbd(i_om)**2*o_mbd_i)* &
-                                                                  do_mbd_i/(o_mbd_i**2 + omegas_mbd(i_om)**2)**2)* &
-                                                                 sqrt(a_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2))* &
-                                                                 f_damp_SCS(k2)*T_mbd(k3) &
-                                                                 *T_LR_mult_ij(k2) + &
-                                                                 1.d0/2.d0* &
-                                                                 1.d0/sqrt(a_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2))* &
-                                                                 (da_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2) + &
-                                                                  a_mbd_j*(2.d0*omegas_mbd(i_om)**2*o_mbd_j)* &
-                                                                  do_mbd_j/(o_mbd_j**2 + omegas_mbd(i_om)**2)**2)* &
-                                                                 sqrt(a_mbd_i/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))* &
-                                                                 f_damp_SCS(k2)*T_mbd(k3) &
-                                                                 *T_LR_mult_ij(k2)
+                                                dval(k4, i_om) = fq_si(i_om)*fq_sj(i_om)*dT_LR_val(c1, c2) + &
+                                                                 1.d0/2.d0*1.d0/fq_si(i_om)*fq_ti(i_om)*fq_sj(i_om)* &
+                                                                 f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2) + &
+                                                                 1.d0/2.d0*1.d0/fq_sj(i_om)*fq_tj(i_om)*fq_si(i_om)* &
+                                                                 f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2)
                                          virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_i*dval(k4, i_om)* &
                                                                                val_sym(k4, i_om)
                                           damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0*xyz_i* &
                                                                                       dval(k4, i_om)* &
-                                        val_sym(k4, i_om)*poly_cut(sqrt(xyz_i(1)**2 + xyz_i(2)**2 + xyz_i(3)**2)*Bohr, x_min, x_max)
+                                                                                      val_sym(k4, i_om)*pcut_i
                                              end do
                                              if (k2 + 1 < n_mbd_pairs) then
                                                 if (p_mbd(k2 + 1) == -1) then
@@ -4527,7 +4535,7 @@ contains
                                                 damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0* &
                                                                                             xyz_0_mbd(:, k2 + 1)* &
                                                                                             dval(k4, i_om)*val_sym(k4, i_om)* &
-                      poly_cut(sqrt(xyz_0_mbd(1, k2 + 1)**2 + xyz_0_mbd(2, k2 + 1)**2 + xyz_0_mbd(3, k2 + 1)**2)*Bohr, x_min, x_max)
+                                                                                            pcut_next
 !                                                              poly_cut(rjs_0_mbd(k2+1)*Bohr,x_min,x_max)
                                                       !val_sym_test(k4,i_om) = val_sym_test(k4-1,i_om)
                                                    end do
@@ -5509,13 +5517,11 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                        at_vec = AT(:, 3*(p - 1) + c1, j)
                                        if (n_order > 2) then !.and. p == 1 ) then
                                           do k2 = 1, n_order - 2
-                                             call sparse_mul(val(1:nnz, j), g_vec, 3*n_mbd_sites, ia(1:nnz), &
-                                                             ja(1:nnz), g_n_vec)
+                                             call sparse_mul_csr(val(1:nnz, j), g_vec, csr_a, g_n_vec)
                                              g_vec = g_n_vec
                                              integrand(j) = integrand(j) + g_n_vec(3*(p - 1) + c1)
                                              if (c3 == 1 .and. do_total_energy) then
-                                                call sparse_mul(val(1:nnz, j), at_vec, 3*n_mbd_sites, ia(1:nnz), &
-                                                                ja(1:nnz), at_n_vec)
+                                                call sparse_mul_csr(val(1:nnz, j), at_vec, csr_a, at_n_vec)
                                                 at_vec = at_n_vec
                                                 total_integrand(j) = total_integrand(j) - at_n_vec(3*(p - 1) + c1)/(k2 + 1)
                                              end if

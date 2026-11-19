@@ -34,6 +34,17 @@ module misc
    !use psb_krylov_mod
    !use psb_util_mod
 
+!  The CSR layout sparse_mul builds on every call, built once for a pattern that
+!  is multiplied many times with different values or vectors: the k-th stored
+!  element of the CSR form is A(perm(k)), in sparse_mul's order.
+   type :: csr_index_t
+      integer :: n = 0
+      integer :: dim = 0
+      integer, allocatable :: perm(:)
+      integer, allocatable :: j_csr(:)
+      integer, allocatable :: i_csr(:)
+   end type csr_index_t
+
 contains
 
    subroutine integrate(method, x, y, a, b, integral)
@@ -250,6 +261,136 @@ contains
       deallocate (ipointer, A_CSR, j_CSR, i_CSR)
 
    end subroutine
+
+!  The CSR index of the pattern (iA, jA), and with diag of that pattern followed
+!  by the diagonal (p, p), p = 1..dim -- exactly as sparse_mul places them.
+   subroutine csr_index_build(iA, jA, dim, idx, diag)
+
+      implicit none
+
+      integer(i64), intent(in) :: iA(:)
+      integer(i64), intent(in) :: jA(:)
+      integer, intent(in) :: dim
+      type(csr_index_t), intent(inout) :: idx
+      logical, intent(in), optional :: diag
+      integer, allocatable :: ipointer(:)
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: m
+      integer :: n0
+      logical :: with_diag
+
+      with_diag = .false.
+      if (present(diag)) with_diag = diag
+      n0 = size(iA, 1)
+      idx%dim = dim
+      idx%n = n0
+      if (with_diag) idx%n = n0 + dim
+      if (allocated(idx%perm)) deallocate (idx%perm, idx%j_csr, idx%i_csr)
+      allocate (idx%perm(1:idx%n))
+      allocate (idx%j_csr(1:idx%n))
+      allocate (idx%i_csr(1:dim + 1))
+      allocate (ipointer(1:dim))
+
+      ipointer = 0
+      do k = 1, idx%n
+         ipointer(row(k)) = ipointer(row(k)) + 1
+      end do
+      k = ipointer(1)
+      ipointer(1) = 1
+      do i = 1, dim - 1
+         j = ipointer(i + 1)
+         ipointer(i + 1) = ipointer(i) + k
+         k = j
+      end do
+      do i = 1, dim
+         idx%i_csr(i) = ipointer(i)
+      end do
+      idx%i_csr(dim + 1) = idx%n + 1
+      ipointer = idx%i_csr(1:dim)
+      do k = 1, idx%n
+         i = row(k)
+         m = ipointer(i)
+         idx%perm(m) = k
+         idx%j_csr(m) = col(k)
+         ipointer(i) = m + 1
+      end do
+      deallocate (ipointer)
+
+   contains
+
+      integer function row(k)
+         integer, intent(in) :: k
+         if (k <= n0) then
+            row = int(iA(k))
+         else
+            row = k - n0
+         end if
+      end function row
+
+      integer function col(k)
+         integer, intent(in) :: k
+         if (k <= n0) then
+            col = int(jA(k))
+         else
+            col = k - n0
+         end if
+      end function col
+
+   end subroutine csr_index_build
+
+!  sparse_mul with the CSR index built beforehand: the same products, summed in
+!  the same order.
+   subroutine sparse_mul_csr(A, v, idx, res)
+
+      implicit none
+
+      real(dp), intent(in) :: A(:)
+      real(dp), intent(in) :: v(:)
+      type(csr_index_t), intent(in) :: idx
+      real(dp), intent(inout) :: res(:)
+      real(dp) :: s
+      integer :: i
+      integer :: k
+
+      res = 0.d0
+      do i = 1, idx%dim
+         s = 0.d0
+         do k = idx%i_csr(i), idx%i_csr(i + 1) - 1
+            s = s + A(idx%perm(k))*v(idx%j_csr(k))
+         end do
+         res(i) = s
+      end do
+
+   end subroutine sparse_mul_csr
+
+!  power_iteration with the CSR index built beforehand.
+   subroutine power_iteration_csr(val, idx, n_iter, b)
+
+      implicit none
+
+      real(dp), intent(in) :: val(:)
+      type(csr_index_t), intent(in) :: idx
+      integer, intent(in) :: n_iter
+      real(dp), intent(inout) :: b(:)
+      real(dp), allocatable :: b_k(:)
+      real(dp), allocatable :: b_k1(:)
+      real(dp) :: b_k1_norm
+      integer :: k
+
+      allocate (b_k(1:size(b, 1)))
+      allocate (b_k1(1:size(b, 1)))
+      b_k = 0.5d0
+      do k = 1, n_iter
+         call sparse_mul_csr(val, b_k, idx, b_k1)
+         b_k1_norm = sqrt(dot_product(b_k1, b_k1))
+         b_k = b_k1/b_k1_norm
+      end do
+      b = b_k
+      deallocate (b_k, b_k1)
+
+   end subroutine power_iteration_csr
 
    subroutine power_iteration(val, ia, ja, dim, n_iter, b) !, myidx, nnz, n_iter, b)
 
