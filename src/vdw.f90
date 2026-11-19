@@ -1501,6 +1501,8 @@ contains
       real(dp), allocatable :: sj_tab(:, :)
       real(dp), allocatable :: hj_tab(:, :)
       logical, allocatable :: fq_done(:)
+      real(dp), allocatable :: e_damp(:)
+      real(dp), allocatable :: pcut_c(:)
       integer(i64), allocatable :: ja2(:) !
       integer(i64), allocatable :: myidx(:)
       !real(psb_dpk_),
@@ -2188,8 +2190,9 @@ contains
 
 !                 The cluster's members, their cluster index and their
 !                 positions in Bohr, once for the all-pairs scans below.
-                  if (allocated(xyz_c)) deallocate (xyz_c, in_c, q_of)
+                  if (allocated(xyz_c)) deallocate (xyz_c, in_c, q_of, pcut_c)
                   allocate (xyz_c(1:3, 1:n_neigh(i)))
+                  allocate (pcut_c(1:n_neigh(i)))
                   allocate (in_c(1:n_neigh(i)))
                   allocate (q_of(1:n_neigh(i)))
                   q = 0
@@ -2198,6 +2201,9 @@ contains
                      if (in_c(j3)) q = q + 1
                      q_of(j3) = q
                      xyz_c(:, j3) = xyz(:, n_tot + j3)/Bohr
+                     if (mbd_dev .and. in_c(j3)) then
+                        pcut_c(j3) = poly_cut(sqrt(xyz_c(1, j3)**2 + xyz_c(2, j3)**2 + xyz_c(3, j3)**2)*Bohr, x_min, x_max)
+                     end if
                   end do
 
                   k_i = 0
@@ -2255,6 +2261,7 @@ contains
                   end if
                   allocate (r0_ii_SCS(1:n_mbd_pairs))
                   allocate (f_damp_SCS(1:n_mbd_pairs))
+                  allocate (e_damp(1:n_mbd_pairs))
                   if (.not. cent_appr) then
                      allocate (AT(1:3*n_mbd_sites, 1:3*n_mbd_sites, 1:n_freq))
                   end if
@@ -2278,6 +2285,11 @@ contains
                   allocate (T_LR_mult_ij(1:n_mbd_pairs))
                   allocate (T_LR_mult_0ij(1:n_mbd_pairs))
                   allocate (T_LR_mult_0ji(1:n_mbd_pairs))
+!                 The device's cutoff weight of each entry's atom, filled as the build places it.
+                  if (mbd_dev) then
+                     allocate (pcut_mbd(1:n_mbd_pairs))
+                     pcut_mbd = poly_cut(sqrt(0.d0**2 + 0.d0**2 + 0.d0**2)*Bohr, x_min, x_max)
+                  end if
                   hirshfeld_mbd_neigh = 0.d0
                   if (do_derivatives) then
                      allocate (da_mbd(1:n_mbd_pairs))
@@ -2497,6 +2509,7 @@ contains
                         rjs_mbd(k2) = rjs(n_tot + k_i)/Bohr
                         rjs_0_mbd(k2) = rjs(n_tot + k_i)/Bohr
                         xyz_0_mbd(:, k2) = xyz(:, n_tot + k_i)/Bohr
+                        if (mbd_dev) pcut_mbd(k2) = pcut_c(i3)
                         hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot + k_i)
                         neighbor_alpha0_mbd(k2) = alpha0_ref(s)/Bohr**3 ! * hirshfeld_v_neigh(n_tot+k_i)
                         if (do_timing) call cpu_time(time4)
@@ -2584,6 +2597,7 @@ contains
                                     rjs_mbd(k2) = sqrt(sum((xyz_j - xyz_i)**2))
                                     rjs_0_mbd(k2) = rjs(n_tot + k_j)/Bohr
                                     xyz_0_mbd(:, k2) = xyz_c(:, j3)
+                                    if (mbd_dev) pcut_mbd(k2) = pcut_c(j3)
                                     hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot + k_j)
                                     neighbor_alpha0_mbd(k2) = alpha0_ref(s)/Bohr**3 !* hirshfeld_v_neigh(n_tot+k_j)
                                     if (do_timing) call cpu_time(time4)
@@ -2647,7 +2661,8 @@ contains
                                        T_LR_mult_ij(k2) = 0.d0
                                     end if
                                     r_vdw_j = r0_ii_SCS(k2)
-                                    f_damp_SCS(k2) = 1.d0/(1.d0 + exp(-d*(rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0)))
+                                    e_damp(k2) = exp(-d*(rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0))
+                                    f_damp_SCS(k2) = 1.d0/(1.d0 + e_damp(k2))
                                     if (do_timing) time_tot3 = time_tot3 + time4 - time3
                                     k3 = 9*(k2 - 1)
                                     if (do_timing) call cpu_time(time4)
@@ -2738,6 +2753,7 @@ contains
                                     k2 = k2 + 1
                                     p_mbd(k2) = -1 ! This signals that we construct the symmetric element for dT_LR later, switching p and q
                                     xyz_0_mbd(:, k2) = xyz_j
+                                    if (mbd_dev) pcut_mbd(k2) = pcut_c(j3)
                                     n_mbd_neigh(p) = n_mbd_neigh(p) + 1
                                  end if
                               end if
@@ -2764,6 +2780,7 @@ contains
                                     rjs_mbd(k2) = sqrt(sum((xyz_j - xyz_i)**2))
                                     rjs_0_mbd(k2) = rjs(n_tot + k_j)/Bohr
                                     xyz_0_mbd(:, k2) = xyz_c(:, j3)
+                                    if (mbd_dev) pcut_mbd(k2) = pcut_c(j3)
                                     hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot + k_j)
                                     neighbor_alpha0_mbd(k2) = alpha0_ref(s)/Bohr**3 !* hirshfeld_v_neigh(n_tot+k_j)
                                     if (do_timing) call cpu_time(time4)
@@ -2786,7 +2803,8 @@ contains
                                        T_LR_mult_ij(k2) = 0.d0
                                     end if
                                     r_vdw_j = r0_ii_SCS(k2)
-                                    f_damp_SCS(k2) = 1.d0/(1.d0 + exp(-d*(rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0)))
+                                    e_damp(k2) = exp(-d*(rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0))
+                                    f_damp_SCS(k2) = 1.d0/(1.d0 + e_damp(k2))
                                     k3 = 9*(k2 - 1)
                                     if (do_timing) call cpu_time(time4)
                                     if (do_timing) time_tot4 = time_tot4 + time4 - time3
@@ -3227,11 +3245,6 @@ contains
                         if (do_timing) call cpu_time(time6)
                         if (mbd_dev) then
 #ifdef _GPU
-                           allocate (pcut_mbd(1:n_mbd_pairs))
-                           do k2 = 1, n_mbd_pairs
-                              pcut_mbd(k2) = poly_cut(sqrt(xyz_0_mbd(1, k2)**2 + xyz_0_mbd(2, k2)**2 + &
-                                                           xyz_0_mbd(3, k2)**2)*Bohr, x_min, x_max)
-                           end do
                            call mbd_gpu_site(mbd_tid, n_mbd_sites, n_mbd_pairs, nnz, n_freq, n_order, i0, d, sR, Bohr, &
                                              rcut_mbd, rcut_mbd2, r_buf_ij, n_mbd_neigh, mbd_neighbors_list, p_mbd, &
                                              omegas_mbd, a_mbd, o_mbd, r0_ii_SCS, f_damp_SCS, T_LR_mult_ij, rjs_mbd, &
@@ -4538,7 +4551,7 @@ contains
                                  S_vdW_ij = sR*R_vdW_SCS_ij
                                  dS_vdW_ij = sR*(dr_vdw_i + dr_vdw_j)
                                  f_damp_der_SCS(k2) = -(d*rjs_mbd(k2))/S_vdW_ij**2*f_damp_SCS(k2)**2* &
-                                                      exp(-d*(rjs_mbd(k2)/S_vdW_ij - 1.d0))*dS_vdW_ij
+                                                      e_damp(k2)*dS_vdW_ij
                                  k3 = 9*(k2 - 1)
                                  dT_LR_val = 0.d0
                                  do c1 = 1, 3
@@ -4579,7 +4592,7 @@ contains
                                  end do
                                  if (i0 == i2 .or. i0 == j) then
                                     f_damp_der_mbd(k2) = d/S_vdW_ij*f_damp_SCS(k2)**2* &
-                                                         exp(-d*(rjs_mbd(k2)/S_vdW_ij - 1.d0))*xyz_mbd(c3, k2)/rjs_mbd(k2)
+                                                         e_damp(k2)*xyz_mbd(c3, k2)/rjs_mbd(k2)
                                     if (p == 1) then
                                        if (rjs_mbd(k2) > (rcut_mbd - r_buf_ij)/Bohr &
                                            .and. rjs_mbd(k2) .le. rcut_mbd/Bohr) then
@@ -6161,7 +6174,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 
             if (abs(rcut_tsscs) < 1.d-10) then
                if (om == 2) then
-                  deallocate (r0_ii_SCS, f_damp_SCS, omegas_mbd, integrand, n_mbd_neigh, &
+                  deallocate (r0_ii_SCS, f_damp_SCS, e_damp, omegas_mbd, integrand, n_mbd_neigh, &
                               mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                               rjs_0_mbd, xyz_0_mbd, o_mbd, hirshfeld_mbd_neigh, &
                               T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji)
