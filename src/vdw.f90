@@ -1460,6 +1460,9 @@ contains
       real(dp) :: fq_sj(1:n_freq)
       real(dp) :: fq_ti(1:n_freq)
       real(dp) :: fq_tj(1:n_freq)
+      real(dp) :: fq_ss(1:n_freq)
+      real(dp) :: fq_gi(1:n_freq)
+      real(dp) :: fq_gj(1:n_freq)
       real(dp) :: dval_om(1:n_freq)
       real(dp) :: dot_2b(1:n_freq)
       real(dp) :: pcut_i
@@ -1588,7 +1591,7 @@ contains
       !$omp        hirshfeld_v_cart_der_H, vir_site, n_sites)
       do i = 1, n_sites
 
-         call cpu_time(time1)
+         if (do_timing) call cpu_time(time1)
          n_tot = sum(n_neigh(1:i)) - n_neigh(i)
          i0 = modulo(neighbors_list(n_tot + 1) - 1, n_sites0) + 1
          s = neighbor_species(n_tot + 1)
@@ -1671,7 +1674,7 @@ contains
          end if
 
          a_iso = 0.d0
-         call cpu_time(time2)
+         if (do_timing) call cpu_time(time2)
 
          if (do_timing) then
             write (*, *) "Initialization timing", time2 - time1
@@ -1679,7 +1682,7 @@ contains
 
          do om = 1, 2
 
-            call cpu_time(time1)
+            if (do_timing) call cpu_time(time1)
 
             T_SR = 0.d0
             T_SR_mult = 0.d0
@@ -1948,13 +1951,13 @@ contains
                end if
             end do
 
-            call cpu_time(time2)
+            if (do_timing) call cpu_time(time2)
 
             if (do_timing) then
                write (*, *) "B_mat timing", time2 - time1
             end if
 
-            call cpu_time(time1)
+            if (do_timing) call cpu_time(time1)
 
             if (polynomial_expansion) then
 
@@ -2114,7 +2117,7 @@ contains
 
             end if
 
-            call cpu_time(time2)
+            if (do_timing) call cpu_time(time2)
 
             if (do_timing) then
                write (*, *) "Polarizabilities timing", time2 - time1
@@ -2124,7 +2127,7 @@ contains
 
                if (abs(rcut_tsscs) < 1.d-10) then
 
-                  call cpu_time(time1)
+                  if (do_timing) call cpu_time(time1)
 
                   ! MBD for local polarizabilities:
                   ! At least for now: rcut <= rcut_mbd <= rcut_2b
@@ -2238,11 +2241,21 @@ contains
                      allocate (hirshfeld_v_mbd_der(1:3, 1:n_mbd_pairs))
                      hirshfeld_v_mbd_der = 0.d0
                   end if
-                  allocate (ia(1:9*(n_mbd_pairs - n_mbd_sites)))
-                  allocate (ja(1:9*(n_mbd_pairs - n_mbd_sites)))
-                  allocate (val(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
+!                 Kept from site to site and grown when a site needs more: a site
+!                 writes entries 1:nnz before reading them.
+                  if (allocated(ia)) then
+                     if (size(ia) < 9*(n_mbd_pairs - n_mbd_sites)) deallocate (ia, ja, val)
+                  end if
+                  if (.not. allocated(ia)) then
+                     allocate (ia(1:9*(n_mbd_pairs - n_mbd_sites)))
+                     allocate (ja(1:9*(n_mbd_pairs - n_mbd_sites)))
+                     allocate (val(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
+                  end if
                   if (cent_appr) then
-                     allocate (val_sym(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
+                     if (allocated(val_sym)) then
+                        if (size(val_sym, 1) < 9*(n_mbd_pairs - n_mbd_sites)) deallocate (val_sym)
+                     end if
+                     if (.not. allocated(val_sym)) allocate (val_sym(1:9*(n_mbd_pairs - n_mbd_sites), 1:n_freq))
                      allocate (AT_sym(1:3*n_mbd_sites, 1:3, 1:n_freq))
                      allocate (integrand_sym(1:n_freq))
                      allocate (T_LR_sym(1:3, 1:3*n_mbd_sites))
@@ -2261,7 +2274,7 @@ contains
                      end if
                   end if
 
-                  call cpu_time(time2)
+                  if (do_timing) call cpu_time(time2)
 
                   if (do_timing) then
                      write (*, *) "MBD initialization timing", time2 - time1
@@ -2271,7 +2284,7 @@ contains
 
                if (abs(rcut_tsscs) < 1.d-10) then
 
-                  call cpu_time(time1)
+                  if (do_timing) call cpu_time(time1)
 
                   a_mbd = 0.d0
                   o_mbd = 0.d0
@@ -2308,13 +2321,9 @@ contains
                   rjs_0_mbd = 0.d0
                   xyz_0_mbd = 0.d0
 
-                  ia = 0
-                  ja = 0
-                  val = 0.d0
                   k4 = 0
 
                   if (cent_appr) then
-                     val_sym = 0.d0
                      AT_sym = 0.d0
                      T_LR_sym = 0.d0
                   end if
@@ -2335,7 +2344,7 @@ contains
                      i2 = neighbors_list(n_tot + k_i)
                      i1 = modulo(i2 - 1, n_sites0) + 1
                      if (rjs(n_tot + k_i) .le. rcut_tot) then
-                        call cpu_time(time3)
+                        if (do_timing) call cpu_time(time3)
                         p = p + 1
                         k2 = k2 + 1
                         s = neighbor_species(n_tot + k_i)
@@ -2353,9 +2362,9 @@ contains
                         xyz_0_mbd(:, k2) = xyz(:, n_tot + k_i)/Bohr
                         hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot + k_i)
                         neighbor_alpha0_mbd(k2) = alpha0_ref(s)/Bohr**3 ! * hirshfeld_v_neigh(n_tot+k_i)
-                        call cpu_time(time4)
-                        time_tot4 = time_tot4 + time4 - time3
-                        call cpu_time(time3)
+                        if (do_timing) call cpu_time(time4)
+                        if (do_timing) time_tot4 = time_tot4 + time4 - time3
+                        if (do_timing) call cpu_time(time3)
                         if (rjs(n_tot + k_i) .le. rcut_loc - r_buf_loc) then
                            r = findloc(sub_neighbors_list(1:n_sub_neigh(1)), i2, 1)
                            a_mbd(k2) = a_iso(r, 2)
@@ -2399,17 +2408,17 @@ contains
                                            *(central_pol(i1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
                            !* (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
                         end if
-                        call cpu_time(time4)
-                        time_tot2 = time_tot2 + time4 - time3
-                        call cpu_time(time3)
+                        if (do_timing) call cpu_time(time4)
+                        if (do_timing) time_tot2 = time_tot2 + time4 - time3
+                        if (do_timing) call cpu_time(time3)
                         a_mbd_i = a_mbd(k2)
                         o_mbd_i = o_mbd(k2)
                         T_LR_mult_i = T_LR_mult_0i(k2)
                         r_vdw_i = r0_ii_SCS(k2)
                         k_j = 0
                         q = 0
-                        call cpu_time(time4)
-                        time_tot4 = time_tot4 + time4 - time3
+                        if (do_timing) call cpu_time(time4)
+                        if (do_timing) time_tot4 = time_tot4 + time4 - time3
                         do j3 = 1, n_neigh(i)
                            k_j = k_j + 1
                            if (i3 == 1) then
@@ -2418,7 +2427,7 @@ contains
                               if (i3 .ne. j3) then
                                  xyz_j = xyz(:, n_tot + k_j)/Bohr
                                  if (sum((xyz_j - xyz_i)**2) .le. rcut_mbd_sqrd) then
-                                    call cpu_time(time3)
+                                    if (do_timing) call cpu_time(time3)
                                     n_mbd_neigh(p) = n_mbd_neigh(p) + 1
                                     j = neighbors_list(n_tot + k_j)
                                     j1 = modulo(j - 1, n_sites0) + 1
@@ -2436,9 +2445,9 @@ contains
                                     xyz_0_mbd(:, k2) = xyz(:, n_tot + k_j)/Bohr
                                     hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot + k_j)
                                     neighbor_alpha0_mbd(k2) = alpha0_ref(s)/Bohr**3 !* hirshfeld_v_neigh(n_tot+k_j)
-                                    call cpu_time(time4)
-                                    time_tot4 = time_tot4 + time4 - time3
-                                    call cpu_time(time3)
+                                    if (do_timing) call cpu_time(time4)
+                                    if (do_timing) time_tot4 = time_tot4 + time4 - time3
+                                    if (do_timing) call cpu_time(time3)
                                     if (rjs(n_tot + k_j) .le. rcut_loc - r_buf_loc) then
                                        r = findloc(sub_neighbors_list(1:n_sub_neigh(1)), j, 1)
                                        a_mbd(k2) = a_iso(r, 2)
@@ -2483,9 +2492,9 @@ contains
                                                        *(central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
                                        ! * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
                                     end if
-                                    call cpu_time(time4)
-                                    time_tot2 = time_tot2 + time4 - time3
-                                    call cpu_time(time3)
+                                    if (do_timing) call cpu_time(time4)
+                                    if (do_timing) time_tot2 = time_tot2 + time4 - time3
+                                    if (do_timing) call cpu_time(time3)
                                     T_LR_mult_j = T_LR_mult_0j(k2)
                                     if (rjs_mbd(k2)*Bohr > rcut_mbd - r_buf_ij &
                                         .and. rjs_mbd(k2)*Bohr .le. rcut_mbd) then
@@ -2498,11 +2507,11 @@ contains
                                     end if
                                     r_vdw_j = r0_ii_SCS(k2)
                                     f_damp_SCS(k2) = 1.d0/(1.d0 + exp(-d*(rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0)))
-                                    time_tot3 = time_tot3 + time4 - time3
+                                    if (do_timing) time_tot3 = time_tot3 + time4 - time3
                                     k3 = 9*(k2 - 1)
-                                    call cpu_time(time4)
-                                    time_tot4 = time_tot4 + time4 - time3
-                                    call cpu_time(time3)
+                                    if (do_timing) call cpu_time(time4)
+                                    if (do_timing) time_tot4 = time_tot4 + time4 - time3
+                                    if (do_timing) call cpu_time(time3)
                                     do c1 = 1, 3
                                        do c2 = 1, 3
                                           k3 = k3 + 1
@@ -2571,8 +2580,8 @@ contains
                                           end if
                                        end do
                                     end do
-                                    call cpu_time(time4)
-                                    time_tot = time_tot + time4 - time3
+                                    if (do_timing) call cpu_time(time4)
+                                    if (do_timing) time_tot = time_tot + time4 - time3
                                     k2 = k2 + 1
                                     p_mbd(k2) = -1 ! This signals that we construct the symmetric element for dT_LR later, switching p and q
                                     xyz_0_mbd(:, k2) = xyz_j
@@ -2586,7 +2595,7 @@ contains
                               if (i3 .ne. j3 .and. j3 .ne. 1) then
                                  xyz_j = xyz(:, n_tot + k_j)/Bohr
                                  if (sum((xyz_j - xyz_i)**2) .le. rcut_mbd2_sqrd) then
-                                    call cpu_time(time3)
+                                    if (do_timing) call cpu_time(time3)
                                     n_mbd_neigh(p) = n_mbd_neigh(p) + 1
                                     j = neighbors_list(n_tot + k_j)
                                     j1 = modulo(j - 1, n_sites0) + 1
@@ -2604,9 +2613,9 @@ contains
                                     xyz_0_mbd(:, k2) = xyz(:, n_tot + k_j)/Bohr
                                     hirshfeld_mbd_neigh(k2) = hirshfeld_v_neigh(n_tot + k_j)
                                     neighbor_alpha0_mbd(k2) = alpha0_ref(s)/Bohr**3 !* hirshfeld_v_neigh(n_tot+k_j)
-                                    call cpu_time(time4)
-                                    time_tot4 = time_tot4 + time4 - time3
-                                    call cpu_time(time3)
+                                    if (do_timing) call cpu_time(time4)
+                                    if (do_timing) time_tot4 = time_tot4 + time4 - time3
+                                    if (do_timing) call cpu_time(time3)
                                     if (rjs(n_tot + k_j) .le. rcut_loc - r_buf_loc) then
                                        r = findloc(sub_neighbors_list(1:n_sub_neigh(1)), j, 1)
                                        a_mbd(k2) = a_iso(r, 2)
@@ -2651,9 +2660,9 @@ contains
                                                        *(central_pol(j1)/neighbor_alpha0_mbd(k2))**(1.d0/3.d0)
                                        ! * (hirshfeld_mbd_neigh(k2))**(1.d0/3.d0)
                                     end if
-                                    call cpu_time(time4)
-                                    time_tot2 = time_tot2 + time4 - time3
-                                    call cpu_time(time3)
+                                    if (do_timing) call cpu_time(time4)
+                                    if (do_timing) time_tot2 = time_tot2 + time4 - time3
+                                    if (do_timing) call cpu_time(time3)
                                     T_LR_mult_j = T_LR_mult_0j(k2)
                                     if (rjs_mbd(k2)*Bohr > rcut_mbd2 - r_buf_ij &
                                         .and. rjs_mbd(k2)*Bohr .le. rcut_mbd2) then
@@ -2667,9 +2676,9 @@ contains
                                     r_vdw_j = r0_ii_SCS(k2)
                                     f_damp_SCS(k2) = 1.d0/(1.d0 + exp(-d*(rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0)))
                                     k3 = 9*(k2 - 1)
-                                    call cpu_time(time4)
-                                    time_tot4 = time_tot4 + time4 - time3
-                                    call cpu_time(time3)
+                                    if (do_timing) call cpu_time(time4)
+                                    if (do_timing) time_tot4 = time_tot4 + time4 - time3
+                                    if (do_timing) call cpu_time(time3)
 !                                   The frequency factor of this pair's elements,
 !                                   once rather than for each of the nine.
                                     do i_om = 2, n_freq
@@ -2710,8 +2719,8 @@ contains
                                           end if
                                        end do
                                     end do
-                                    call cpu_time(time4)
-                                    time_tot = time_tot + time4 - time3
+                                    if (do_timing) call cpu_time(time4)
+                                    if (do_timing) time_tot = time_tot + time4 - time3
                                  end if
                               end if
                            end if
@@ -2725,7 +2734,7 @@ contains
                   call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a)
                   call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a2, diag=.true.)
 
-                  call cpu_time(time2)
+                  if (do_timing) call cpu_time(time2)
 
                   if (do_timing) then
                      write (*, *) "k_i, k_j, k2", k_i, k_j, k2
@@ -2735,7 +2744,7 @@ contains
                      write (*, *) "Matrix construction timing", time2 - time1
                   end if
 
-                  call cpu_time(time5)
+                  if (do_timing) call cpu_time(time5)
 
                   if (.false.) then
 
@@ -2868,7 +2877,7 @@ contains
 
                if (abs(rcut_tsscs) < 1.d-10) then
 
-                  call cpu_time(time1)
+                  if (do_timing) call cpu_time(time1)
 
                   ! TODO: You only need dense AT up to force cut-off (rcut_loc+rcut_mbd2) and only for one frequency value.
                   ! TODO: Also compare finite difference T_LR and dT_LR so the indices are correct with rcut_mbd2
@@ -2908,7 +2917,7 @@ contains
 
                   end do
 
-                  call cpu_time(time2)
+                  if (do_timing) call cpu_time(time2)
 
                   if (do_timing) then
                      write (*, *) "AT construction timing", time2 - time1
@@ -2960,13 +2969,13 @@ contains
                   !deallocate( V_int )
                   !TEST!!!!!!!!!!!!!!!!!
 
-                  call cpu_time(time6)
+                  if (do_timing) call cpu_time(time6)
 
                   if (do_timing) then
                      write (*, *) "AT and other stuff timing", time6 - time5
                   end if
 
-                  call cpu_time(time1)
+                  if (do_timing) call cpu_time(time1)
                   if (series_expansion) then
 
                      allocate (integrand_sp(1:n_freq))
@@ -3005,7 +3014,7 @@ contains
                         write (*, *) "n_order must be larger than 2!"
                         stop
                      else
-                        call cpu_time(time5)
+                        if (do_timing) call cpu_time(time5)
                         allocate (ia2(1:nnz + 3*n_mbd_sites))
                         allocate (ja2(1:nnz + 3*n_mbd_sites))
                         allocate (val2(1:nnz + 3*n_mbd_sites))
@@ -3088,7 +3097,7 @@ contains
                         do p = 1, 3*n_mbd_sites
                            I_mat(p, p) = 1.d0
                         end do
-                        call cpu_time(time6)
+                        if (do_timing) call cpu_time(time6)
                         do i2 = 1, n_freq
                            if (.not. cent_appr) then
                               if (default_coeff) then
@@ -3098,11 +3107,11 @@ contains
                                     res_mat(k2) = -1.d0/(k2 - 1)
                                  end do
                               else
-                                 call cpu_time(time5)
+                                 if (do_timing) call cpu_time(time5)
                                  call power_iteration_csr(val(1:nnz, i2), csr_a, 60, b_vec) !myidx, nnz, 20, b_vec )
-                                 call cpu_time(time6)
+                                 if (do_timing) call cpu_time(time6)
                                  b_norm = dot_product(b_vec, b_vec)
-                                 call cpu_time(time5)
+                                 if (do_timing) call cpu_time(time5)
                                  !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2), 3*n_mbd_sites, b_vec, &
                                  !              3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
                                  !call psb_init(icontxt)
@@ -3113,7 +3122,7 @@ contains
                                  !call psb_spasb(A_sp, desc_a, info_psb)
                                  !call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
                                  call sparse_mul_csr(val(1:nnz, i2), b_vec, csr_a, Ab)
-                                 call cpu_time(time6)
+                                 if (do_timing) call cpu_time(time6)
                                  l_dom = dot_product(b_vec, Ab)/b_norm
                                  if (l_dom < 0.d0) then
                                     l_min = l_dom - 0.01d0
@@ -3121,19 +3130,19 @@ contains
                                     l_max = l_dom + 0.01d0
                                  end if
                                  nnz2 = nnz + 3*n_mbd_sites
-                                 ia2(1:nnz) = ia
-                                 ja2(1:nnz) = ja
+                                 ia2(1:nnz) = ia(1:nnz)
+                                 ja2(1:nnz) = ja(1:nnz)
                                  val2(1:nnz) = val(1:nnz, i2)
                                  do p = 1, 3*n_mbd_sites
                                     ia2(nnz + p) = p
                                     ja2(nnz + p) = p
                                     val2(nnz + p) = -l_dom
                                  end do
-                                 call cpu_time(time5)
+                                 if (do_timing) call cpu_time(time5)
                                  call power_iteration_csr(val2(1:nnz2), csr_a2, 60, b_vec) !myidx, nnz2, 20, b_vec )
-                                 call cpu_time(time6)
+                                 if (do_timing) call cpu_time(time6)
                                  b_norm = dot_product(b_vec, b_vec)
-                                 call cpu_time(time5)
+                                 if (do_timing) call cpu_time(time5)
                                  !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2)-l_dom*I_mat, &
                                  !           3*n_mbd_sites, b_vec, 3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
                                  !call psb_init(icontxt)
@@ -3144,7 +3153,7 @@ contains
                                  !call psb_spasb(A_sp, desc_a, info_psb)
                                  !call psb_spmm(1.d0, A_sp, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
                                  call sparse_mul_csr(val2(1:nnz2), b_vec, csr_a2, Ab)
-                                 call cpu_time(time6)
+                                 if (do_timing) call cpu_time(time6)
                                  if (l_dom < 0.d0) then
                                     l_max = dot_product(b_vec, Ab)/b_norm + l_dom + 0.01d0
                                  else
@@ -3161,9 +3170,9 @@ contains
                                        lsq_mat(j2, k2) = sum(l_vals**(j2 - 1 + k2 - 1))
                                     end do
                                  end do
-                                 call cpu_time(time5)
+                                 if (do_timing) call cpu_time(time5)
                                  call dgesv(n_order + 1, 1, lsq_mat, n_order + 1, ipiv_lsq, res_mat, n_order + 1, info)
-                                 call cpu_time(time6)
+                                 if (do_timing) call cpu_time(time6)
                                  if (do_derivatives) then
                                     inv_vals = 1.d0/(1.d0 - l_vals)
                                     do j2 = 1, n_order + 1
@@ -3185,14 +3194,14 @@ contains
                                  end do
                               else
                                  if (.not. lanczos) then
-                                    call cpu_time(time5)
+                                    if (do_timing) call cpu_time(time5)
                                     call power_iteration_csr(val_sym(1:nnz, i2), csr_a, 60, b_vec) !myidx, nnz, 20, b_vec )
-                                    call cpu_time(time6)
+                                    if (do_timing) call cpu_time(time6)
                                     if (do_timing) then
                                        write (*, *) "Power iteration timing", time6 - time5
                                     end if
                                     b_norm = dot_product(b_vec, b_vec)
-                                    call cpu_time(time5)
+                                    if (do_timing) call cpu_time(time5)
                                     !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2), 3*n_mbd_sites, b_vec, &
                                     !              3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
                                     !call psb_init(icontxt)
@@ -3203,7 +3212,7 @@ contains
                                     !call psb_spasb(A_sp_sym, desc_a, info_psb)
                                     !call psb_spmm(1.d0, A_sp_sym, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
                                     call sparse_mul_csr(val_sym(1:nnz, i2), b_vec, csr_a, Ab)
-                                    call cpu_time(time6)
+                                    if (do_timing) call cpu_time(time6)
                                     l_dom = dot_product(b_vec, Ab)/b_norm
                                     if (l_dom < 0.d0) then
                                        l_min = l_dom - 0.01d0
@@ -3211,22 +3220,22 @@ contains
                                        l_max = l_dom + 0.01d0
                                     end if
                                     nnz2 = nnz + 3*n_mbd_sites
-                                    ia2(1:nnz) = ia
-                                    ja2(1:nnz) = ja
+                                    ia2(1:nnz) = ia(1:nnz)
+                                    ja2(1:nnz) = ja(1:nnz)
                                     val2(1:nnz) = val_sym(1:nnz, i2)
                                     do p = 1, 3*n_mbd_sites
                                        ia2(nnz + p) = p
                                        ja2(nnz + p) = p
                                        val2(nnz + p) = -l_dom
                                     end do
-                                    call cpu_time(time5)
+                                    if (do_timing) call cpu_time(time5)
                                     call power_iteration_csr(val2(1:nnz2), csr_a2, 60, b_vec) !myidx, nnz2, 20, b_vec )
-                                    call cpu_time(time6)
+                                    if (do_timing) call cpu_time(time6)
                                     if (do_timing) then
                                        write (*, *) "Power iteration timing second", time6 - time5
                                     end if
                                     b_norm = dot_product(b_vec, b_vec)
-                                    call cpu_time(time5)
+                                    if (do_timing) call cpu_time(time5)
                                     !call dgemm('N', 'N',  3*n_mbd_sites, 1, 3*n_mbd_sites, 1.d0, AT(:,:,i2)-l_dom*I_mat, &
                                     !           3*n_mbd_sites, b_vec, 3*n_mbd_sites, 0.d0, Ab, 3*n_mbd_sites)
                                     !call psb_init(icontxt)
@@ -3237,7 +3246,7 @@ contains
                                     !call psb_spasb(A_sp_sym, desc_a, info_psb)
                                     !call psb_spmm(1.d0, A_sp_sym, b_vec, 0.d0, Ab, desc_a, info_psb, 'N')
                                     call sparse_mul_csr(val2(1:nnz2), b_vec, csr_a2, Ab)
-                                    call cpu_time(time6)
+                                    if (do_timing) call cpu_time(time6)
                                     if (l_dom < 0.d0) then
                                        l_max = dot_product(b_vec, Ab)/b_norm + l_dom + 0.01d0
                                     else
@@ -3247,18 +3256,18 @@ contains
                                  if (lanczos) then
 
                                     nnz2 = nnz + 3*n_mbd_sites
-                                    ia2(1:nnz) = ia
-                                    ja2(1:nnz) = ja
+                                    ia2(1:nnz) = ia(1:nnz)
+                                    ja2(1:nnz) = ja(1:nnz)
                                     val2(1:nnz) = val_sym(1:nnz, i2)
                                     do p = 1, 3*n_mbd_sites
                                        ia2(nnz + p) = p
                                        ja2(nnz + p) = p
                                        val2(nnz + p) = 1.d0
                                     end do
-                                    call cpu_time(time5)
+                                    if (do_timing) call cpu_time(time5)
                                     call lanczos_algorithm(val2(1:nnz2), ia2(1:nnz2), ja2(1:nnz2), &
                                                            3*n_mbd_sites, 20, l_min, l_max)
-                                    call cpu_time(time6)
+                                    if (do_timing) call cpu_time(time6)
                                     if (do_timing) then
                                        write (*, *) "Lanczos timing", time6 - time5
                                     end if
@@ -3279,9 +3288,9 @@ contains
                                        lsq_mat(j2, k2) = sum(l_vals**(j2 - 1 + k2 - 1))
                                     end do
                                  end do
-                                 call cpu_time(time5)
+                                 if (do_timing) call cpu_time(time5)
                                  call dgesv(n_order + 1, 1, lsq_mat, n_order + 1, ipiv_lsq, res_sym, n_order + 1, info)
-                                 call cpu_time(time6)
+                                 if (do_timing) call cpu_time(time6)
                                  if (do_timing) then
                                     write (*, *) "dgesv timing", time6 - time5
                                  end if
@@ -3367,7 +3376,7 @@ contains
                                  end if
                               end if ! .not. cent_appr
                               if (cent_appr) then
-                                 call cpu_time(time5)
+                                 if (do_timing) call cpu_time(time5)
                                  call sparse_mul3_csr(val_sym(1:nnz, i2), AT_sym_power, csr_a, temp_mat)
                                  AT_sym_power = temp_mat
                                  if (k2 > 3) then
@@ -3378,7 +3387,7 @@ contains
                                  if (do_derivatives) then
                                     pol_sym(:, :, i2) = pol_sym(:, :, i2) - k2*res_sym(k2 + 1)*AT_sym_power
                                  end if
-                                 call cpu_time(time6)
+                                 if (do_timing) call cpu_time(time6)
                                  if (do_timing) then
                                     write (*, *) "Polynomial product timing", time6 - time5
                                  end if
@@ -3459,10 +3468,10 @@ contains
                               pol_inv(:, :, i2) = pol_inv(:, :, i2) + res_inv(n_order + 1)*AT_power_full
                            end if
                            do c1 = 1, 3
-                              call cpu_time(time5)
+                              if (do_timing) call cpu_time(time5)
                               integrand(i2) = integrand(i2) + &
                                               res_mat(n_order + 1)*dot_product(AT(c1, :, i2), AT_power(:, c1))
-                              call cpu_time(time6)
+                              if (do_timing) call cpu_time(time6)
                            end do
                            if (do_derivatives) then
                               if (do_total_energy) then
@@ -3555,13 +3564,13 @@ contains
                         end if
                      end if ! n_order < 2
                   end if
-                  call cpu_time(time2)
+                  if (do_timing) call cpu_time(time2)
 
                   if (do_timing) then
                      write (*, *) "Integrand calculation timing", time2 - time1
                   end if
 
-                  call cpu_time(time1)
+                  if (do_timing) call cpu_time(time1)
 
                   if (do_nnls) then
 
@@ -3724,7 +3733,7 @@ contains
 
                   end if
 
-                  call cpu_time(time2)
+                  if (do_timing) call cpu_time(time2)
 
                   if (do_timing) then
                      write (*, *) "Integration timing", time2 - time1
@@ -3754,7 +3763,7 @@ contains
 
             if (do_derivatives) then
 
-               call cpu_time(time1)
+               if (do_timing) call cpu_time(time1)
 
                allocate (da_SCS(1:3*n_sub_sites, 1:3))
                allocate (dT(1:9*n_sub_pairs))
@@ -4063,7 +4072,7 @@ contains
 
                   b_der = -b_der + d_der
 
-                  call cpu_time(time1)
+                  if (do_timing) call cpu_time(time1)
 
                   if (polynomial_expansion) then
 
@@ -4095,13 +4104,13 @@ contains
                   !  end do
                   !end if
 
-                  call cpu_time(time2)
+                  if (do_timing) call cpu_time(time2)
 
                   if (om == 2) then
 
                      if (abs(rcut_tsscs) < 1.d-10) then
 
-                        call cpu_time(time1)
+                        if (do_timing) call cpu_time(time1)
 
                         f_damp_der_SCS = 0.d0
                         f_damp_der_mbd = 0.d0 ! This is cleared so we can recalculate it with SCS values
@@ -4518,6 +4527,10 @@ contains
                                        fq_tj(i_om) = (da_mbd_j/(1.d0 + (omegas_mbd(i_om)/o_mbd_j)**2) + &
                                                       a_mbd_j*(2.d0*omegas_mbd(i_om)**2*o_mbd_j)* &
                                                       do_mbd_j/(o_mbd_j**2 + omegas_mbd(i_om)**2)**2)
+!                                      The leading factors of each term below, evaluated in the same order.
+                                       fq_ss(i_om) = fq_si(i_om)*fq_sj(i_om)
+                                       fq_gi(i_om) = 1.d0/2.d0*1.d0/fq_si(i_om)*fq_ti(i_om)*fq_sj(i_om)
+                                       fq_gj(i_om) = 1.d0/2.d0*1.d0/fq_sj(i_om)*fq_tj(i_om)*fq_si(i_om)
                                     end do
                                     k3 = 9*(k2 - 1)
                                     do c1 = 1, 3
@@ -4528,11 +4541,9 @@ contains
                                              k4 = k4 + 1
 !                                            dot_2b sums val_sym*dval in the order sum() did.
                                              do i_om = 1, n_freq
-                                                dval_om(i_om) = fq_si(i_om)*fq_sj(i_om)*dT_LR_val(c1, c2) + &
-                                                                1.d0/2.d0*1.d0/fq_si(i_om)*fq_ti(i_om)*fq_sj(i_om)* &
-                                                                f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2) + &
-                                                                1.d0/2.d0*1.d0/fq_sj(i_om)*fq_tj(i_om)*fq_si(i_om)* &
-                                                                f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2)
+                                                dval_om(i_om) = fq_ss(i_om)*dT_LR_val(c1, c2) + &
+                                                                fq_gi(i_om)*f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2) + &
+                                                                fq_gj(i_om)*f_damp_SCS(k2)*T_mbd(k3)*T_LR_mult_ij(k2)
                                           virial_integrand_2b(:, i_om) = virial_integrand_2b(:, i_om) - 0.5d0*xyz_i*dval_om(i_om)* &
                                                                                val_sym(k4, i_om)
                                           damped_virial_integrand_2b(:, i_om) = damped_virial_integrand_2b(:, i_om) - 0.5d0*xyz_i* &
@@ -4572,7 +4583,7 @@ contains
                            end do
                         end do
 
-                        call cpu_time(time2)
+                        if (do_timing) call cpu_time(time2)
 
                         if (do_timing) then
                            write (*, *) "dT_LR construction timing", time2 - time1
@@ -5321,7 +5332,7 @@ contains
 
                      if (abs(rcut_tsscs) < 1.d-10) then
 
-                        call cpu_time(time1)
+                        if (do_timing) call cpu_time(time1)
 
                         if (.not. cent_appr) then
                            allocate (G_mat(1:3*n_mbd_sites, 1:3*n_mbd_sites, 1:n_freq))
@@ -5719,9 +5730,9 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 
                         deallocate (integrand_sp, at_vec, at_n_vec, g_vec, g_n_vec)
 
-                        call cpu_time(time2)
+                        if (do_timing) call cpu_time(time2)
 
-                        call cpu_time(time1)
+                        if (do_timing) call cpu_time(time1)
 
                         if (n_order > 1) then
 
@@ -5929,7 +5940,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 
                         end if
 
-                        call cpu_time(time2)
+                        if (do_timing) call cpu_time(time2)
 
                      end if ! om loop(?)
 
@@ -5959,13 +5970,12 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                   deallocate (r0_ii_SCS, f_damp_SCS, omegas_mbd, integrand, n_mbd_neigh, &
                               mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, xyz_mbd, rjs_mbd, T_mbd, a_mbd, &
                               rjs_0_mbd, xyz_0_mbd, o_mbd, hirshfeld_mbd_neigh, &
-                              T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji, &
-                              ia, ja, val)
+                              T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji)
                   if (.not. cent_appr) then
                      deallocate (T_LR, AT)
                   end if
                   if (cent_appr) then
-                     deallocate (AT_sym, T_LR_sym, val_sym, integrand_sym)
+                     deallocate (AT_sym, T_LR_sym, integrand_sym)
                      if (do_derivatives) then
                         if (n_order > 2) then
                            deallocate (G_sym)
@@ -6021,7 +6031,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
             deallocate (hirshfeld_v_sub_der)
          end if
 
-         call cpu_time(time4)
+         if (do_timing) call cpu_time(time4)
 
       end do
       !$omp end parallel do
