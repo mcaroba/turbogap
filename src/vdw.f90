@@ -1483,6 +1483,7 @@ contains
       logical :: mbd_one_freq
       logical :: mbd_compact
       logical :: mbd_blocks
+      logical :: p_far
       integer :: nnz_cap
       integer :: cap_pairs
       integer :: cap_der
@@ -4356,9 +4357,13 @@ contains
 
                         if (do_timing) call cpu_time(time1)
 
-                        f_damp_der_SCS = 0.d0
-                        f_damp_der_mbd = 0.d0 ! This is cleared so we can recalculate it with SCS values
-                        dT_mbd = 0.d0
+!                       Each pair writes these before reading them; the default
+!                       path needs no clearing.
+                        if (.not. mbd_compact) then
+                           f_damp_der_SCS = 0.d0
+                           f_damp_der_mbd = 0.d0 ! This is cleared so we can recalculate it with SCS values
+                           dT_mbd = 0.d0
+                        end if
                         if (.not. cent_appr) then
                            dT_LR = 0.d0
                         end if
@@ -4390,6 +4395,7 @@ contains
                            i2 = mbd_neighbors_list(k2)
                            i1 = modulo(i2 - 1, n_sites0) + 1
                            rjs_i = rjs_0_mbd(k2)
+                           p_far = rjs_i > rcut_loc/Bohr
                            xyz_i = xyz_0_mbd(:, k2)
                            if (rjs_0_mbd(k2) .le. (rcut_loc - r_buf_loc)/Bohr) then
                               r = findloc(sub_neighbors_list(1:n_sub_neigh(1)), i2, 1)
@@ -4520,6 +4526,12 @@ contains
                               j = mbd_neighbors_list(k2)
                               j1 = modulo(j - 1, n_sites0) + 1
                               q = p_mbd(k2)
+!                             Two atoms beyond rcut_loc, neither of them atom i0: their
+!                             polarisabilities do not move with i0 and neither does their
+!                             dipole tensor, so the pair adds exactly nothing here.
+                              if (mbd_blocks .and. q .ne. -1) then
+                                 if (p_far .and. rjs_0_mbd(k2) > rcut_loc/Bohr .and. i0 /= i2 .and. i0 /= j) cycle
+                              end if
 
                               if (q .ne. -1) then
                                  rjs_j = rjs_0_mbd(k2)

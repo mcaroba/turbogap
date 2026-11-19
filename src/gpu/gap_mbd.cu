@@ -315,8 +315,8 @@ void mbd_freq_derivs(mbd_site_d s, const double* da, const double* dO, double* t
 // pair's dot, virial and damped virial, reduced over each warp by a shuffle
 // tree and over the block's warps in order into part_d (8 per block and w;
 // the 8th is the dot's magnitude, kept for tests).
-__global__ void mbd_force_kernel(mbd_site_d s, mbd_consts k, int c3, const double* dr0, const double* s_d, const double* q_d,
-                                 const double* t_d, double* part_d, double* dtlr_sym_d) {
+__global__ void mbd_force_kernel(mbd_site_d s, mbd_consts k, int c3, const double* da, const double* dO, const double* dr0,
+                                 const double* s_d, const double* q_d, const double* t_d, double* part_d, double* dtlr_sym_d) {
   __shared__ double sh[MBD_FORCE_TPB / MBD_LANES][8];
   int k2 = blockIdx.x * MBD_FORCE_TPB + threadIdx.x;
   int lane = threadIdx.x % MBD_LANES;
@@ -329,6 +329,14 @@ __global__ void mbd_force_kernel(mbd_site_d s, mbd_consts k, int c3, const doubl
     p = s.atom_of_pair[k2];
     kb = s.own_entry[p];
     live = !(k2 == kb || s.p_mbd[k2] == -1);
+  }
+  // Two atoms whose polarisabilities do not move with atom i0, neither of
+  // them i0: the pair adds exactly nothing.
+  if (live) {
+    int qq = s.p_mbd[k2] - 1;
+    bool still_p = da[p] == 0.0 && dO[p] == 0.0 && dr0[p] == 0.0;
+    bool still_q = da[qq] == 0.0 && dO[qq] == 0.0 && dr0[qq] == 0.0;
+    live = !(still_p && still_q && s.gidx[p] != s.i0 && s.gidx[qq] != s.i0);
   }
   double dtv[9];
   double tm9[9];
@@ -736,7 +744,8 @@ void mbd_gpu_force(int tid, int c3, const double* da, const double* dO, const do
   up(c.da_d, c.da_atom.data(), 3 * n, st);
   gpuErrchk(hipMemsetAsync(c.dtlr_d, 0, sizeof(double) * 9 * n, st[0]));
   mbd_freq_derivs(s, c.da_d, c.do_d, c.t_d, st);
-  mbd_force_kernel<<<c.n_blocks, MBD_FORCE_TPB, 0, st[0]>>>(s, c.k, c3, c.dr0_d, c.s_d, c.q_d, c.t_d, c.part_d, c.dtlr_d);
+  mbd_force_kernel<<<c.n_blocks, MBD_FORCE_TPB, 0, st[0]>>>(s, c.k, c3, c.da_d, c.do_d, c.dr0_d, c.s_d, c.q_d, c.t_d, c.part_d,
+                                                            c.dtlr_d);
   mbd_force_reduce(s, c.n_blocks, c.part_d, c.out_d, st);
   c.out.resize(8 * (size_t) s.n_freq);
   gpuErrchk(hipMemcpyAsync(c.out.data(), c.out_d, sizeof(double) * 8 * s.n_freq, hipMemcpyDeviceToHost, st[0]));
