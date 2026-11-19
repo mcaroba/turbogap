@@ -28,6 +28,7 @@
 module gap
 
    use kinds
+   use threads, only: threads_in_use
 
    use splines
 #ifdef _GPU
@@ -1308,12 +1309,17 @@ contains
       real(dp), intent(out) :: forces(:, :)
       real(dp), intent(out) :: virial(1:3, 1:3)
 
+!     Pairs whose forces are held at once: 3 x n_sparse doubles each.
+      integer, parameter :: block_pairs = 4096
+      real(dp), allocatable :: pforce(:, :, :)
       real(dp) :: time1
       real(dp) :: time2
       real(dp) :: fcut
       real(dp) :: pi
       real(dp) :: dfcut
       real(dp) :: this_force(1:3)
+      real(dp) :: e_site
+      integer, allocatable :: k_first(:)
       integer :: n_sparse
       integer :: i
       integer :: j
@@ -1326,6 +1332,12 @@ contains
       integer :: n_sites0
       integer :: k1
       integer :: k2
+      integer :: ib
+      integer :: ie
+      integer :: k0
+      integer :: c
+      real(dp) :: v
+      logical, allocatable :: active(:)
 
       if (do_timing) then
          call cpu_time(time1)
@@ -1352,15 +1364,28 @@ contains
          end if
       end do
 
-!   Energy calculation
-      energies = e0
+      allocate (k_first(1:n_sites))
       k = 0
       do i = 1, n_sites
+         k_first(i) = k
+         k = k + n_neigh(i)
+      end do
+
+!   Energy calculation. A site sums only its own pairs, so sites run in parallel.
+      energies = e0
+!   The sum is kept in a scalar: inside the parallel region energies is reached
+!   through a pointer the compiler cannot prove unaliased, and summing into it
+!   there stops the loop over s being vectorised, which changes the last digits.
+      !$omp parallel do default(none) schedule(dynamic, 64) &
+      !$omp shared(n_sites, n_neigh, k_first, species, neighbor_species, sp1, sp2, rjs, rcut, buffer, pi, &
+      !$omp        n_sparse, delta, alphas, cutoff, Qs, sigma, energies) &
+      !$omp private(i, j, k, s, fcut, e_site)
+      do i = 1, n_sites
          if (species(i) /= sp1 .and. species(i) /= sp2) then
-            k = k + n_neigh(i)
             cycle
          end if
-         k = k + 1
+         e_site = energies(i)
+         k = k_first(i) + 1
          do j = 2, n_neigh(i)
             k = k + 1
             if ((species(i) == sp1 .and. neighbor_species(k) == sp2) .or. &
@@ -1376,57 +1401,138 @@ contains
                   fcut = (dcos(pi*(rjs(k) - rcut + buffer)/buffer) + 1.d0)/2.d0
                end if
                do s = 1, n_sparse
-                  energies(i) = energies(i) + delta**2*alphas(s)*cutoff(s)*fcut* &
-                                dexp(-0.5d0*(rjs(k) - Qs(s))**2/sigma**2)
+                  e_site = e_site + delta**2*alphas(s)*cutoff(s)*fcut* &
+                           dexp(-0.5d0*(rjs(k) - Qs(s))**2/sigma**2)
                end do
             end if
          end do
+         energies(i) = e_site
       end do
+      !$omp end parallel do
 
-!   Force calculation
+!   Force calculation. A pair pushes only its own site, so sites run in
+!   parallel. The virial is one sum over every pair, and each of its nine
+!   components is a running sum of its own: a block of sites at a time, each
+!   pair's forces are formed in parallel, then each component is summed by one
+!   thread in pair order, with the same expression as the serial loop, so the
+!   result does not depend on the thread count. With one thread the virial is
+!   summed as the forces are formed: storing them costs more memory traffic
+!   than computing them.
       if (do_forces) then
          forces = 0.d0
          virial = 0.d0
-         k = 0
-         do i = 1, n_sites
-            if (species(i) /= sp1 .and. species(i) /= sp2) then
-               k = k + n_neigh(i)
-               cycle
-            end if
-            k = k + 1
-            do j = 2, n_neigh(i)
-               k = k + 1
-               if ((species(i) == sp1 .and. neighbor_species(k) == sp2) .or. &
-                   (species(i) == sp2 .and. neighbor_species(k) == sp1)) then
-                  continue
-               else
+         if (threads_in_use() == 1) then
+            do i = 1, n_sites
+               if (species(i) /= sp1 .and. species(i) /= sp2) then
                   cycle
                end if
-               if (rjs(k) < rcut) then
-                  if (rjs(k) < rcut - buffer) then
-                     fcut = 1.d0
-                     dfcut = 0.d0
+               k = k_first(i) + 1
+               do j = 2, n_neigh(i)
+                  k = k + 1
+                  if ((species(i) == sp1 .and. neighbor_species(k) == sp2) .or. &
+                      (species(i) == sp2 .and. neighbor_species(k) == sp1)) then
+                     continue
                   else
-                     fcut = (dcos(pi*(rjs(k) - rcut + buffer)/buffer) + 1.d0)/2.d0
-                     dfcut = pi/2.d0/buffer*dsin(pi*(rjs(k) - rcut + buffer)/buffer)
+                     cycle
                   end if
-                  do s = 1, n_sparse
-                     this_force(1:3) = -2.d0*delta**2*alphas(s)*cutoff(s)* &
-                                       dexp(-0.5d0*(rjs(k) - Qs(s))**2/sigma**2)* &
-                                       xyz(1:3, k)/rjs(k)*((rjs(k) - Qs(s))/sigma**2*fcut + dfcut)
-                     forces(1:3, i) = forces(1:3, i) + this_force(1:3)
-                     do k1 = 1, 3
-                        do k2 = 1, 3
-                           virial(k1, k2) = virial(k1, k2) - 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+                  if (rjs(k) < rcut) then
+                     if (rjs(k) < rcut - buffer) then
+                        fcut = 1.d0
+                        dfcut = 0.d0
+                     else
+                        fcut = (dcos(pi*(rjs(k) - rcut + buffer)/buffer) + 1.d0)/2.d0
+                        dfcut = pi/2.d0/buffer*dsin(pi*(rjs(k) - rcut + buffer)/buffer)
+                     end if
+                     do s = 1, n_sparse
+                        this_force(1:3) = -2.d0*delta**2*alphas(s)*cutoff(s)* &
+                                          dexp(-0.5d0*(rjs(k) - Qs(s))**2/sigma**2)* &
+                                          xyz(1:3, k)/rjs(k)*((rjs(k) - Qs(s))/sigma**2*fcut + dfcut)
+                        forces(1:3, i) = forces(1:3, i) + this_force(1:3)
+                        do k1 = 1, 3
+                           do k2 = 1, 3
+                              virial(k1, k2) = virial(k1, k2) - 0.5d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+                           end do
                         end do
                      end do
-                  end do
-               end if
+                  end if
+               end do
             end do
-         end do
+         else
+            allocate (pforce(1:3, 1:n_sparse, 1:max(block_pairs, maxval(n_neigh(1:n_sites)))))
+            allocate (active(1:size(pforce, 3)))
+            ib = 1
+            do while (ib <= n_sites)
+               ie = ib
+               do while (ie < n_sites)
+                  if (k_first(ie + 1) + n_neigh(ie + 1) - k_first(ib) > size(pforce, 3)) exit
+                  ie = ie + 1
+               end do
+               k0 = k_first(ib)
+               active(1:k_first(ie) + n_neigh(ie) - k0) = .false.
+               !$omp parallel do default(none) schedule(dynamic, 16) &
+               !$omp shared(ib, ie, k0, n_neigh, k_first, species, neighbor_species, sp1, sp2, rjs, xyz, rcut, buffer, &
+               !$omp        pi, n_sparse, delta, alphas, cutoff, Qs, sigma, forces, pforce, active) &
+               !$omp private(i, j, k, s, fcut, dfcut, this_force)
+               do i = ib, ie
+                  if (species(i) /= sp1 .and. species(i) /= sp2) then
+                     cycle
+                  end if
+                  k = k_first(i) + 1
+                  do j = 2, n_neigh(i)
+                     k = k + 1
+                     if ((species(i) == sp1 .and. neighbor_species(k) == sp2) .or. &
+                         (species(i) == sp2 .and. neighbor_species(k) == sp1)) then
+                        continue
+                     else
+                        cycle
+                     end if
+                     if (rjs(k) < rcut) then
+                        active(k - k0) = .true.
+                        if (rjs(k) < rcut - buffer) then
+                           fcut = 1.d0
+                           dfcut = 0.d0
+                        else
+                           fcut = (dcos(pi*(rjs(k) - rcut + buffer)/buffer) + 1.d0)/2.d0
+                           dfcut = pi/2.d0/buffer*dsin(pi*(rjs(k) - rcut + buffer)/buffer)
+                        end if
+                        do s = 1, n_sparse
+                           this_force(1:3) = -2.d0*delta**2*alphas(s)*cutoff(s)* &
+                                             dexp(-0.5d0*(rjs(k) - Qs(s))**2/sigma**2)* &
+                                             xyz(1:3, k)/rjs(k)*((rjs(k) - Qs(s))/sigma**2*fcut + dfcut)
+                           forces(1:3, i) = forces(1:3, i) + this_force(1:3)
+                           pforce(1:3, s, k - k0) = this_force(1:3)
+                        end do
+                     end if
+                  end do
+               end do
+               !$omp end parallel do
+               !$omp parallel do default(none) schedule(static, 1) &
+               !$omp shared(ib, ie, k0, n_neigh, k_first, n_sparse, pforce, active, xyz, virial) &
+               !$omp private(c, k1, k2, j, k, s, v)
+               do c = 1, 9
+                  k1 = (c - 1)/3 + 1
+                  k2 = c - 3*(k1 - 1)
+                  v = virial(k1, k2)
+                  do j = 1, k_first(ie) + n_neigh(ie) - k0
+                     if (.not. active(j)) then
+                        cycle
+                     end if
+                     k = k0 + j
+                     do s = 1, n_sparse
+                        v = v - 0.5d0*(pforce(k1, s, j)*xyz(k2, k) + pforce(k2, s, j)*xyz(k1, k))
+                     end do
+                  end do
+                  virial(k1, k2) = v
+               end do
+               !$omp end parallel do
+               ib = ie + 1
+            end do
+            deallocate (pforce, active)
+         end if
 !     Half contribution to the virial for pair potentials
          virial = 0.5d0*virial
       end if
+      deallocate (k_first)
 
       if (do_timing) then
          call cpu_time(time2)
@@ -1665,56 +1771,33 @@ contains
       real(dp), intent(out) :: forces(:, :)
       real(dp), intent(out) :: virial(1:3, 1:3)
 
+!     Triplets whose forces and virial terms are held at once.
+      integer, parameter :: block_triplets = 32768
+      real(dp), allocatable :: pref(:)
+!     Per triplet: the forces on its three atoms, and the two virial sums.
+      real(dp), allocatable :: tforce(:, :, :)
+      real(dp), allocatable :: tvir(:, :, :)
       real(dp) :: time1
       real(dp) :: time2
-      real(dp) :: fcut
       real(dp) :: pi
-      real(dp) :: r12
-      real(dp) :: r13
-      real(dp) :: r23
-      real(dp) :: xyz12(1:3)
-      real(dp) :: xyz13(1:3)
-      real(dp) :: xyz23(1:3)
-      real(dp) :: q(1:3)
-      real(dp) :: fcut12
-      real(dp) :: fcut13
-      real(dp) :: dfcut12(1:3)
-      real(dp) :: dfcut13(1:3)
-      real(dp) :: force1(1:3)
-      real(dp) :: force2(1:3)
-      real(dp) :: force3(1:3)
-      real(dp) :: dfcut(1:3)
-      real(dp) :: xyz12_red(1:3)
-      real(dp) :: xyz13_red(1:3)
-      real(dp) :: xyz23_red(1:3)
-      real(dp) :: this_force(1:3)
-      real(dp), allocatable :: r(:)
-      real(dp), allocatable :: drdq(:, :)
-      real(dp), allocatable :: kernel(:)
-      real(dp), allocatable :: drdx1(:, :)
-      real(dp), allocatable :: drdx2(:, :)
-      real(dp), allocatable :: drdx3(:, :)
-      real(dp), allocatable :: pref(:)
-      real(dp), allocatable :: kernel_der(:)
+      integer, allocatable :: tatom(:, :)
+      integer, allocatable :: k_first(:)
+      integer, allocatable :: n_trip(:)
+      integer, allocatable :: t_first(:)
       integer :: n_sparse
       integer :: i
-      integer :: j
       integer :: k
-      integer :: k2
+      integer :: t
       integer :: n_sites
       integer :: n_atom_pairs
-      integer :: s
-      integer :: j2
-      integer :: i3
-      integer :: j3
-      integer :: k3
-      integer :: l
       integer :: sp0
       integer :: sp1
       integer :: sp2
       integer :: n_sites0
       integer :: k1
       integer :: k4
+      integer :: ib
+      integer :: ie
 
       if (do_timing) then
          call cpu_time(time1)
@@ -1747,39 +1830,179 @@ contains
          end if
       end do
 
-      allocate (r(1:n_sparse))
-      allocate (kernel(1:n_sparse))
       allocate (pref(1:n_sparse))
-      if (do_forces) then
-         allocate (drdq(1:n_sparse, 1:3))
-         allocate (drdx1(1:n_sparse, 1:3))
-         allocate (drdx2(1:n_sparse, 1:3))
-         allocate (drdx3(1:n_sparse, 1:3))
-         if (kernel_type == "pol") then
-            allocate (kernel_der(1:n_sparse))
-         end if
-      end if
-
-!   NOTE: these loops can be made between 2 and 3 times faster by summing over triplets instead of
-!   over sites, however it may be a better strategy with parallelization in mind to sum over sites
-!   (or maybe not...)
-
       pref(1:n_sparse) = 2.d0*delta**2*alphas(1:n_sparse)*cutoff(1:n_sparse)
 
-!   Energy and force calculation
-      energies = e0
-      if (do_forces) then
-         forces = 0.d0
-         virial = 0.d0
-      end if
+      allocate (k_first(1:n_sites))
       k = 0
       do i = 1, n_sites
+         k_first(i) = k
+         k = k + n_neigh(i)
+      end do
+
+!   A site's energy is its own, so sites run in parallel. The forces of a
+!   triplet land on three atoms, and the virial is one sum over all of them:
+!   a block of sites at a time, each triplet's terms are formed in parallel
+!   into its own slot and then added serially in triplet order, so the result
+!   does not depend on the thread count.
+      energies = e0
+      if (.not. do_forces) then
+         !$omp parallel do default(none) schedule(dynamic, 64) shared(n_sites) private(i, t)
+         do i = 1, n_sites
+            t = 0
+            call site_triplets(i, t)
+         end do
+         !$omp end parallel do
+      else
+         forces = 0.d0
+         virial = 0.d0
+         allocate (n_trip(1:n_sites))
+         allocate (t_first(1:n_sites))
+         !$omp parallel do default(none) schedule(dynamic, 64) shared(n_sites, n_trip) private(i)
+         do i = 1, n_sites
+            n_trip(i) = count_triplets(i)
+         end do
+         !$omp end parallel do
+         t = max(block_triplets, maxval(n_trip(1:n_sites)))
+         allocate (tforce(1:3, 1:3, 1:t))
+         allocate (tvir(1:9, 1:2, 1:t))
+         allocate (tatom(1:3, 1:t))
+         ib = 1
+         do while (ib <= n_sites)
+            ie = ib
+            t = n_trip(ib)
+            do while (ie < n_sites)
+               if (t + n_trip(ie + 1) > size(tatom, 2)) exit
+               ie = ie + 1
+               t = t + n_trip(ie)
+            end do
+            t = 0
+            do i = ib, ie
+               t_first(i) = t
+               t = t + n_trip(i)
+            end do
+            !$omp parallel do default(none) schedule(dynamic, 16) shared(ib, ie, t_first) private(i, t)
+            do i = ib, ie
+               t = t_first(i)
+               call site_triplets(i, t)
+            end do
+            !$omp end parallel do
+            do t = 1, t_first(ie) + n_trip(ie)
+               forces(1:3, tatom(1, t)) = forces(1:3, tatom(1, t)) + tforce(1:3, 1, t)
+               forces(1:3, tatom(2, t)) = forces(1:3, tatom(2, t)) + tforce(1:3, 2, t)
+               forces(1:3, tatom(3, t)) = forces(1:3, tatom(3, t)) + tforce(1:3, 3, t)
+!               force1 acting on i3 does not contribute to the virial
+               do k1 = 1, 3
+                  do k4 = 1, 3
+                     virial(k1, k4) = virial(k1, k4) + 0.5d0*tvir(k4 + 3*(k1 - 1), 1, t)
+                     virial(k1, k4) = virial(k1, k4) + 0.5d0*tvir(k4 + 3*(k1 - 1), 2, t)
+                  end do
+               end do
+            end do
+            ib = ie + 1
+         end do
+         deallocate (n_trip, t_first, tforce, tvir, tatom)
+      end if
+
+      deallocate (pref, k_first)
+
+      if (do_timing) then
+         call cpu_time(time2)
+         write (*, *) '                                       |'
+         write (*, *) 'Prediction timings (3b):               |'
+         write (*, *) '                                       |'
+         write (*, '(A, F8.3, A)') '  *) Total prediction: ', time2 - time1, ' seconds |'
+         write (*, *) '                                       |'
+         write (*, *) '.......................................|'
+      end if
+
+   contains
+
+!     The triplets site_triplets gives forces to, counted the same way.
+      integer function count_triplets(i)
+         integer, intent(in) :: i
+         real(dp) :: r12
+         real(dp) :: r13
+         integer :: j
+         integer :: j2
+         integer :: k
+         integer :: k2
+
+         count_triplets = 0
          if (species(i) /= sp0) then
-            k = k + n_neigh(i)
-            cycle
+            return
          end if
-         k = k + 1
-!      i3 = neighbors_list(k)
+         if (kernel_type /= "exp" .and. kernel_type /= "pol") then
+            return
+         end if
+         k = k_first(i) + 1
+         do j = 2, n_neigh(i)
+            k = k + 1
+            r12 = rjs(k)
+            if ((neighbor_species(k) /= sp1 .and. neighbor_species(k) /= sp2) .or. r12 > rcut) then
+               cycle
+            end if
+            k2 = k
+            do j2 = j + 1, n_neigh(i)
+               k2 = k2 + 1
+               r13 = rjs(k2)
+               if (((neighbor_species(k) == sp1 .and. neighbor_species(k2) == sp2) .or. &
+                    (neighbor_species(k) == sp2 .and. neighbor_species(k2) == sp1)) .and. r13 < rcut) then
+                  continue
+               else
+                  cycle
+               end if
+               if (r12 < rcut .and. r13 < rcut) then
+                  count_triplets = count_triplets + 1
+               end if
+            end do
+         end do
+      end function count_triplets
+
+!     Site i's triplets: its energy, and with forces each triplet's terms in
+!     slots t+1, t+2, ... The scratch arrays are local, so threads share none.
+      subroutine site_triplets(i, t)
+         integer, intent(in) :: i
+         integer, intent(inout) :: t
+         real(dp) :: fcut
+         real(dp) :: r12
+         real(dp) :: r13
+         real(dp) :: r23
+         real(dp) :: xyz12(1:3)
+         real(dp) :: xyz13(1:3)
+         real(dp) :: xyz23(1:3)
+         real(dp) :: q(1:3)
+         real(dp) :: fcut12
+         real(dp) :: fcut13
+         real(dp) :: dfcut12(1:3)
+         real(dp) :: dfcut13(1:3)
+         real(dp) :: force1(1:3)
+         real(dp) :: force2(1:3)
+         real(dp) :: force3(1:3)
+         real(dp) :: dfcut(1:3)
+         real(dp) :: xyz12_red(1:3)
+         real(dp) :: xyz13_red(1:3)
+         real(dp) :: xyz23_red(1:3)
+         real(dp) :: r(1:n_sparse)
+         real(dp) :: drdq(1:n_sparse, 1:3)
+         real(dp) :: kernel(1:n_sparse)
+         real(dp) :: drdx1(1:n_sparse, 1:3)
+         real(dp) :: drdx2(1:n_sparse, 1:3)
+         real(dp) :: drdx3(1:n_sparse, 1:3)
+         real(dp) :: kernel_der(1:n_sparse)
+         integer :: j
+         integer :: j2
+         integer :: k
+         integer :: k2
+         integer :: i3
+         integer :: j3
+         integer :: k3
+         integer :: l
+
+         if (species(i) /= sp0) then
+            return
+         end if
+         k = k_first(i) + 1
          i3 = mod(neighbors_list(k) - 1, n_sites0) + 1
          do j = 2, n_neigh(i)
             k = k + 1
@@ -1787,7 +2010,6 @@ contains
             if ((neighbor_species(k) /= sp1 .and. neighbor_species(k) /= sp2) .or. r12 > rcut) then
                cycle
             end if
-!        j3 = neighbors_list(k)
             j3 = mod(neighbors_list(k) - 1, n_sites0) + 1
             xyz12 = xyz(1:3, k)
             xyz12_red = xyz12/r12
@@ -1801,18 +2023,12 @@ contains
                else
                   cycle
                end if
-!          k3 = neighbors_list(k2)
                k3 = mod(neighbors_list(k2) - 1, n_sites0) + 1
                xyz13 = xyz(1:3, k2)
                xyz13_red = xyz13/r13
                xyz23 = xyz13 - xyz12
                r23 = dsqrt(sum(xyz23**2))
                xyz23_red = xyz23/r23
-!         It would be nice that if r23 < rcut, we only evaluate the expression if k3 > i3 and j3 > i3,
-!         however that gets messy because the cutoff functions are not the same for each of the 3
-!         evaluations of the triplet, i.e., atom 1 sees two cutoff functions, atom 2 sees two *different*
-!         cutoff functions and 3 sees another 2 differetn cutoff functions. I actually tried and it
-!         reduced the calculation time by about 40% for the large random C system with a 3 Angstrom cutoff
                if (r12 < rcut .and. r13 < rcut) then
                   if (r12 < rcut - buffer) then
                      fcut12 = 1.d0
@@ -1868,18 +2084,7 @@ contains
                            force2(l) = -sum(kernel(1:n_sparse)*(-fcut13*dfcut12(l) + fcut*drdx2(1:n_sparse, l)))
                            force3(l) = -sum(kernel(1:n_sparse)*(-fcut12*dfcut13(l) + fcut*drdx3(1:n_sparse, l)))
                         end do
-                        forces(1:3, i3) = forces(1:3, i3) + force1(1:3)
-                        forces(1:3, j3) = forces(1:3, j3) + force2(1:3)
-                        forces(1:3, k3) = forces(1:3, k3) + force3(1:3)
-!               force1 acting on i3 does not contribute to the virial
-!                virial = virial + dot_product( force2(1:3), xyz12(1:3) )
-!                virial = virial + dot_product( force3(1:3), xyz13(1:3) )
-                        do k1 = 1, 3
-                           do k4 = 1, 3
-                              virial(k1, k4) = virial(k1, k4) + 0.5d0*(force2(k1)*xyz12(k4) + force2(k4)*xyz12(k1))
-                              virial(k1, k4) = virial(k1, k4) + 0.5d0*(force3(k1)*xyz13(k4) + force3(k4)*xyz13(k1))
-                           end do
-                        end do
+                        call store_triplet(t, i3, j3, k3, force1, force2, force3, xyz12, xyz13)
                      end if
                   else if (kernel_type == "pol") then
 !             This kernel already contains the prefactor
@@ -1910,42 +2115,43 @@ contains
                            force3(l) = -sum(-kernel(1:n_sparse)*fcut12*dfcut13(l) &
                                             - kernel_der(1:n_sparse)*fcut*drdx3(1:n_sparse, l))
                         end do
-                        forces(1:3, i3) = forces(1:3, i3) + force1(1:3)
-                        forces(1:3, j3) = forces(1:3, j3) + force2(1:3)
-                        forces(1:3, k3) = forces(1:3, k3) + force3(1:3)
-!               force1 acting on i3 does not contribute to the virial
-!                virial = virial + dot_product( force2(1:3), xyz12(1:3) )
-!                virial = virial + dot_product( force3(1:3), xyz13(1:3) )
-                        do k1 = 1, 3
-                           do k4 = 1, 3
-                              virial(k1, k4) = virial(k1, k4) + 0.5d0*(force2(k1)*xyz12(k4) + force2(k4)*xyz12(k1))
-                              virial(k1, k4) = virial(k1, k4) + 0.5d0*(force3(k1)*xyz13(k4) + force3(k4)*xyz13(k1))
-                           end do
-                        end do
+                        call store_triplet(t, i3, j3, k3, force1, force2, force3, xyz12, xyz13)
                      end if
                   end if
                end if
             end do
          end do
-      end do
 
-      deallocate (kernel, pref, r)
-      if (do_forces) then
-         deallocate (drdq, drdx1, drdx2, drdx3)
-         if (kernel_type == "pol") then
-            deallocate (kernel_der)
-         end if
-      end if
+      end subroutine site_triplets
 
-      if (do_timing) then
-         call cpu_time(time2)
-         write (*, *) '                                       |'
-         write (*, *) 'Prediction timings (3b):               |'
-         write (*, *) '                                       |'
-         write (*, '(A, F8.3, A)') '  *) Total prediction: ', time2 - time1, ' seconds |'
-         write (*, *) '                                       |'
-         write (*, *) '.......................................|'
-      end if
+!     One triplet's forces and virial sums into slot t+1.
+      subroutine store_triplet(t, i3, j3, k3, force1, force2, force3, xyz12, xyz13)
+         integer, intent(inout) :: t
+         integer, intent(in) :: i3
+         integer, intent(in) :: j3
+         integer, intent(in) :: k3
+         real(dp), intent(in) :: force1(1:3)
+         real(dp), intent(in) :: force2(1:3)
+         real(dp), intent(in) :: force3(1:3)
+         real(dp), intent(in) :: xyz12(1:3)
+         real(dp), intent(in) :: xyz13(1:3)
+         integer :: k1
+         integer :: k4
+
+         t = t + 1
+         tatom(1, t) = i3
+         tatom(2, t) = j3
+         tatom(3, t) = k3
+         tforce(1:3, 1, t) = force1(1:3)
+         tforce(1:3, 2, t) = force2(1:3)
+         tforce(1:3, 3, t) = force3(1:3)
+         do k1 = 1, 3
+            do k4 = 1, 3
+               tvir(k4 + 3*(k1 - 1), 1, t) = force2(k1)*xyz12(k4) + force2(k4)*xyz12(k1)
+               tvir(k4 + 3*(k1 - 1), 2, t) = force3(k1)*xyz13(k4) + force3(k4)*xyz13(k1)
+            end do
+         end do
+      end subroutine store_triplet
 
    end subroutine
 
