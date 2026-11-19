@@ -22,7 +22,6 @@
 #define MBD_LANES 32
 #define MBD_ROWS_PER_BLOCK 4
 #define MBD_COL_SLOTS 2
-#define MBD_BLK_UNROLL 4
 #define MBD_REDUCE_TPB 256
 #define MBD_FORCE_TPB 256
 #define MBD_DOT_TPB 256
@@ -197,41 +196,14 @@ __global__ void mbd_spmm_blocks_kernel(mbd_site_d s, int k2, int c0, double pol_
 #pragma unroll
     for (int m = 0; m < MBD_COL_SLOTS; m++)
       acc[c1][m] = 0.0;
-  int b = s.bptr[p];
-  int b_end = s.bptr[p + 1];
-  // MBD_BLK_UNROLL blocks' loads in flight at once; each output still sums the blocks in order.
-  for (; b + MBD_BLK_UNROLL <= b_end; b += MBD_BLK_UNROLL) {
-    double v[MBD_BLK_UNROLL][9];
-    double z[MBD_BLK_UNROLL][3][MBD_COL_SLOTS];
-#pragma unroll
-    for (int u = 0; u < MBD_BLK_UNROLL; u++) {
-      const double* vb = s.blk + 9 * (size_t) (b + u);
-      const double* zr = z_d + (size_t) ncols * 3 * s.bcol[b + u];
-#pragma unroll
-      for (int c = 0; c < 9; c++)
-        v[u][c] = vb[c];
-#pragma unroll
-      for (int m = 0; m < MBD_COL_SLOTS; m++) {
-        int gc = c0 + lane + MBD_LANES * m;
-#pragma unroll
-        for (int c2 = 0; c2 < 3; c2++)
-          z[u][c2][m] = gc < ncols ? zr[c2 * ncols + gc] : 0.0;
-      }
-    }
-#pragma unroll
-    for (int u = 0; u < MBD_BLK_UNROLL; u++)
-#pragma unroll
-      for (int m = 0; m < MBD_COL_SLOTS; m++)
-#pragma unroll
-        for (int c1 = 0; c1 < 3; c1++) {
-          acc[c1][m] = acc[c1][m] + v[u][3 * c1] * z[u][0][m];
-          acc[c1][m] = acc[c1][m] + v[u][3 * c1 + 1] * z[u][1][m];
-          acc[c1][m] = acc[c1][m] + v[u][3 * c1 + 2] * z[u][2][m];
-        }
-  }
-  for (; b < b_end; b++) {
+#pragma unroll 2
+  for (int b = s.bptr[p]; b < s.bptr[p + 1]; b++) {
     const double* vb = s.blk + 9 * (size_t) b;
     const double* zr = z_d + (size_t) ncols * 3 * s.bcol[b];
+    double v9[9];
+#pragma unroll
+    for (int c = 0; c < 9; c++)
+      v9[c] = vb[c];
 #pragma unroll
     for (int m = 0; m < MBD_COL_SLOTS; m++) {
       int gc = c0 + lane + MBD_LANES * m;
@@ -241,9 +213,9 @@ __global__ void mbd_spmm_blocks_kernel(mbd_site_d s, int k2, int c0, double pol_
         double z2 = zr[2 * ncols + gc];
 #pragma unroll
         for (int c1 = 0; c1 < 3; c1++) {
-          acc[c1][m] = acc[c1][m] + vb[3 * c1] * z0;
-          acc[c1][m] = acc[c1][m] + vb[3 * c1 + 1] * z1;
-          acc[c1][m] = acc[c1][m] + vb[3 * c1 + 2] * z2;
+          acc[c1][m] = acc[c1][m] + v9[3 * c1] * z0;
+          acc[c1][m] = acc[c1][m] + v9[3 * c1 + 1] * z1;
+          acc[c1][m] = acc[c1][m] + v9[3 * c1 + 2] * z2;
         }
       }
     }
