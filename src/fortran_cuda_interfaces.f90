@@ -1294,15 +1294,14 @@ MODULE F_B_C
       subroutine mbd_gpu_init() bind(C, name="mbd_gpu_init")
       end subroutine mbd_gpu_init
 
-      subroutine mbd_gpu_site(tid, n_atoms, n_pairs, nnz, n_freq, n_order, i0, d, sR, Bohr, rcut_mbd, rcut_mbd2, &
-                              r_buf_ij, n_neigh, neigh, p_mbd, omegas, a_mbd, o_mbd, r0_scs, f_damp, t_lr_mult, rjs, &
-                              xyz, xyz0, t_mbd, pcut, v1, i_csr, j_csr, perm, t_lr_sym, integrand, pol) &
+      subroutine mbd_gpu_site(tid, n_atoms, n_pairs, n_freq, n_order, i0, d, sR, Bohr, rcut_mbd, rcut_mbd2, &
+                              r_buf_ij, n_neigh, neigh, p_mbd, omegas, a_mbd, o_mbd, r0_scs, xyz0, pcut, a_in, &
+                              r0_in, t_lr_sym, integrand, pol) &
          bind(C, name="mbd_gpu_site")
          use iso_c_binding
          integer(c_int), value :: tid
          integer(c_int), value :: n_atoms
          integer(c_int), value :: n_pairs
-         integer(c_int), value :: nnz
          integer(c_int), value :: n_freq
          integer(c_int), value :: n_order
          integer(c_int), value :: i0
@@ -1319,17 +1318,10 @@ MODULE F_B_C
          real(c_double), intent(in) :: a_mbd(*)
          real(c_double), intent(in) :: o_mbd(*)
          real(c_double), intent(in) :: r0_scs(*)
-         real(c_double), intent(in) :: f_damp(*)
-         real(c_double), intent(in) :: t_lr_mult(*)
-         real(c_double), intent(in) :: rjs(*)
-         real(c_double), intent(in) :: xyz(*)
          real(c_double), intent(in) :: xyz0(*)
-         real(c_double), intent(in) :: t_mbd(*)
          real(c_double), intent(in) :: pcut(*)
-         real(c_double), intent(in) :: v1(*)
-         integer(c_int), intent(in) :: i_csr(*)
-         integer(c_int), intent(in) :: j_csr(*)
-         integer(c_int), intent(in) :: perm(*)
+         real(c_double), intent(in) :: a_in(*)
+         real(c_double), intent(in) :: r0_in(*)
          real(c_double), intent(in) :: t_lr_sym(*)
          real(c_double), intent(inout) :: integrand(*)
          real(c_double), intent(inout) :: pol(*)

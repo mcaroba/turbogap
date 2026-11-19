@@ -2772,6 +2772,8 @@ contains
                                     s = neighbor_species(n_tot + k_j)
                                     mbd_neighbors_list(k2) = j
                                     p_mbd(k2) = q
+!                                   The device forms the pair's values itself.
+                                    if (mbd_dev) cycle
                                     if (do_derivatives .and. do_hirshfeld_gradients) then
                                        hirshfeld_v_mbd_der(1:3, k2) = hirshfeld_v_cart_der_H(1:3, n_tot + k_j)
                                     end if
@@ -2868,7 +2870,9 @@ contains
                   nnz = k4
 !                 The pattern, and the pattern with the diagonal that the
 !                 eigenvalue estimates add, are multiplied many times below.
-                  call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a)
+                  if (.not. mbd_dev) then
+                     call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a)
+                  end if
                   if (.not. default_coeff) then
                      call csr_index_build(ia(1:nnz), ja(1:nnz), 3*n_mbd_sites, csr_a2, diag=.true.)
                   end if
@@ -3245,11 +3249,10 @@ contains
                         if (do_timing) call cpu_time(time6)
                         if (mbd_dev) then
 #ifdef _GPU
-                           call mbd_gpu_site(mbd_tid, n_mbd_sites, n_mbd_pairs, nnz, n_freq, n_order, i0, d, sR, Bohr, &
+                           call mbd_gpu_site(mbd_tid, n_mbd_sites, n_mbd_pairs, n_freq, n_order, i0, d, sR, Bohr, &
                                              rcut_mbd, rcut_mbd2, r_buf_ij, n_mbd_neigh, mbd_neighbors_list, p_mbd, &
-                                             omegas_mbd, a_mbd, o_mbd, r0_ii_SCS, f_damp_SCS, T_LR_mult_ij, rjs_mbd, &
-                                             xyz_mbd, xyz_0_mbd, T_mbd, pcut_mbd, val_sym, csr_a%i_csr, csr_a%j_csr, &
-                                             csr_a%perm, T_LR_sym, integrand_sym, pol_sym)
+                                             omegas_mbd, a_mbd, o_mbd, r0_ii_SCS, xyz_0_mbd, pcut_mbd, a_in, r0_in, &
+                                             T_LR_sym, integrand_sym, pol_sym)
                            deallocate (pcut_mbd)
 #endif
                         else if (mbd_compact) then

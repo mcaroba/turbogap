@@ -121,12 +121,11 @@ void gpu_3b(const int n_sparse, const int n_sites, const int n_atom_pairs, const
 
 // ---- gap_mbd.cu
 void mbd_gpu_init();
-void mbd_gpu_site(int tid, int n_atoms, int n_pairs, int nnz, int n_freq, int n_order, int i0, double d, double sR, double Bohr,
+void mbd_gpu_site(int tid, int n_atoms, int n_pairs, int n_freq, int n_order, int i0, double d, double sR, double Bohr,
                   double rcut_mbd, double rcut_mbd2, double r_buf_ij, const int* n_neigh, const int* neigh, const int* p_mbd,
-                  const double* omegas, const double* a_mbd, const double* o_mbd, const double* r0_scs, const double* f_damp,
-                  const double* t_lr_mult, const double* rjs, const double* xyz, const double* xyz0, const double* t_mbd,
-                  const double* pcut, const double* v1, const int* i_csr, const int* j_csr, const int* perm, const double* t_lr_sym,
-                  double* integrand, double* pol);
+                  const double* omegas, const double* a_mbd, const double* o_mbd, const double* r0_scs, const double* xyz0,
+                  const double* pcut, const double* a_in, const double* r0_in, const double* t_lr_sym, double* integrand,
+                  double* pol);
 void mbd_gpu_force(int tid, int c3, const double* da, const double* dO, const double* dr0, double* dot_2b, double* virial_2b,
                    double* damped_2b, double* dt_lr_sym);
 } // extern "C"
