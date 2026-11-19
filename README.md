@@ -249,8 +249,9 @@ The answer does not depend on the decomposition beyond the last digits of
 sums. What it does not cover falls back by itself, and says so at the top of
 the output:
 
-- evaluated as `none`: MBD van der Waals, a run without `do_prediction`, a
-  build without MPI;
+- evaluated as `none`: MBD van der Waals (which splits its sites over every
+  rank and thread either way; see "Fastest layout"), a run without
+  `do_prediction`, a build without MPI;
 - integrated on rank 0, with the evaluation still decomposed: optimisers,
   thermostats other than none, Berendsen and Bussi, a barostat or box
   scaling, a variable time step, electronic stopping, MC and nested sampling,
@@ -262,21 +263,27 @@ CPU nodes (2 x EPYC 9965, 384 cores) for 308k-atom CO, in seconds per MD step
 
 | nodes | `none` | `rcb` + `domain` |
 | ---: | ---: | ---: |
-| 1 | 2.95 | 1.65 |
-| 2 | 1.67 | 0.83 |
-| 4 | 2.25 | 0.45 |
-| 6 | 2.08 | 0.29 |
+| 1 | 1.50 | 0.46 |
+| 2 | 1.10 | 0.25 |
+| 4 | 1.18 | 0.13 |
 
 | ranks x threads, one node, `rcb` + `domain` | 384 x 1 | 96 x 4 | 48 x 8 | 24 x 16 |
 | --- | ---: | ---: | ---: | ---: |
-| seconds per step | 1.47 | 1.59 | 1.70 | 1.99 |
+| seconds per step | 0.42 | 0.45 | 0.51 | 0.67 |
 
 #### Fastest layout
 
 **CPU** (`bin/turbogap`): `rcb` with `dd_integrate = domain`, one rank per
 physical core and one thread, 100 atoms or more per core. Threads help only
-when memory forces fewer ranks per node: 16 threads per rank run at about 75%
+when memory forces fewer ranks per node: 16 threads per rank run at about 65%
 of the speed of 16 ranks.
+
+**MBD** (`vdw_type = mbd`) is the exception: it runs replicated, each rank
+taking a share of the sites, and each site's work is threaded, so give the
+ranks threads. On one CPU node, for 2,916 atoms, MBD takes 0.24 s at 384 x 1
+and 0.20 s at 24 x 16; the same input took 0.65 s and 7.6 s before it was
+threaded. On a GH200 node it runs on the 72 host cores per GPU: 0.31 s, from
+67 s. `docs/PERFORMANCE.md` has the cost of a dense system.
 
 ```sh
 # input:  dd_type = rcb
@@ -311,8 +318,10 @@ Under `mpirun`, give each rank its own card through a wrapper that sets
 `HIP_VISIBLE_DEVICES`).
 
 **How many atoms per core or GPU.** Give each GPU at least 50k atoms, and
-100k or more when spreading over several; give each CPU core 100 or more. One
-GH200 does about the work of two 384-core CPU nodes. Experimental biasing
+100k or more when spreading over several; give each CPU core 100 or more. For
+308k-atom CO a 384-core CPU node now takes 0.46 s a step and one GH200 0.74 s:
+since the host build contracts the SOAP forces first, a CPU node does the
+work of about 1.6 GH200s. Experimental biasing
 costs 1.1-2 times the potential's step on CPUs for XPS and Debye XRD and 5
 times for XRD from the pdf, and 2.3-4.4 times on GPUs.
 The measurements, and what a profile of each build shows, are in

@@ -35,7 +35,9 @@ the GPU runs used whole nodes.
 | layout | one rank per GPU, 72 threads, `--gpu-bind=closest` | one rank per core, one thread |
 
 **Code.** Branch `perf/soap-der-one` as of 2026-10-31; the Debye and XPS
-rows of the MAD table, `perf/mad-rank-local` (`b156426`).
+rows of the MAD table, `perf/mad-rank-local` (`b156426`); the rows marked as
+measured since, and the MBD section, `perf/host-openmp` (`91acaa1`), 2 and 22
+steps.
 
 ## Speed of the potential
 
@@ -52,7 +54,16 @@ which stays constant when a run scales perfectly.
 | 615,342 | 2.7 | 0.83 (3.3) | 4.9 (1,880) | 2.5 (1,900) |
 | 1,230,684 | 2.7 | 0.78 (3.1) | 5.0 (1,910) | 2.4 (1,880) |
 
-One GH200 does the work of about two of these 384-core CPU nodes.
+One GH200 did the work of about two of these 384-core CPU nodes. The CPU
+columns predate the host build's contract-first SOAP forces (`perf/host-openmp`,
+2026-11-19), which made it about 3.3 times faster. Measured since, 307,671
+atoms:
+
+| | 1 GH200 | 1 CPU node | 2 CPU nodes | 4 CPU nodes |
+| --- | --- | --- | --- | --- |
+| microseconds per atom-step | 2.4 | 1.49 (571) | 0.81 (622) | 0.43 (660) |
+
+A CPU node now does the work of about 1.6 GH200s.
 
 **Atoms per GPU.** One GPU reaches its best, 2.7 microseconds per atom-step,
 from about 50k atoms; below that the fixed costs of a step dominate, and at 7k
@@ -63,8 +74,8 @@ atoms or more.
 **Atoms per CPU core.** The cost per core is flat from 150 atoms per core up,
 on one node and on two (94-100% efficient from one node to two), and is still
 73% of that at 19 atoms per core. 100 or more per core is the comfortable
-range. Threads do not help on the CPU: 16 per rank reach about 75% of the
-speed of 16 ranks, so run one rank per core.
+range. Threads do not help on the CPU: 16 per rank reach about 65% of the
+speed of 16 ranks, so run one rank per core -- except for MBD (below).
 
 ## What experimental biasing costs
 
@@ -113,16 +124,68 @@ results, assembling contributions over the decomposition, the neighbour
 geometry, preparing the next batch, and Open MPI/UCX bookkeeping around
 device allocations.
 
-**CPU** (384 ranks, 307k atoms, perf on four ranks). Three SOAP routines take
-most of a rank's compute: the expansion (`get_soap`, 22%), forming the
-descriptor's derivatives with respect to every neighbour
-(`soap_derivatives_from_expansion`, 21%) and contracting them with the
-model's gradient (`get_soap_energy_and_forces`, 12%). The device build no
-longer forms those derivatives -- it contracts first, which took its device
-time per step from 0.50 to 0.19 s on four GPUs -- and the same change would
-carry over to the host build.
-Waiting in MPI is the next largest item on ranks 1-383, and rank 0 spends a
-few percent formatting output.
+**CPU** (384 ranks, 307k atoms, perf on ranks 0 and 191). The host build now
+contracts first too (`soap_contract`, on by default): the model's gradient is
+contracted with the expansion before differentiating, so the descriptor's
+derivatives with respect to every neighbour are never formed. It took the
+step on one node from 1.47 to 0.42 s. What a rank computes is now led by the
+contraction (`soap_contract`, 14%), the prediction's gradient
+(`get_soap_energy_and_forces`, 6%), the expansion (`get_soap`, 5%) and its
+angular part (5%). Waiting in MPI is the largest item on rank 191 (38%);
+rank 0 waits little but spends ~8% formatting output.
+
+## MBD van der Waals
+
+MBD runs replicated under every `dd_type`: each rank takes a share of the
+sites, and each site -- its SCS polarisabilities, then the MBD energy and
+forces of its cluster -- is now one iteration of a threaded loop. Measured
+with the `vdw_mbd_cell_mpi2` settings (`vdw_rcut` 25 A, MBD cutoffs 15/10 A,
+13 frequencies, order 6), vdW time of one single point:
+
+| system | layout | master | now |
+| --- | --- | ---: | ---: |
+| P4 gas, 108 atoms | alt, 1 rank x 1 / 4 / 12 threads | 6.1 s | 0.86 / 0.28 / 0.16 s |
+| P4 gas, 2,916 atoms | one CPU node, 384 x 1 | 0.65 s | 0.24 s |
+| | one CPU node, 24 x 16 | 7.6 s | 0.20 s |
+| | one GH200 node, 4 x 72 | 67 s | 0.31 s |
+| black phosphorus, 16 atoms | alt, 1 rank x 4 threads (master: 1) | 217 s | 33 s |
+
+Every "now" output is byte for byte master's at the same rank count, except
+at 24 x 16, where two virial components differ in the last printed digit:
+on Roihu threads change how the compiler fuses multiply-adds in the GAP,
+and master too differs between thread counts there. On the GH200 node the
+GAP takes 0.09 s on the GPUs; MBD runs on the host's 72 cores per GPU, which
+master left idle.
+
+The P4 gas holds a handful of atoms in each MBD cluster; black phosphorus,
+at 0.053 atoms/A^3, a few hundred, and there a site costs 1.65 s on one Roihu
+core: one node does about 230 sites a second. Of that time, the 2b part of
+the force integrand takes about a quarter (its strided reads of the
+frequency-dependent matrix), the sparse matrix-vector products of the series
+a quarter, building the cluster 6%, and zeroing per-site arrays and the page
+faults behind them 13%.
+
+What made the difference, in order of effect: the loop called `cpu_time` for
+every pair to feed timing prints that are switched off, and that clock is a
+system call summing over every thread of the process, so threads serialised
+on it (removing it halved the one-thread time and made 72 threads a rank
+useful on a GH200 node); the sites run in threads, SCS included; the sparse
+index is built once per site; what depends only on a pair and a frequency is
+formed once, not for each of nine components; the 2b integrand is summed as
+it is formed; the series' three right-hand sides share one pass over the
+matrix.
+
+**Domains.** Decomposing MBD itself would not make it faster: it is already
+split by site, and its communication -- the SCS polarisabilities of every
+atom (a reduce and a broadcast) and the Hirshfeld-volume derivatives (an
+all-to-all) -- is a handful of collectives a step. What a decomposition would buy is the rest of the
+step on domains (`docs/LEGACY_DD.md`, "Not yet done").
+
+**GPU.** Worth doing for dense systems, where a site's work is tens of
+millions of pair-frequency terms and sparse products over clusters of
+hundreds of atoms: streaming arithmetic independent across sites, which is
+what the device does well. For dilute ones, the threaded host code on a GH200
+node is now within a factor of four of the GAP's time on the GPUs.
 
 ## The checks behind these numbers
 
