@@ -4,11 +4,12 @@
 # the host threads gives, in the same GPU-build binary?
 #
 # Two systems with the vdw_mbd_cell_mpi2 settings: the dilute 108-atom P4
-# cell, a few atoms in each MBD cluster, and a dense black-phosphorus cell,
-# hundreds. Each runs with vdw_mbd_device off and on, on several threads (each
-# thread hands its own sites to the device on its own stream), and the outputs
-# must agree to the precision they are written with. The device sums in a
-# different order, so this is a tolerance, not a byte comparison.
+# cell, about a hundred atoms in each MBD cluster, and a dense
+# black-phosphorus cell, about 3,500. Each runs with vdw_mbd_device off and
+# on, on several threads (each thread hands its own sites to the device on its
+# own stream), and the outputs must agree to the precision they are written
+# with. The device sums in a different order, so this is a tolerance, not a
+# byte comparison.
 #
 # Needs a GPU build and a device; skips loudly without either.
 #

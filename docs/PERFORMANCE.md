@@ -36,8 +36,8 @@ the GPU runs used whole nodes.
 
 **Code.** Branch `perf/soap-der-one` as of 2026-10-31; the Debye and XPS
 rows of the MAD table, `perf/mad-rank-local` (`b156426`); the rows marked as
-measured since, and the MBD section, `perf/host-openmp` (`91acaa1`), 2 and 22
-steps.
+measured since, and the MBD section, `perf/host-openmp` (`91acaa1`; its
+dense-system and GPU numbers, `2c50d98`), 2 and 22 steps.
 
 ## Speed of the potential
 
@@ -148,22 +148,26 @@ with the `vdw_mbd_cell_mpi2` settings (`vdw_rcut` 25 A, MBD cutoffs 15/10 A,
 | P4 gas, 2,916 atoms | one CPU node, 384 x 1 | 0.65 s | 0.24 s |
 | | one CPU node, 24 x 16 | 7.6 s | 0.20 s |
 | | one GH200 node, 4 x 72 | 67 s | 0.31 s |
-| black phosphorus, 16 atoms | alt, 1 rank x 4 threads (master: 1) | 217 s | 33 s |
+| black phosphorus, 16 atoms | alt, 1 rank x 4 threads (master: 1) | 217 s | 4.8 s |
 
 Every "now" output is byte for byte master's at the same rank count, except
 at 24 x 16, where two virial components differ in the last printed digit:
 on Roihu threads change how the compiler fuses multiply-adds in the GAP,
 and master too differs between thread counts there. On the GH200 node the
-GAP takes 0.09 s on the GPUs; MBD runs on the host's 72 cores per GPU, which
-master left idle.
+GAP takes 0.09 s on the GPUs, and MBD in this table runs on the host's 72
+cores per GPU, which master left idle; for MBD on the GPUs, see **GPU** below.
 
-The P4 gas holds a handful of atoms in each MBD cluster; black phosphorus,
-at 0.053 atoms/A^3, a few hundred, and there a site costs 1.65 s on one Roihu
-core: one node does about 230 sites a second. Of that time, the 2b part of
-the force integrand takes about a quarter (its strided reads of the
-frequency-dependent matrix), the sparse matrix-vector products of the series
-a quarter, building the cluster 6%, and zeroing per-site arrays and the page
-faults behind them 13%.
+The P4 cell holds about a hundred atoms in each MBD cluster; black
+phosphorus, at 0.053 atoms/A^3, about 3,500 (580k pairs, 4.3M nonzeros of the
+dipole matrix), and there the sites are what costs. One CPU node does the 576
+sites of a dense cell in 5.2 s at 96 x 4 (6.7 s at 384 x 1, 5.9 s at
+24 x 16), about 110 sites a second; at 384 x 1, with two sites a core, a site
+takes 3.3 s, against 1.65 s on one core of an idle node. In a profile of that
+one core (`91acaa1`), the 2b part of the force integrand took about a quarter
+(its strided reads of the frequency-dependent matrix), the sparse
+matrix-vector products of the series a quarter, building the cluster 6%, and
+zeroing per-site arrays that nothing read, and the page faults behind them,
+13% -- those arrays are gone since `b9ecedb`.
 
 What made the difference, in order of effect: the loop called `cpu_time` for
 every pair to feed timing prints that are switched off, and that clock is a
@@ -181,11 +185,29 @@ atom (a reduce and a broadcast) and the Hirshfeld-volume derivatives (an
 all-to-all) -- is a handful of collectives a step. What a decomposition would buy is the rest of the
 step on domains (`docs/LEGACY_DD.md`, "Not yet done").
 
-**GPU.** Worth doing for dense systems, where a site's work is tens of
-millions of pair-frequency terms and sparse products over clusters of
-hundreds of atoms: streaming arithmetic independent across sites, which is
-what the device does well. For dilute ones, the threaded host code on a GH200
-node is now within a factor of four of the GAP's time on the GPUs.
+**GPU.** In the GPU build each host thread hands its site's energy series
+and 2b force pass to the device on a stream of its own, and goes on with the
+next site while they run (`vdw_mbd_device`, on by default; `.false.` keeps
+MBD on the host threads). vdW time of one single point on GH200s, one rank
+per GPU with 72 threads:
+
+| system | GPUs | MBD on the host threads | on the device |
+| --- | ---: | ---: | ---: |
+| black phosphorus, 144 atoms | 1 | 4.23 s | 1.50 s |
+| black phosphorus, 576 atoms | 4 | 4.30 s | 1.97 s |
+| P4 gas, 2,916 atoms | 4 | 0.32 s | 0.25 s |
+
+Both columns write the same output, byte for byte, and the CPU node's agrees
+with them to 3e-8 eV/A in the forces. For dense systems a GH200 node with MBD
+on the device is now 2.6 times as fast as a CPU node (1.97 s against 5.2 s).
+What limits it is no longer the device: its kernels, timed on their own, take
+3.1 ms per dense site where 72 Grace threads take 20.7 ms, so about 0.45 s of
+the 1.50 s above. The rest is the host's part of each site, almost all of it
+the work before the series -- the cluster's atoms, its pairs with their
+damping and dipole tensors, the nonzeros and their index: 0.3-0.45 s of a
+Roihu core per site, where the SCS solves take a millisecond. Moving that to
+the device too is the next step for dense systems. The P4 gas has little to
+hand over.
 
 ## The checks behind these numbers
 
@@ -200,3 +222,5 @@ What the measured code was tested with, and where:
 | `tests/xrd_debye` | the Debye pattern against an independent numpy sum, forces and virial against finite differences | alt |
 | XPS and Debye on 3 ranks under `dd_type` none, rcb and legacy | forces and energies against the binary before `b156426`: identical | alt |
 | `tests/pdf_virial`, `tests/xrd_lp_pdf` (gradient) | pdf, structure factor and XRD forces and virial against finite differences, with the device build | alt: RTX 5070 |
+| `tests/mbd_gpu` | MBD on the device against MBD on the host threads of the same GPU build, on the P4 cell and a dense black-phosphorus cell, to the printed precision | alt: RTX 5070 |
+| MBD regression and golden cases, P4 cell at 1-12 threads and 4 and 6 ranks, black phosphorus | the CPU build of `2c50d98` against master, bit for bit | alt |

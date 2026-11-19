@@ -283,8 +283,11 @@ of the speed of 16 ranks.
 taking a share of the sites, and each site's work is threaded, so give the
 ranks threads. On one CPU node, for 2,916 atoms, MBD takes 0.24 s at 384 x 1
 and 0.20 s at 24 x 16; the same input took 0.65 s and 7.6 s before it was
-threaded. On a GH200 node it runs on the 72 host cores per GPU: 0.31 s, from
-67 s. `docs/PERFORMANCE.md` has the cost of a dense system.
+threaded. On a GH200 node each site's energy series and force pass run on the
+GPU, fed by the 72 host cores per GPU (`vdw_mbd_device`, on by default):
+0.25 s, from 67 s. That matters for dense systems: a 576-atom
+black-phosphorus cell takes 1.97 s there, 4.30 s with MBD on the host cores
+and 5.2 s on a CPU node (`docs/PERFORMANCE.md`, MBD).
 
 ```sh
 # input:  dd_type = rcb
