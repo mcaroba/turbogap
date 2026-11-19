@@ -810,6 +810,7 @@ module types
       integer :: mbd_correction_freq = 100
       logical :: vdw_mbd_grad = .true.
       logical :: vdw_mbd_cent_appr = .true.
+      logical :: vdw_mbd_device = .true.
       logical :: vdw_polynomial = .false.
       real(dp) :: poly_cut_xmin = 3.d0
       real(dp) :: poly_cut_xmax = 10.d0

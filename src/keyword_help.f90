@@ -1641,6 +1641,17 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
+         write (*, '(A)') '  vdw_mbd_device                       [logical, default true]'
+         write (*, '(A)') '      GPU build: compute each MBD site''s energy series and 2b force pass'
+         write (*, '(A)') '      on the device, with the central approximation and the default series'
+         write (*, '(A)') '      coefficients; the cluster and the SCS polarisabilities stay on the'
+         write (*, '(A)') '      host threads, each handing its sites to the device. The result is'
+         write (*, '(A)') '      the host''s up to the order of the sums. .false. keeps all of MBD on'
+         write (*, '(A)') '      the host. Ignored by the CPU build.'
+         write (*, '(A)') '      -> needs vdw_type'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_mbd_grad                         [logical, default true]'
          write (*, '(A)') '      Compute the gradient of the many-body dispersion energy. Off gives'
          write (*, '(A)') '      MBD energies with TS-only forces.'

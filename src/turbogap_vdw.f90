@@ -40,6 +40,8 @@ module turbogap_vdw
    public :: vdw_read_ts_scaling
    public :: vdw_write_ts_scaling
 
+   logical, save :: mbd_device_told = .false.
+
 ! Persistent state of the ts+mbd correction.
 !
 ! These buffers deliberately outlive a single call: the MBD correction is
@@ -450,6 +452,7 @@ contains
             allocate (r0_scs(1:j_end - j_beg + 1))
             allocate (alpha0_scs(1:j_end - j_beg + 1))
             call get_time(time1)
+            mbd_device_on = params%vdw_mbd_device
             call get_scs_polarizabilities(n_neigh(i_beg:i_end), neighbors_list(j_beg:j_end), &
                                           neighbor_species(j_beg:j_end), &
                                           params%vdw_scs_rcut, params%vdw_buffer, &
@@ -543,6 +546,9 @@ contains
                energies_vdw(i_beg:i_end), forces_vdw, virial_vdw, local_virial_vdw_diag)
 #endif
             end if
+            if (mbd_device_used .and. .not. mbd_device_told .and. rank == 0) &
+               write (*, '(A)') ' MBD: each site''s energy series and 2b forces run on the device'
+            mbd_device_told = mbd_device_told .or. mbd_device_used
             call get_time(time2)
 
 !        call get_ts_energy_and_forces( hirshfeld_v(i_beg:i_end), hirshfeld_v_cart_der(1:3, j_beg:j_end), &

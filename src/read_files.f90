@@ -3880,6 +3880,18 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_cent_appr
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_mbd_cent_appr", params%vdw_mbd_cent_appr)
+         !> @kw vdw_mbd_device
+         !> GPU build: compute each MBD site's energy series and 2b force pass on the device, with the
+         !> central approximation and the default series coefficients; the cluster and the SCS
+         !> polarisabilities stay on the host threads, each handing its sites to the device. The
+         !> result is the host's up to the order of the sums. .false. keeps all of MBD on the host.
+         !> Ignored by the CPU build.
+         !> @needs vdw_type
+      else if (keyword == "vdw_mbd_device") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_device
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_mbd_device", params%vdw_mbd_device)
          !> @kw vdw_mbd_grad
          !> Compute the gradient of the many-body dispersion energy. Off gives MBD energies with
          !> TS-only forces.
