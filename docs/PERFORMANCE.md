@@ -63,7 +63,7 @@ atoms or more.
 **Atoms per CPU core.** The cost per core is flat from 150 atoms per core up,
 on one node and on two (94-100% efficient from one node to two), and is still
 73% of that at 19 atoms per core. 100 or more per core is the comfortable
-range. Threads do not help on the CPU: 16 per rank reach about 60% of the
+range. Threads do not help on the CPU: 16 per rank reach about 75% of the
 speed of 16 ranks, so run one rank per core.
 
 ## What experimental biasing costs

@@ -223,9 +223,60 @@ A run is MPI ranks, each with OpenMP threads. Unless `OMP_NUM_THREADS` is
 set, each rank takes the node's cores divided by the ranks on it; the banner
 prints the number.
 
-**CPU** (`bin/turbogap`): one rank per physical core and one thread. Pure MPI
-is the fastest layout -- 16 threads reach about 60% of 16 ranks. For large
-systems, decompose space so each rank holds only its own region:
+#### Domain decomposition
+
+By default (`dd_type = none`) every rank holds every atom, and rank 0
+integrates: each step the structure is broadcast and the forces are reduced
+through rank 0, which stops scaling at about two CPU nodes. Decomposed, each
+rank holds its own region of the cell and a halo `rcut_max` wide, and with
+`dd_integrate = domain` it also integrates its own atoms. Two lines in
+`input` turn it on:
+
+```
+dd_type = rcb             # none (default), legacy or rcb
+dd_integrate = domain     # rank0 (default) or domain
+```
+
+| keyword | value | what it does |
+| --- | --- | --- |
+| `dd_type` | `none` | every rank holds the whole structure; the atoms are split by index |
+| | `legacy` | one domain per rank on a grid (`dd_grid`, chosen automatically), the cuts balanced by atom count (`dd_balance`) |
+| | `rcb` | the grid replaced by recursive bisection weighted by pair count: any number of ranks, and balanced for pores, clusters and surfaces. The one to use |
+| `dd_integrate` | `rank0` | rank 0 integrates the whole structure and redistributes it every step |
+| | `domain` | each domain integrates its own atoms, which migrate at neighbour rebuilds; rank 0 gathers the structure only to write it |
+
+The answer does not depend on the decomposition beyond the last digits of
+sums. What it does not cover falls back by itself, and says so at the top of
+the output:
+
+- evaluated as `none`: MBD van der Waals, a run without `do_prediction`, a
+  build without MPI;
+- integrated on rank 0, with the evaluation still decomposed: optimisers,
+  thermostats other than none, Berendsen and Bussi, a barostat or box
+  scaling, a variable time step, electronic stopping, MC and nested sampling,
+  MAD-IR, and the pdf, structure factor, XRD and ND observables.
+
+How each mode, the layout and the number of nodes compare, measured on Roihu
+CPU nodes (2 x EPYC 9965, 384 cores) for 308k-atom CO, in seconds per MD step
+(`docs/LEGACY_DD.md` for the scaling, the layouts with this version):
+
+| nodes | `none` | `rcb` + `domain` |
+| ---: | ---: | ---: |
+| 1 | 2.95 | 1.65 |
+| 2 | 1.67 | 0.83 |
+| 4 | 2.25 | 0.45 |
+| 6 | 2.08 | 0.29 |
+
+| ranks x threads, one node, `rcb` + `domain` | 384 x 1 | 96 x 4 | 48 x 8 | 24 x 16 |
+| --- | ---: | ---: | ---: | ---: |
+| seconds per step | 1.47 | 1.59 | 1.70 | 1.99 |
+
+#### Fastest layout
+
+**CPU** (`bin/turbogap`): `rcb` with `dd_integrate = domain`, one rank per
+physical core and one thread, 100 atoms or more per core. Threads help only
+when memory forces fewer ranks per node: 16 threads per rank run at about 75%
+of the speed of 16 ranks.
 
 ```sh
 # input:  dd_type = rcb
@@ -237,9 +288,11 @@ srun --ntasks-per-node=<cores per node> --cpu-bind=cores turbogap md
 
 **GPU** (`bin-gpu/turbogap`): one rank per GPU -- several ranks sharing a card
 are slower -- bound to that GPU and to the cores next to it, with those cores
-as its threads (they prepare the next batch while the GPU runs this one). With
-more than one GPU use the same `rcb` decomposition. Batch sizes follow the
-card's memory; leave `gpu_batch_gbytes` unset.
+as its threads (they prepare the next batch while the GPU runs this one), and
+100k atoms or more per GPU. With more than one GPU use the same `rcb`
+decomposition: on four GH200 it takes a 308k-atom step from 0.35 s
+replicated to 0.27 s. Batch sizes follow the card's memory; leave
+`gpu_batch_gbytes` unset.
 
 ```sh
 # input (more than one GPU):  dd_type = rcb
@@ -251,8 +304,8 @@ srun --ntasks-per-node=<GPUs per node> --cpus-per-task=<cores per GPU> \
 ```
 
 Without `--gpu-bind=closest` every rank can land on GPU 0, silently; check
-that the `GPUdev:` lines at the top of the output show a different
-`CUDA_VISIBLE_DEVICES` for each rank.
+that each `GPUdev:` line at the top of the output says the rank sees 1
+device. A rank that sees all of the node's cards has taken the first of them.
 Under `mpirun`, give each rank its own card through a wrapper that sets
 `CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK` (ROCm:
 `HIP_VISIBLE_DEVICES`).

@@ -367,6 +367,30 @@ changes nothing. What stays serial inside a rank: the 2b and 3b terms, the
 radial expansion, allocating and clearing soap_cart_der per batch, and the
 ordered sum of the pair forces.
 
+## Threads in 2b, 3b and the radial expansion; the replicated reduce
+
+The serial parts the section above lists are now threaded, byte-identical to
+the serial code at any thread count: the 2b and 3b terms, the radial
+expansion (soap_turbo c214efd), and the per-element work of the SOAP
+prediction. Same machine and input, `dd_type = rcb`, one node, s/step:
+
+| layout | 384x1 | 96x4 | 48x8 | 24x16 |
+| --- | ---: | ---: | ---: | ---: |
+| before | 1.437 | 1.687 | 1.985 | 2.695 |
+| after | 1.465 | 1.587 | 1.704 | 1.986 |
+
+At 24x16, 2b went from 0.53 to 0.16 s a step and 3b from 0.12 to 0.01; 16
+threads now reach 74% of 16 ranks. Pure MPI is still the fastest layout (the
+384x1 difference is within run-to-run spread). What is left of the gap: the
+SOAP descriptor's own barriers and the 2b virial, which keeps its serial
+summation order and so stays partly serial.
+
+Replicated mode now sums the force families on each rank before the reduce,
+so one force array reaches rank 0 instead of one per family. 308k atoms, one
+node, 384 ranks: reduce traffic 18.0 to 9.5 GB a step, rank 0's MPI time
+0.80 to 0.46 s, the step 3.07 to 2.81 s. On four GH200 the reduce halves
+(0.061 to 0.030 s) and the step is unchanged within noise.
+
 ## `dd_type = rcb`: recursive bisection instead of the grid
 
 legacy cuts each axis once across the whole cell. That balances a slab, but
@@ -461,11 +485,9 @@ cannot grid; either for a uniform bulk or slab.
 - MBD on the domains: a halo as wide as its cluster radius, a forward exchange
   of the SCS polarisabilities, and the volume-derivative transfer moved onto
   the domain map.
-- The replicated mode's per-family energy and force reduce to rank 0, now
-  most of its traffic: summing the families before the reduce would cut it by
-  their number.
-- OpenMP in the 2b and 3b terms and the radial expansion, and a persistent
-  soap_cart_der, so threads per rank catch up with ranks.
+- A persistent soap_cart_der, and threads in what the SOAP prediction still
+  sums serially (the ordered pair-force sum, the matmul of the energies), so
+  threads per rank catch up with ranks.
 - `dd_integrate = domain` for the thermostats and features it does not cover
   yet: GLE and Langevin (whose per-atom bath state would migrate with the
   atom), the barostat (its box change moves the cuts), and the optimisers.
