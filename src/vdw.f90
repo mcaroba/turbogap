@@ -1266,16 +1266,10 @@ contains
       real(dp), allocatable :: dr0_ii_SCS(:)
       real(dp), allocatable :: dr0_ii_SCS_2b(:)
       real(dp), allocatable :: V_int(:, :)
-      real(dp), allocatable :: T_LR_mult_0i(:)
-      real(dp), allocatable :: T_LR_mult_0j(:)
       real(dp), allocatable :: T_LR_mult_ij(:)
-      real(dp), allocatable :: dT_LR_mult_0i(:)
-      real(dp), allocatable :: dT_LR_mult_0j(:)
       real(dp), allocatable :: dT_LR_mult_ij(:)
       real(dp), allocatable :: r6_mult(:)
       real(dp), allocatable :: dr6_mult(:)
-      real(dp), allocatable :: T_LR_mult_0ij(:)
-      real(dp), allocatable :: T_LR_mult_0ji(:)
       real(dp), allocatable :: xyz_2b_tot(:, :)
       real(dp), allocatable :: rjs_2b_tot(:)
       real(dp), allocatable :: r0_ii_2b_tot(:)
@@ -1291,7 +1285,6 @@ contains
       real(dp), allocatable :: r6_mult_0j(:)
       real(dp), allocatable :: dr6_mult_0i(:)
       real(dp), allocatable :: dr6_mult_0j(:)
-      real(dp), allocatable :: dT_LR_mult_ij0(:)
       real(dp), allocatable :: AT_mult(:)
       real(dp), allocatable :: E_mult(:)
       real(dp), allocatable :: dAT_mult(:)
@@ -2384,7 +2377,7 @@ contains
                         deallocate (act_k2)
                         deallocate (r0_ii_SCS, f_damp_SCS, e_damp, mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, &
                                     xyz_mbd, rjs_mbd, T_mbd, a_mbd, o_mbd, rjs_0_mbd, xyz_0_mbd, &
-                                    hirshfeld_mbd_neigh, T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji)
+                                    hirshfeld_mbd_neigh, T_LR_mult_ij)
                      end if
                      cap_pairs = n_mbd_pairs + n_mbd_pairs/8
                      allocate (r0_ii_SCS(1:cap_pairs))
@@ -2402,17 +2395,8 @@ contains
                      allocate (rjs_0_mbd(1:cap_pairs))
                      allocate (xyz_0_mbd(1:3, cap_pairs))
                      allocate (hirshfeld_mbd_neigh(1:cap_pairs))
-                     allocate (T_LR_mult_0i(1:cap_pairs))
-                     allocate (T_LR_mult_0j(1:cap_pairs))
                      allocate (T_LR_mult_ij(1:cap_pairs))
-                     allocate (T_LR_mult_0ij(1:cap_pairs))
-                     allocate (T_LR_mult_0ji(1:cap_pairs))
                      allocate (act_k2(1:cap_pairs))
-!                    Never written below: set once.
-                     T_LR_mult_0i = 1.d0
-                     T_LR_mult_0j = 1.d0
-                     T_LR_mult_0ij = 1.d0
-                     T_LR_mult_0ji = 1.d0
                   end if
                   if (.not. cent_appr) then
                      allocate (AT(1:3*n_mbd_sites, 1:3*n_mbd_sites, 1:n_freq))
@@ -2430,7 +2414,7 @@ contains
                      if (n_mbd_pairs > cap_der) then
                         if (cap_der > 0) then
                            deallocate (da_mbd, dT_mbd, f_damp_der_mbd, f_damp_der_SCS, do_mbd, &
-                                       dr0_ii_SCS, dT_LR_mult_0i, dT_LR_mult_0j, dT_LR_mult_ij, dT_LR_mult_ij0)
+                                       dr0_ii_SCS, dT_LR_mult_ij)
                         end if
                         cap_der = n_mbd_pairs + n_mbd_pairs/8
                         allocate (da_mbd(1:cap_der))
@@ -2439,17 +2423,11 @@ contains
                         allocate (f_damp_der_SCS(1:cap_der))
                         allocate (do_mbd(1:cap_der))
                         allocate (dr0_ii_SCS(1:cap_der))
-                        allocate (dT_LR_mult_0i(1:cap_der))
-                        allocate (dT_LR_mult_0j(1:cap_der))
                         allocate (dT_LR_mult_ij(1:cap_der))
-                        allocate (dT_LR_mult_ij0(1:cap_der))
                         da_mbd = 0.d0
                         do_mbd = 0.d0
                         dr0_ii_SCS = 0.d0
-                        dT_LR_mult_0i = 0.d0
-                        dT_LR_mult_0j = 0.d0
                         dT_LR_mult_ij = 0.d0
-                        dT_LR_mult_ij0 = 0.d0
                      end if
                      if (.not. cent_appr) then
                         allocate (dT_LR(1:3*n_mbd_sites, 1:3*n_mbd_sites))
@@ -2556,11 +2534,7 @@ contains
                   if (.not. mbd_compact) then
                      r0_ii_SCS = 0.d0
                      f_damp_SCS = 0.d0
-                     T_LR_mult_0i = 1.d0
-                     T_LR_mult_0j = 1.d0
                      T_LR_mult_ij = 1.d0
-                     T_LR_mult_0ij = 1.d0
-                     T_LR_mult_0ji = 1.d0
                      mbd_neighbors_list = 0
                      p_mbd = 0
                      r0_ii_mbd = 0.d0
@@ -2748,7 +2722,7 @@ contains
                            fq_out(i_om) = sqrt(1.d0/(1.d0 + (omegas_mbd(i_om)/o_mbd_i)**2))
                            s_out(i_om, p) = fq_out(i_om)
                         end do
-                        T_LR_mult_i = T_LR_mult_0i(k2)
+                        T_LR_mult_i = 1.d0
                         r_vdw_i = r0_ii_SCS(k2)
                         k_j = 0
                         q = 0
@@ -2843,7 +2817,7 @@ contains
                                     if (do_timing) call cpu_time(time4)
                                     if (do_timing) time_tot2 = time_tot2 + time4 - time3
                                     if (do_timing) call cpu_time(time3)
-                                    T_LR_mult_j = T_LR_mult_0j(k2)
+                                    T_LR_mult_j = 1.d0
                                     if (rjs_mbd(k2)*Bohr > rcut_mbd - r_buf_ij &
                                         .and. rjs_mbd(k2)*Bohr .le. rcut_mbd) then
                                        rb = (rjs_mbd(k2)*Bohr - rcut_mbd + r_buf_ij)/r_buf_ij
@@ -3015,10 +2989,10 @@ contains
                                        else
                                           t_l = (3*xyz_l(c1)*xyz_l(c2))/r_l**5
                                        end if
-                                       if (abs(f_l*t_l*T_LR_mult_i*T_LR_mult_0j(k2) &
+                                       if (abs(f_l*t_l*T_LR_mult_i &
                                                *tlr_l) > 1.d-20) then
                                           blk(3*(c1 - 1) + c2, k2) = sqrt(a_mbd_i)*sqrt(a_in(q))* &
-                                                                     f_l*t_l*T_LR_mult_i*T_LR_mult_0j(k2) &
+                                                                     f_l*t_l*T_LR_mult_i &
                                                                      *tlr_l
                                        else
                                           blk(3*(c1 - 1) + c2, k2) = 0.d0
@@ -3048,7 +3022,7 @@ contains
                            if (do_timing) call cpu_time(time4)
                            if (do_timing) time_tot2 = time_tot2 + time4 - time3
                            if (do_timing) call cpu_time(time3)
-                           T_LR_mult_j = T_LR_mult_0j(k2)
+                           T_LR_mult_j = 1.d0
                            if (rjs_mbd(k2)*Bohr > rcut_mbd2 - r_buf_ij &
                                .and. rjs_mbd(k2)*Bohr .le. rcut_mbd2) then
                               rb = (rjs_mbd(k2)*Bohr - rcut_mbd2 + r_buf_ij)/r_buf_ij
@@ -4562,10 +4536,7 @@ contains
 !                       The compact paths write every entry they read (own entries each
 !                       direction, and the pairs below); these were cleared at allocation.
                         if (.not. mbd_compact) then
-                           dT_LR_mult_0i = 0.d0
-                           dT_LR_mult_0j = 0.d0
                            dT_LR_mult_ij = 0.d0
-                           dT_LR_mult_ij0 = 0.d0
                            da_mbd = 0.d0
                            do_mbd = 0.d0
                            dr0_ii_SCS = 0.d0
@@ -4685,8 +4656,8 @@ contains
                            !do_mbd(k2) = 0.d0
                            !dr0_ii_SCS(k2) = 0.d0
                            !THIS SHIT
-                           T_LR_mult_i = T_LR_mult_0i(k2)
-                           dT_LR_mult_i = dT_LR_mult_0i(k2)
+                           T_LR_mult_i = 1.d0
+                           dT_LR_mult_i = 0.d0
                            dr_vdw_i = dr0_ii_SCS(k2)
                            a_mbd_i = a_mbd(k2)
                            da_mbd_i = da_mbd(k2)
@@ -4832,8 +4803,8 @@ contains
                                  !do_mbd(k2) = 0.d0
                                  !dr0_ii_SCS(k2) = 0.d0
                                  !THIS SHIT
-                                 T_LR_mult_j = T_LR_mult_0j(k2)
-                                 dT_LR_mult_j = dT_LR_mult_0j(k2)
+                                 T_LR_mult_j = 1.d0
+                                 dT_LR_mult_j = 0.d0
                                  dr_vdw_j = dr0_ii_SCS(k2)
                                  a_mbd_j = a_mbd(k2)
                                  da_mbd_j = da_mbd(k2)
