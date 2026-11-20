@@ -50,12 +50,14 @@ Everything TurboGAP runs on a GPU lives here. It used to live in three files in
   and the virial, and the same for local properties; with no derivatives, the
   per-pair gradients come from `gpu_soap_pair_contract`.
 - `gap_mbd.cu` — many-body dispersion (`vdw_type = mbd`, central
-  approximation, `vdw_mbd_device`): one site's energy series, four products of
-  its dipole matrix with 3 x n_freq columns (each frequency's matrix is the
-  first scaled per atom, so only the first is stored), and its 2b force pass.
-  Each host thread hands its own sites over on its own stream and buffers
-  (`mbd_gpu_site`, `mbd_gpu_force`); the cluster, the SCS solves and the
-  frequency integrals stay on the host.
+  approximation, `vdw_mbd_device`): for one site, every pair's values as a
+  3 x 3 block (each frequency's matrix is the first scaled per atom, so only
+  the first is formed), the energy series as four products of the block
+  matrix with 3 x n_freq columns, and the 2b force pass over the pairs that
+  move with the central atom. Each host thread hands its own sites over on
+  its own stream and device allocation (`mbd_gpu_site`, `mbd_gpu_force`);
+  the pair list, the SCS solves and the frequency integrals stay on the
+  host, and so do sites with fewer than `vdw_mbd_device_min_pairs` pairs.
 
 **MAD** (declarations in `mad_gpu.h`)
 

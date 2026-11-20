@@ -36,8 +36,9 @@ the GPU runs used whole nodes.
 
 **Code.** Branch `perf/soap-der-one` as of 2026-10-31; the Debye and XPS
 rows of the MAD table, `perf/mad-rank-local` (`b156426`); the rows marked as
-measured since, and the MBD section, `perf/host-openmp` (`91acaa1`; its
-dense-system and GPU numbers, `2c50d98`), 2 and 22 steps.
+measured since, `perf/host-openmp` (`91acaa1`); the MBD section,
+`perf/host-openmp` (`9a871ab`; CPU nodes `0548fb4`, the same host code);
+2 and 22 steps.
 
 ## Speed of the potential
 
@@ -138,76 +139,93 @@ rank 0 waits little but spends ~8% formatting output.
 
 MBD runs replicated under every `dd_type`: each rank takes a share of the
 sites, and each site -- its SCS polarisabilities, then the MBD energy and
-forces of its cluster -- is now one iteration of a threaded loop. Measured
-with the `vdw_mbd_cell_mpi2` settings (`vdw_rcut` 25 A, MBD cutoffs 15/10 A,
-13 frequencies, order 6), vdW time of one single point:
+forces of its cluster -- is one iteration of a threaded loop. Measured with
+the `vdw_mbd_cell_mpi2` settings (`vdw_rcut` 25 A, MBD cutoffs 15/10 A, 13
+frequencies, order 6), vdW time of one single point:
 
-| system | layout | master | now |
+| system | where | master | now |
 | --- | --- | ---: | ---: |
-| P4 gas, 108 atoms | alt, 1 rank x 1 / 4 / 12 threads | 6.1 s | 0.86 / 0.28 / 0.16 s |
-| P4 gas, 2,916 atoms | one CPU node, 384 x 1 | 0.65 s | 0.24 s |
-| | one CPU node, 24 x 16 | 7.6 s | 0.20 s |
-| | one GH200 node, 4 x 72 | 67 s | 0.31 s |
-| black phosphorus, 16 atoms | alt, 1 rank x 4 threads (master: 1) | 217 s | 4.8 s |
+| P4 gas, 108 atoms | alt, 1 rank x 1 / 4 / 12 threads | 6.1 s | 0.29 / 0.079 / 0.039 s |
+| P4 gas, 2,916 atoms | one CPU node, 384 x 1 | 0.68 s | 0.088 s |
+| | one CPU node, 24 x 16 | 7.7 s | 0.044 s |
+| | one GH200 node, 4 x 72 | 67 s | 0.18 s |
+| black phosphorus, 16 atoms | alt, 1 rank x 4 threads (master: 1) | 217 s | 1.10 s |
+| black phosphorus, 576 atoms | one CPU node, 96 x 4 | -- | 0.83 s |
+| | one GH200 node, 4 x 72, MBD on the GPUs | -- | 0.53 s |
+| black phosphorus, 144 atoms | one GH200, 1 x 72, MBD on the GPU | -- | 0.36 s |
 
-Every "now" output is byte for byte master's at the same rank count, except
-at 24 x 16, where two virial components differ in the last printed digit:
-on Roihu threads change how the compiler fuses multiply-adds in the GAP,
-and master too differs between thread counts there. On the GH200 node the
-GAP takes 0.09 s on the GPUs, and MBD in this table runs on the host's 72
-cores per GPU, which master left idle; for MBD on the GPUs, see **GPU** below.
+Master cannot run the dense cells in these layouts: each of its sites
+allocated several 3N x 3N matrices (0.86 GB each for a cluster of 3,500
+atoms), and with them 72 threads ran a GH200 node out of host memory. Through
+`f28397a` the CPU build's output was master's byte for byte. From `62ea743`
+the host's default path sums in its own order (below); the printed outputs
+of the MBD regression and golden cases, at 1, 2, 4 and 12 threads and on 4
+and 6 ranks, are still master's, and so is the 2,916-atom cell's at 384 x 1
+on a CPU node (with threads, the GAP's SOAP energy moves in the last printed
+digit there, as master's own does). MBD on the device and on the host
+threads print the same digits on every cell above.
 
 The P4 cell holds about a hundred atoms in each MBD cluster; black
-phosphorus, at 0.053 atoms/A^3, about 3,500 (580k pairs, 4.3M nonzeros of the
-dipole matrix), and there the sites are what costs. One CPU node does the 576
-sites of a dense cell in 5.2 s at 96 x 4 (6.7 s at 384 x 1, 5.9 s at
-24 x 16), about 110 sites a second; at 384 x 1, with two sites a core, a site
-takes 3.3 s, against 1.65 s on one core of an idle node. In a profile of that
-one core (`91acaa1`), the 2b part of the force integrand took about a quarter
-(its strided reads of the frequency-dependent matrix), the sparse
-matrix-vector products of the series a quarter, building the cluster 6%, and
-zeroing per-site arrays that nothing read, and the page faults behind them,
-13% -- those arrays are gone since `b9ecedb`.
+phosphorus, at 0.053 atoms/A^3, about 3,500 (580k pairs), and there the sites
+are what costs. One CPU node does the 576 sites of the dense cell in 0.83 s
+at 96 x 4 (0.91 s at 384 x 1, 0.87 s at 24 x 16; 5.2, 6.7 and 5.9 s before
+`9963898`). On a loaded node a thread spends about 0.43 s on a site: 0.25 s
+in the energy series, 0.11 s building the cluster, 0.02 s counting its
+pairs, 0.03 s setting up and 0.03 s in the force passes; one idle alt core
+takes 0.25 s.
 
-What made the difference, in order of effect: the loop called `cpu_time` for
-every pair to feed timing prints that are switched off, and that clock is a
-system call summing over every thread of the process, so threads serialised
-on it (removing it halved the one-thread time and made 72 threads a rank
-useful on a GH200 node); the sites run in threads, SCS included; the sparse
-index is built once per site; what depends only on a pair and a frequency is
-formed once, not for each of nine components; the 2b integrand is summed as
-it is formed; the series' three right-hand sides share one pass over the
-matrix.
+What made the difference, in order of effect:
+
+- `cpu_time` was called for every pair to feed timing prints that are
+  switched off, and that clock is a system call summing over every thread of
+  the process, so threads serialised on it.
+- The sites run in threads, SCS included.
+- Only the first frequency's dipole matrix is kept: every frequency's matrix
+  is A_w = D_w A_1 D_w with per-atom factors, so the series multiplies A_1
+  with all 13 frequencies' columns at once, with 13 times less memory
+  traffic (the dense cell on a CPU node at 384 x 1, 6.7 -> 2.7 s).
+- The force passes' 2b terms are formed per pair from two sums over its nine
+  elements, and only for the pairs that move with the atom whose force is
+  computed: pairs with an atom within `vdw_loc_rcut`, whose SCS
+  polarisability moves, or with that atom itself. The other ~99% of a dense
+  cluster's pairs add exactly nothing. One core: 0.38 -> 0.012 s a site.
+- Per-pair arrays are kept per thread instead of allocated, cleared and
+  freed for every site. glibc returned their pages after each site and the
+  next one faulted them in again, and on a loaded node the clearing alone
+  took a fifth of a site.
+- The matrix is kept as one 3 x 3 block per pair, so a block reads its
+  column atom's rows once for three output rows.
+- What depends on one atom (its polarisability, its frequency factors, its
+  damping radius) is formed once per atom, not once per pair, and the
+  never-read 3N x 3N arrays are gone (`b9ecedb`).
 
 **Domains.** Decomposing MBD itself would not make it faster: it is already
 split by site, and its communication -- the SCS polarisabilities of every
 atom (a reduce and a broadcast) and the Hirshfeld-volume derivatives (an
-all-to-all) -- is a handful of collectives a step. What a decomposition would buy is the rest of the
-step on domains (`docs/LEGACY_DD.md`, "Not yet done").
+all-to-all) -- is a handful of collectives a step. What a decomposition would
+buy is the rest of the step on domains (`docs/LEGACY_DD.md`, "Not yet done").
 
-**GPU.** In the GPU build each host thread hands its site's energy series
-and 2b force pass to the device on a stream of its own, and goes on with the
-next site while they run (`vdw_mbd_device`, on by default; `.false.` keeps
-MBD on the host threads). vdW time of one single point on GH200s, one rank
-per GPU with 72 threads:
+**GPU.** In the GPU build the host threads list each site's pairs and solve
+its SCS polarisabilities; the device forms every pair's values, as one 3 x 3
+block per pair, runs the energy series over the blocks and forms the 2b force
+terms, each host thread on a stream and a device allocation of its own
+(`vdw_mbd_device`, on by default). A site with fewer than
+`vdw_mbd_device_min_pairs` pairs (default 100,000) stays on the host
+threads, which are faster for small clusters: the P4 gas has a few thousand
+pairs a site and ran slower on a GH200 node's GPUs than on its host threads
+(0.19 against 0.13 s). vdW time of one single point on GH200s, one rank per
+GPU with 72 threads:
 
 | system | GPUs | MBD on the host threads | on the device |
 | --- | ---: | ---: | ---: |
-| black phosphorus, 144 atoms | 1 | 4.23 s | 1.50 s |
-| black phosphorus, 576 atoms | 4 | 4.30 s | 1.97 s |
-| P4 gas, 2,916 atoms | 4 | 0.32 s | 0.25 s |
+| black phosphorus, 144 atoms | 1 | 0.86 s | 0.36 s |
+| black phosphorus, 576 atoms | 4 | 0.88 s | 0.53 s |
 
-Both columns write the same output, byte for byte, and the CPU node's agrees
-with them to 3e-8 eV/A in the forces. For dense systems a GH200 node with MBD
-on the device is now 2.6 times as fast as a CPU node (1.97 s against 5.2 s).
-What limits it is no longer the device: its kernels, timed on their own, take
-3.1 ms per dense site where 72 Grace threads take 20.7 ms, so about 0.45 s of
-the 1.50 s above. The rest is the host's part of each site, almost all of it
-the work before the series -- the cluster's atoms, its pairs with their
-damping and dipole tensors, the nonzeros and their index: 0.3-0.45 s of a
-Roihu core per site, where the SCS solves take a millisecond. Moving that to
-the device too is the next step for dense systems. The P4 gas has little to
-hand over.
+For dense systems a GH200 node with MBD on the device is 1.6 times as fast as
+a CPU node (0.53 s against 0.83 s). Of the device's work, the series' four
+products take 0.36 ms each per dense site on a GH200. Between jobs the same
+binary's GH200 times vary by up to a third, so compare builds within one
+job.
 
 ## The checks behind these numbers
 
@@ -222,5 +240,7 @@ What the measured code was tested with, and where:
 | `tests/xrd_debye` | the Debye pattern against an independent numpy sum, forces and virial against finite differences | alt |
 | XPS and Debye on 3 ranks under `dd_type` none, rcb and legacy | forces and energies against the binary before `b156426`: identical | alt |
 | `tests/pdf_virial`, `tests/xrd_lp_pdf` (gradient) | pdf, structure factor and XRD forces and virial against finite differences, with the device build | alt: RTX 5070 |
-| `tests/mbd_gpu` | MBD on the device against MBD on the host threads of the same GPU build, on the P4 cell and a dense black-phosphorus cell, to the printed precision | alt: RTX 5070 |
-| MBD regression and golden cases, P4 cell at 1-12 threads and 4 and 6 ranks, black phosphorus | the CPU build of `2c50d98` against master, bit for bit | alt |
+| `tests/mbd_gpu` | MBD on the device against MBD on the host threads of the same GPU build, on the P4 cell (every site sent to the device) and a dense black-phosphorus cell, to the printed precision | alt: RTX 5070 |
+| MBD regression and golden cases, P4 cell at 1-12 threads and 4 and 6 ranks | the CPU build against master: printed outputs identical | alt |
+| two dense black-phosphorus cells | each MBD commit against the one before it: printed outputs identical, CPU and device | alt |
+| `tests/regression --gpu`, the vdW cases | vdw_mbd and vdw_mbd_cell_mpi2 pass; the seven others fail with MBD on the device and on the host alike | alt: RTX 5070 |

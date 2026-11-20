@@ -281,13 +281,13 @@ of the speed of 16 ranks.
 
 **MBD** (`vdw_type = mbd`) is the exception: it runs replicated, each rank
 taking a share of the sites, and each site's work is threaded, so give the
-ranks threads. On one CPU node, for 2,916 atoms, MBD takes 0.24 s at 384 x 1
-and 0.20 s at 24 x 16; the same input took 0.65 s and 7.6 s before it was
-threaded. On a GH200 node each site's energy series and force pass run on the
-GPU, fed by the 72 host cores per GPU (`vdw_mbd_device`, on by default):
-0.25 s, from 67 s. That matters for dense systems: a 576-atom
-black-phosphorus cell takes 1.97 s there, 4.30 s with MBD on the host cores
-and 5.2 s on a CPU node (`docs/PERFORMANCE.md`, MBD).
+ranks threads. On one CPU node MBD takes 0.044 s for 2,916 atoms of P4 gas at
+24 x 16 (0.088 s at 384 x 1; 7.7 s and 0.68 s before it was threaded), and
+0.83 s for a dense 576-atom black-phosphorus cell at 96 x 4. On a GH200 node
+the dense cell's sites run on the GPUs, fed by the 72 host cores per GPU:
+0.53 s, against 0.88 s on the host cores alone (`vdw_mbd_device = .false.`);
+sites with small clusters, like the P4 gas's, stay on the host cores
+(`vdw_mbd_device_min_pairs`). `docs/PERFORMANCE.md` has the rest.
 
 ```sh
 # input:  dd_type = rcb
