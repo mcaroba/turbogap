@@ -1437,9 +1437,13 @@ contains
       real(dp), allocatable :: res_inv(:)
       real(dp), allocatable :: lsq_inv(:, :)
       real(dp), allocatable :: integrand_pol(:)
-      real(dp), allocatable :: AT_sym(:, :, :)
+!     AT_sym and pol_sym point into per-thread buffers kept from site to site.
+      real(dp), pointer, contiguous :: AT_sym(:, :, :)
+      real(dp), allocatable, target :: ws_at(:)
+!     G_sym holds the central atom's partners only, in the order of cen_list.
       real(dp), allocatable :: G_sym(:, :, :)
-      real(dp), allocatable :: pol_sym(:, :, :)
+      real(dp), pointer, contiguous :: pol_sym(:, :, :)
+      real(dp), allocatable, target :: ws_pol(:)
       real(dp), allocatable :: res_sym(:)
       real(dp), allocatable :: AT_sym_power(:, :)
       real(dp), allocatable :: integrand_sym(:)
@@ -1528,6 +1532,14 @@ contains
       integer :: hp_t
       integer :: hp_tx
       integer :: hp_ty
+!     The central atom's partners, ascending (where x1, T_LR_sym and G_sym are nonzero).
+      integer, allocatable :: cen_list(:)
+      integer :: n_cen
+      integer :: t_c
+      integer :: n_tab
+      integer :: g_col
+      integer :: p_col
+      real(dp) :: g_dot
       real(dp) :: r0_q
       real(dp) :: alpha0_q
       real(dp) :: fq_out(1:n_freq)
@@ -1683,6 +1695,7 @@ contains
       cap_pairs = 0
       cap_der = 0
       cap_hir = 0
+      nullify (AT_sym, pol_sym)
       allocate (vir_site(1:3, 1:3, 1:n_sites))
       vir_site = 0.d0
       !$omp parallel do default(firstprivate) schedule(dynamic, 1) reduction(.or.:dev_used) &
@@ -2263,10 +2276,11 @@ contains
                   rcut_mbd_sqrd = (rcut_mbd/Bohr)**2
                   rcut_mbd2_sqrd = (rcut_mbd2/Bohr)**2
                   if (allocated(c2n)) then
-                     if (size(c2n) < q) deallocate (c2n, nb_row, dl_start, k_self)
+                     if (size(c2n) < q) deallocate (c2n, nb_row, dl_start, k_self, cen_list)
                   end if
                   if (.not. allocated(c2n)) then
                      allocate (c2n(1:q + q/8))
+                     allocate (cen_list(1:q + q/8))
                      allocate (nb_row(1:q + q/8))
                      allocate (dl_start(1:q + q/8 + 1))
                      allocate (k_self(1:q + q/8))
@@ -2491,16 +2505,15 @@ contains
                            allocate (val_sym(1:nnz_cap, 1:n_freq))
                         end if
                      end if
-                     allocate (AT_sym(1:3*n_mbd_sites, 1:3, 1:n_freq))
+                     call mbd_reserve(ws_at, 9*n_mbd_sites*n_freq)
+                     AT_sym(1:3*n_mbd_sites, 1:3, 1:n_freq) => ws_at(1:9*n_mbd_sites*n_freq)
                      allocate (integrand_sym(1:n_freq))
                      allocate (T_LR_sym(1:3, 1:3*n_mbd_sites))
                      integrand_sym = 0.d0
                      if (do_derivatives) then
-                        allocate (pol_sym(1:3*n_mbd_sites, 1:3, 1:n_freq))
+                        call mbd_reserve(ws_pol, 9*n_mbd_sites*n_freq)
+                        pol_sym(1:3*n_mbd_sites, 1:3, 1:n_freq) => ws_pol(1:9*n_mbd_sites*n_freq)
                         allocate (dT_LR_sym(1:3, 1:3*n_mbd_sites))
-                        if (n_order > 2) then
-                           allocate (G_sym(1:3, 1:3*n_mbd_sites, 1:n_freq))
-                        end if
                         if (cent_appr .and. include_2b) then
                            allocate (virial_integrand_2b(1:3, 1:n_freq))
                            allocate (damped_virial_integrand_2b(1:3, 1:n_freq))
@@ -2562,8 +2575,10 @@ contains
 
                   k4 = 0
 
+!                 On the compact paths AT_sym is written whole before it is read
+!                 (on the host) or not used (on the device).
                   if (cent_appr) then
-                     AT_sym = 0.d0
+                     if (.not. mbd_compact) AT_sym = 0.d0
                      T_LR_sym = 0.d0
                   end if
 
@@ -2574,18 +2589,24 @@ contains
 
 !                 What the pair blocks below give each neighbour, the same for
 !                 every pair it is in: formed once per atom, the same way.
-                  if (allocated(a_in)) deallocate (a_in, o_in, r0_in, s_out, s_in, sj_tab, hj_tab, fq_done)
-                  allocate (sj_tab(1:n_freq, 1:n_mbd_sites))
-                  allocate (hj_tab(1:n_freq, 1:n_mbd_sites))
-                  allocate (fq_done(1:n_mbd_sites))
-                  allocate (a_in(1:n_mbd_sites))
-                  allocate (o_in(1:n_mbd_sites))
-                  allocate (r0_in(1:n_mbd_sites))
-                  allocate (s_out(2:n_freq, 1:n_mbd_sites))
-                  allocate (s_in(2:n_freq, 1:n_mbd_sites))
-                  a_in = 0.d0
-                  o_in = 0.d0
-                  r0_in = 0.d0
+!                 Kept from site to site and grown; entries past the cluster unused.
+                  if (allocated(a_in)) then
+                     if (size(a_in) < n_mbd_sites) deallocate (a_in, o_in, r0_in, s_out, s_in, sj_tab, hj_tab, fq_done)
+                  end if
+                  if (.not. allocated(a_in)) then
+                     n_tab = n_mbd_sites + n_mbd_sites/8
+                     allocate (sj_tab(1:n_freq, 1:n_tab))
+                     allocate (hj_tab(1:n_freq, 1:n_tab))
+                     allocate (fq_done(1:n_tab))
+                     allocate (a_in(1:n_tab))
+                     allocate (o_in(1:n_tab))
+                     allocate (r0_in(1:n_tab))
+                     allocate (s_out(2:n_freq, 1:n_tab))
+                     allocate (s_in(2:n_freq, 1:n_tab))
+                  end if
+                  a_in(1:n_mbd_sites) = 0.d0
+                  o_in(1:n_mbd_sites) = 0.d0
+                  r0_in(1:n_mbd_sites) = 0.d0
                   do j3 = 1, n_neigh(i)
                      if (.not. in_c(j3)) cycle
                      q = q_of(j3)
@@ -2645,6 +2666,7 @@ contains
                   k2 = 0
                   k_i = 0
                   p = 0
+                  n_cen = 0
                   do i3 = 1, n_neigh(i)
                      k_i = k_i + 1
                      i2 = neighbors_list(n_tot + k_i)
@@ -2748,6 +2770,8 @@ contains
                                     s = neighbor_species(n_tot + k_j)
                                     mbd_neighbors_list(k2) = j
                                     p_mbd(k2) = q
+                                    n_cen = n_cen + 1
+                                    cen_list(n_cen) = q
                                     if (mbd_blocks) then
                                        cpair(q) = k2
                                        n_act = n_act + 1
@@ -5857,7 +5881,10 @@ contains
                            G_mat = 0.d0
                         end if
                         if (cent_appr .and. n_order > 2) then
-                           G_sym = 0.d0
+                           if (allocated(G_sym)) then
+                              if (size(G_sym, 2) < 3*n_cen .or. size(G_sym, 3) /= n_freq) deallocate (G_sym)
+                           end if
+                           if (.not. allocated(G_sym)) allocate (G_sym(1:3, 1:3*(n_cen + n_cen/8 + 1), 1:n_freq))
                         end if
                         integrand = 0.d0
 
@@ -5866,14 +5893,33 @@ contains
                               temp_mat = 0.d0
                               temp_mat_forces = 0.d0
                            end if
-                           k3 = 0
+!                          T_LR_sym and dT_LR_sym, hence G_sym, are zero off the
+!                          central atom's partners: G_sym is formed on them only.
                            if (cent_appr .and. n_order > 2) then
-                              G_sym(:, :, j) = 1.d0/2.d0*1.d0/sqrt(a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2))* &
-                                               (da_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2) + &
-                                                a_mbd(1)*(2.d0*omegas_mbd(j)**2*o_mbd(1))* &
-                                                do_mbd(1)/(o_mbd(1)**2 + omegas_mbd(j)**2)**2)*T_LR_sym(1:3, :) + &
-                                               sqrt(a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2))*dT_LR_sym(1:3, :)
+                              do t_c = 1, n_cen
+                                 p = cen_list(t_c)
+                                 k3 = k_self(p) - 1
+                                 g_col = 3*(t_c - 1) + 1
+                                 p_col = 3*(p - 1) + 1
+                                 G_sym(:, g_col:g_col + 2, j) = &
+                                    1.d0/2.d0*1.d0/sqrt(a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2))* &
+                                    (da_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2) + &
+                                     a_mbd(1)*(2.d0*omegas_mbd(j)**2*o_mbd(1))* &
+                                     do_mbd(1)/(o_mbd(1)**2 + omegas_mbd(j)**2)**2)*T_LR_sym(1:3, p_col:p_col + 2) + &
+                                    sqrt(a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2))*dT_LR_sym(1:3, p_col:p_col + 2)
+                                 if (rjs_0_mbd(k3 + 1) .le. (rcut_force)/Bohr) then
+                                    G_sym(:, g_col:g_col + 2, j) = G_sym(:, g_col:g_col + 2, j)* &
+                                                                   sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &
+                                                     1.d0/2.d0*1.d0/sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2))* &
+                                                                   (da_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2) + &
+                                                                    a_mbd(k3 + 1)*(2.d0*omegas_mbd(j)**2*o_mbd(k3 + 1))* &
+                                                                    do_mbd(k3 + 1)/(o_mbd(k3 + 1)**2 + omegas_mbd(j)**2)**2)* &
+                                                                   T_LR_sym(1:3, p_col:p_col + 2)* &
+                                                                   sqrt(a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2))
+                                 end if
+                              end do
                            end if
+                           k3 = 0
                            do p = 1, n_mbd_sites
                               if (rjs_0_mbd(k3 + 1) .le. (rcut_force)/Bohr) then
                                  !i2 = mbd_neighbors_list(k3+1)
@@ -5895,16 +5941,6 @@ contains
                                                                                       T_LR(3*(p - 1) + 1:3*(p - 1) + 3, :)
                          G_mat(3*(p - 1) + 1:3*(p - 1) + 3, :, j) = sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2))* &
                                                                                dT_LR(3*(p - 1) + 1:3*(p - 1) + 3, :)
-                                 end if
-                                 if (cent_appr .and. n_order > 2) then
-                                    G_sym(:, 3*(p - 1) + 1:3*(p - 1) + 3, j) = G_sym(:, 3*(p - 1) + 1:3*(p - 1) + 3, j)* &
-sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &                 ! This is if you want to include non-central gradients for the central rows only
-                                                     1.d0/2.d0*1.d0/sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2))* &
-                                                                       (da_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2) + &
-                                                                              a_mbd(k3 + 1)*(2.d0*omegas_mbd(j)**2*o_mbd(k3 + 1))* &
-                                                                         do_mbd(k3 + 1)/(o_mbd(k3 + 1)**2 + omegas_mbd(j)**2)**2)* &
-                                                                               T_LR_sym(1:3, 3*(p - 1) + 1:3*(p - 1) + 3)* &
-                                                                               sqrt(a_mbd(1)/(1.d0 + (omegas_mbd(j)/o_mbd(1))**2))
                                  end if
                               end if
                               if (p .ne. n_mbd_sites) then
@@ -6205,15 +6241,23 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                  end if
                                  if (n_order > 2) then
                                     do c1 = 1, 3
-                                      integrand_sym(i2) = integrand_sym(i2) + 2.d0*dot_product(G_sym(c1, :, i2), pol_sym(:, c1, i2))
+                                       g_dot = 0.d0
+                                       do t_c = 1, n_cen
+                                          p = cen_list(t_c)
+                                          do c2 = 1, 3
+                                             g_dot = g_dot + G_sym(c1, 3*(t_c - 1) + c2, i2)*pol_sym(3*(p - 1) + c2, c1, i2)
+                                          end do
+                                       end do
+                                       integrand_sym(i2) = integrand_sym(i2) + 2.d0*g_dot
                                     end do
-                                    k3 = 0
-                                    !q = 0
-                                    do p = 1, n_mbd_sites
+                                    do t_c = 1, n_cen
+                                       p = cen_list(t_c)
+                                       k3 = k_self(p) - 1
                                        if (rjs_0_mbd(k3 + 1) .le. (rcut_force)/Bohr) then
                                           f_ki = 0.d0
                                           do c1 = 1, 3
-                                             f_ki = f_ki + dot_product(pol_sym(3*(p - 1) + c1, :, i2), G_sym(:, 3*(p - 1) + c1, i2))
+                                             f_ki = f_ki + dot_product(pol_sym(3*(p - 1) + c1, :, i2), &
+                                                                       G_sym(:, 3*(t_c - 1) + c1, i2))
                                           end do
                                           do c1 = 1, 3
                                              virial_integrand(c1, i2) = virial_integrand(c1, i2) - 0.5d0*xyz_0_mbd(c1, k3 + 1)*f_ki
@@ -6227,7 +6271,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                                           !    write(*,*) G_mat(3*(p-1)+c1,:,i2)
                                           !  end do
                                        end if
-                                       k3 = k3 + n_mbd_neigh(p)
                                     end do
                                  end if
                               end if
@@ -6489,11 +6532,9 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                      deallocate (T_LR, AT)
                   end if
                   if (cent_appr) then
-                     deallocate (AT_sym, T_LR_sym, integrand_sym)
+                     nullify (AT_sym)
+                     deallocate (T_LR_sym, integrand_sym)
                      if (do_derivatives) then
-                        if (n_order > 2) then
-                           deallocate (G_sym)
-                        end if
                         deallocate (dT_LR_sym)
                         if (cent_appr .and. include_2b) then
                            deallocate (virial_integrand_2b, damped_virial_integrand_2b) !, val_sym_test )
@@ -6514,7 +6555,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
                         deallocate (pol_grad, pol_inv, res_inv)
                      end if
                      if (cent_appr) then
-                        deallocate (pol_sym)
+                        nullify (pol_sym)
                      end if
                   end if
                end if
@@ -6634,6 +6675,22 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 
    end subroutine
 
+!  a holds at least n, contents not kept.
+   subroutine mbd_reserve(a, n)
+
+      implicit none
+
+      real(dp), allocatable, intent(inout) :: a(:)
+      integer, intent(in) :: n
+
+      if (allocated(a)) then
+         if (size(a) >= n) return
+         deallocate (a)
+      end if
+      allocate (a(1:n + n/8))
+
+   end subroutine mbd_reserve
+
 !  a(1:n), keeping what a held.
    subroutine mbd_grow_int(a, n)
 
@@ -6676,7 +6733,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
       logical, intent(in) :: include_2b
       logical, intent(in) :: do_derivatives
       real(dp), intent(inout) :: integrand_sym(:)
-      real(dp), allocatable, intent(inout) :: pol_sym(:, :, :)
+      real(dp), pointer, intent(in) :: pol_sym(:, :, :)
       real(dp), allocatable, intent(inout) :: pw(:, :)
       real(dp), allocatable, intent(inout) :: zw(:, :)
       real(dp), allocatable, intent(inout) :: dwm(:, :)
