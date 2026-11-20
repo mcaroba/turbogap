@@ -180,9 +180,7 @@ you can `make clean; make` or `make deepclean; make`.
 ## Running TurboGAP
 
 **TurboGAP** can be used to run static (single-point) calculations (`turbogap
-predict`) or molecular dynamics (`turbogap md`) or (`turbogap mc`) or (`turbogap ipi`) for
-Monte-Carlo. For details, documentation and up-to-date information refer to the
-[TurboGAP wiki](http://turbogap.fi).
+predict`) or molecular dynamics (`turbogap md`) Monte-Carlo (`turbogap mc`) or path integral molecular dynamics via iPI (`turbogap ipi`) given the appropriate keywords in the `input` file which turbogap reads.
 
 If you need help with TurboGAP modes or its keywords, you can either consult
 the html document (which is searchable)
@@ -219,15 +217,16 @@ instead, grouped by the block they belong to (`soap_turbo`, `distance_2b`,
 
 ### Running in parallel
 
-A run is MPI ranks, each with OpenMP threads. Unless `OMP_NUM_THREADS` is
-set, each rank takes the node's cores divided by the ranks on it; the banner
-prints the number.
+TurboGAP is MPI and OPENMP parallelized for a CPU build, and additionally GPU accelerated when built for GPU. 
+Unless `OMP_NUM_THREADS` is set, each rank takes the node's cores divided by the ranks on it. You will be able to see in the output if you're running the code with threads on, which is beneficial for reducing memory and communication times.
 
 #### Domain decomposition
 
-By default (`dd_type = none`) every rank holds every atom, and rank 0
+By default (`dd_type = none`) every CPU rank holds every atom, and rank 0
 integrates: each step the structure is broadcast and the forces are reduced
-through rank 0, which stops scaling at about two CPU nodes. Decomposed, each
+through rank 0, which stops scaling at about two CPU nodes. 
+
+Using domain decomposition, each
 rank holds its own region of the cell and a halo `rcut_max` wide, and with
 `dd_integrate = domain` it also integrates its own atoms. Two lines in
 `input` turn it on:
@@ -280,14 +279,22 @@ when memory forces fewer ranks per node: 16 threads per rank run at about 65%
 of the speed of 16 ranks.
 
 **MBD** (`vdw_type = mbd`) is the exception: it runs replicated, each rank
-taking a share of the sites, and each site's work is threaded, so give the
-ranks threads. On one CPU node MBD takes 0.027 s for 2,916 atoms of P4 gas at
-24 x 16 (0.081 s at 384 x 1; 7.6 s and 0.68 s with master's MBD), and 0.43 s
-for a dense 576-atom black-phosphorus cell at 96 x 4 (62 s with master's, at
-the 96 x 1 its memory allows). On a GH200 node the dense cell's sites run on
-the GPUs, fed by the 72 host cores per GPU: 0.39 s, against 0.54 s on the
-host cores alone (`vdw_mbd_device = .false.`); sites with small clusters,
-like the P4 gas's, stay on the host cores (`vdw_mbd_device_min_pairs`).
+taking a share of the sites, and each site's work is threaded, so use threads. 
+The expense of MBD is set by how many atoms lie within `vdw_rcut` of a given site, so at
+the same 25 A cutoff dense and dilute systems differ by two orders of
+magnitude:
+
+- dense: a 576-atom black-phosphorus cell, 3,457 atoms in each site's
+  cluster, takes 0.43 s on one CPU node at 96 x 4 (compared with 62 s of the original implementation by Heikki Muhli MBD, run at
+  96 x 1 due to memory);
+- dilute: 27 separate 108-atom P4 clusters (2,916 atoms), 108 atoms in each
+  site's cluster, take 0.027 s at 24 x 16 (0.081 s at 384 x 1; 7.6 s and
+  0.68 s with Heikki's implementation).
+
+On a GH200 node the dense cell's sites run on the GPUs, fed by the 72 host
+cores per GPU: 0.39 s, against 0.54 s on the host cores alone
+(`vdw_mbd_device = .false.`); sites with small clusters, like the dilute
+case's, stay on the host cores (`vdw_mbd_device_min_pairs`).
 `docs/PERFORMANCE.md` has the rest.
 
 ```sh
@@ -298,36 +305,35 @@ srun --ntasks-per-node=<cores per node> --cpu-bind=cores turbogap md
 # or:  mpirun -np <cores> --bind-to core turbogap md
 ```
 
-**GPU** (`bin-gpu/turbogap`): one rank per GPU -- several ranks sharing a card
-are slower -- bound to that GPU and to the cores next to it, with those cores
-as its threads (they prepare the next batch while the GPU runs this one), and
+**GPU** (`bin-gpu/turbogap`): one rank per GPU with threads. The threads prepare the next batch while the GPU runs. 
 100k atoms or more per GPU. With more than one GPU use the same `rcb`
 decomposition: on four GH200 it takes a 308k-atom step from 0.35 s
-replicated to 0.27 s. Batch sizes follow the card's memory; leave
-`gpu_batch_gbytes` unset.
+replicated to 0.27 s. Batch sizes are assigned from the GPU card's memory; leave
+`gpu_batch_gbytes` unset unless you need to modify it for use with other applications.
 
 ```sh
 # input (more than one GPU):  dd_type = rcb
 #                             dd_integrate = domain
-export OMP_NUM_THREADS=<cores per GPU>      # 72 on a GH200 node
+export OMP_NUM_THREADS=<cores per GPU>      # 72 on a GH200 node with 288 cores
 export OMP_PLACES=cores OMP_PROC_BIND=close
 srun --ntasks-per-node=<GPUs per node> --cpus-per-task=<cores per GPU> \
      --gpus-per-node=<GPUs per node> --gpu-bind=closest --cpu-bind=cores turbogap md
 ```
 
-Without `--gpu-bind=closest` every rank can land on GPU 0, silently; check
+Without `--gpu-bind=closest` every rank can be assigned GPU 0, so check
 that each `GPUdev:` line at the top of the output says the rank sees 1
-device. A rank that sees all of the node's cards has taken the first of them.
+device. A rank that sees all of the node's cards uses the first one.
 Under `mpirun`, give each rank its own card through a wrapper that sets
 `CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK` (ROCm:
 `HIP_VISIBLE_DEVICES`).
 
 **How many atoms per core or GPU.** Give each GPU at least 50k atoms, and
 100k or more when spreading over several; give each CPU core 100 or more. For
-308k-atom CO a 384-core CPU node now takes 0.46 s a step and one GH200 0.74 s:
-since the host build contracts the SOAP forces first, a CPU node does the
-work of about 1.6 GH200s. Experimental biasing
-costs 1.1-2 times the potential's step on CPUs for XPS and Debye XRD and 5
+308k-atom CO a 384-core CPU node now takes 0.46 s a step and one GH200 0.74 s.
+
+A Roihu CPU node does the work of about 1.6 GH200s. 
+
+Experimental biasing costs 1.1-2 times the potential's step on CPUs for XPS and Debye XRD and 5
 times for XRD from the pdf, and 2.3-4.4 times on GPUs.
 The measurements, and what a profile of each build shows, are in
 `docs/PERFORMANCE.md`.

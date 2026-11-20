@@ -7,7 +7,7 @@ launch a run, the README's "Running in parallel".
 
 ## What was measured, and on what
 
-**System.** Amorphous carbon monoxide, the `CO` set of
+**System.** Amorphous oxygenated carbon, the `CO` set of
 [turbogap_tests](https://github.com/TiganyZ/turbogap_tests): the 7,176-,
 24,219- and 57,408-atom cells as they are there, a 307,671-atom bulk cell, and
 that cell tiled 2x1x1 (615,342 atoms) and 2x2x1 (1,230,684). The potential is
@@ -34,10 +34,10 @@ the GPU runs used whole nodes.
 | build | `compile_gpu.sh`, `CSC-Roihu_gfortran_openblas_cuda` | `make OPENMP=0`, `CSC-Roihu_gfortran_openblas_mpi` |
 | layout | one rank per GPU, 72 threads, `--gpu-bind=closest` | one rank per core, one thread |
 
-**Code.** Branch `perf/soap-der-one` as of 2026-10-31; the Debye and XPS
-rows of the MAD table, `perf/mad-rank-local` (`b156426`); the rows marked as
-measured since, `perf/host-openmp` (`91acaa1`); the MBD section,
-`perf/mbd-cpu` (`42f2141`); 2 and 22 steps.
+**Code.** The speed of the potential: master at `8581780`, 2026-11-20. The
+MAD tables: branch `perf/soap-der-one` as of 2026-10-31, and the Debye and
+XPS rows `perf/mad-rank-local` (`b156426`). The MBD section: `perf/mbd-cpu`
+(`42f2141`), single points.
 
 ## Speed of the potential
 
@@ -47,40 +47,47 @@ which stays constant when a run scales perfectly.
 
 | atoms | 1 GH200 | 4 GH200 | 1 CPU node (384) | 2 CPU nodes (768) |
 | ---: | --- | --- | --- | --- |
-| 7,176 | 5.3 | 4.2 (17) | 6.7 (2,580) | |
-| 24,219 | 3.5 | 2.3 (9.2) | 5.4 (2,070) | |
-| 57,408 | 3.0 | 1.4 (5.8) | 5.2 (1,980) | 2.7 (2,090) |
-| 307,671 | 2.7 | 0.89 (3.5) | 4.9 (1,870) | 2.6 (1,990) |
-| 615,342 | 2.7 | 0.83 (3.3) | 4.9 (1,880) | 2.5 (1,900) |
-| 1,230,684 | 2.7 | 0.78 (3.1) | 5.0 (1,910) | 2.4 (1,880) |
+| 7,176 | 5.5 | 4.1 (17) | 3.4 (1,310) | 3.9 (2,960) |
+| 24,219 | 3.5 | 2.5 (10) | 1.9 (730) | 2.1 (1,640) |
+| 57,408 | 3.1 | 1.6 (6.3) | 1.6 (630) | 1.2 (890) |
+| 307,671 | 2.8 | 0.95 (3.8) | 1.44 (550) | 0.79 (610) |
+| 615,342 | 2.7 | 0.87 (3.5) | 1.43 (550) | 0.74 (570) |
+| 1,230,684 | 2.7 | 0.83 (3.3) | 1.41 (540) | 0.73 (560) |
 
-One GH200 did the work of about two of these 384-core CPU nodes. The CPU
-columns predate the host build's contract-first SOAP forces (`perf/host-openmp`,
-2026-11-19), which made it about 3.3 times faster. Measured since, 307,671
-atoms:
+On the large cells a CPU node does the work of about 1.9 GH200s, and a GH200
+node, four GPUs, that of about 1.7 CPU nodes. The two largest cells on more
+CPU nodes:
 
-| | 1 GH200 | 1 CPU node | 2 CPU nodes | 4 CPU nodes | 6 CPU nodes |
-| --- | --- | --- | --- | --- | --- |
-| microseconds per atom-step | 2.4 | 1.49 (571) | 0.81 (622) | 0.43 (660) | 0.33 (749) |
+| atoms | 1 CPU node | 2 CPU nodes | 4 CPU nodes | 6 CPU nodes |
+| ---: | --- | --- | --- | --- |
+| 307,671 | 1.44 (550) | 0.79 (610) | 0.43 (660) | 0.35 (810) |
+| 1,230,684 | 1.41 (540) | 0.73 (560) | 0.37 (570) | 0.26 (590) |
 
-A CPU node now does the work of about 1.6 GH200s.
+From one node to six the largest cell keeps 92% of its per-core speed and the
+307,671-atom cell 68%: on six nodes that is 134 atoms per core, where the
+fixed costs of a step weigh in again (below).
 
-**Atoms per GPU.** One GPU reaches its best, 2.7 microseconds per atom-step,
-from about 50k atoms; below that the fixed costs of a step dominate, and at 7k
-atoms each atom costs twice as much. Over four GPUs the efficiency against
-one is 77% at 77k atoms per GPU and 85% at 300k per GPU. Give each GPU 100k
-atoms or more.
+**Atoms per GPU.** One GPU is within 15% of its best, 2.7 microseconds per
+atom-step, from about 50k atoms and at it from about 300k; below that the
+fixed costs of a step dominate, and at 7k atoms each atom costs twice as much.
+Over four GPUs the efficiency against one is 74% at 77k atoms per GPU, 77% at
+154k and 81% at 308k. Give each GPU 100k atoms or more.
 
-**Atoms per CPU core.** The cost per core is flat from 150 atoms per core up,
-on one node and on two (94-100% efficient from one node to two), and is still
-73% of that at 19 atoms per core. 100 or more per core is the comfortable
-range. Threads do not help on the CPU: 16 per rank reach about 65% of the
-speed of 16 ranks, so run one rank per core -- except for MBD (below).
+**Atoms per CPU core.** The cost per core is within 15% of its best from about
+150 atoms per core and within 5% from 800, and going from one node to two
+loses 3-9% from 300k atoms up (30% at 57k). Small systems pay more than they
+did: the SOAP forces became three times cheaper, the fixed costs of a step did
+not, and at 19 atoms per core a core now runs at 41% of its best. A few
+hundred atoms per core or more is the comfortable range. Threads do not help
+on the CPU: 16 per rank reach about 65% of the speed of 16 ranks, so run one
+rank per core -- except for MBD (below).
 
 ## What experimental biasing costs
 
 The same 307,671 atoms, microseconds per step per atom, with the factor over
-plain MD run in the same job:
+plain MD run in the same job. Measured at `b156426`, before the CPU build's
+contract-first SOAP forces, so its CPU plain-MD row is over three times the
+current one (above), and the CPU factors are against that:
 
 | | 1 GH200 | 4 GH200 | 1 CPU node | 2 CPU nodes |
 | --- | --- | --- | --- | --- |
@@ -140,27 +147,38 @@ MBD runs replicated under every `dd_type`: each rank takes a share of the
 sites, and each site -- its SCS polarisabilities, then the MBD energy and
 forces of its cluster -- is one iteration of a threaded loop. Measured with
 the `vdw_mbd_cell_mpi2` settings (`vdw_rcut` 25 A, MBD cutoffs 15/10 A, 13
-frequencies, order 6), vdW time of one single point:
+frequencies, order 6), vdW time of one single point.
 
-| system | where | master | now | speed-up |
-| --- | --- | ---: | ---: | ---: |
-| P4 gas, 108 atoms | alt, 1 rank x 1 / 4 / 12 threads | 6.1 s | 0.17 / 0.045 / 0.024 s | 37 / 136 / 254 |
-| P4 gas, 2,916 atoms | one CPU node, 384 x 1 | 0.68 s | 0.081 s | 8.4 |
-| | one CPU node, 24 x 16 | 7.6 s | 0.027 s | 280 |
-| | one GH200 node, 4 x 72 | 67 s | 0.17 s | 400 |
-| black phosphorus, 16 atoms | alt, 1 rank x 4 threads (master: 1) | 217 s | 0.41 s | 540 |
-| black phosphorus, 576 atoms | one CPU node, 96 x 4 (master: 96 x 1, the most ranks its memory allows) | 62 s | 0.47 s | 130 |
-| | one CPU node, 384 x 1 | out of memory | 0.55 s | |
-| | one GH200 node, 4 x 72, MBD on the GPUs | -- | 0.39 s | |
-| | one GH200 node, 4 x 72, MBD on the host cores | -- | 0.54 s | |
-| black phosphorus, 144 atoms | one GH200, 1 x 72, MBD on the GPU | -- | 0.32 s | |
+A site's cost is set by the atoms within 25 A of it, its cluster, not by the
+size of the cell, so the table keeps two kinds of system apart:
+
+- **dilute**: `p4_cell.xyz` is one cluster of 27 P4 molecules (108 atoms) in
+  a 64.5 A box, and the 2,916-atom system is 27 copies of it in a 193 A box,
+  too far apart to see each other. Every site's cluster is its own 108 atoms,
+  with on average 57 of them within 10 A.
+- **dense**: black phosphorus, 0.053 atoms/A^3. Every site's cluster holds
+  3,457 atoms, periodic images included, each with about 210 others within
+  10 A: 580k pairs a site, roughly a hundred times a dilute site's.
+
+| system | atoms in a site's cluster | where | master | now | speed-up |
+| --- | ---: | --- | ---: | ---: | ---: |
+| dilute: one P4 cluster, 108 atoms | 108 | alt, 1 rank x 1 / 4 / 12 threads | 6.1 s | 0.17 / 0.045 / 0.024 s | 37 / 136 / 254 |
+| dilute: 27 P4 clusters, 2,916 atoms | 108 | one CPU node, 384 x 1 | 0.68 s | 0.081 s | 8.4 |
+| | | one CPU node, 24 x 16 | 7.6 s | 0.027 s | 280 |
+| | | one GH200 node, 4 x 72 | 67 s | 0.17 s | 400 |
+| dense: black phosphorus, 16 atoms | 3,457 | alt, 1 rank x 4 threads (master: 1) | 217 s | 0.41 s | 540 |
+| dense: black phosphorus, 576 atoms | 3,457 | one CPU node, 96 x 4 (master: 96 x 1, the most ranks its memory allows) | 62 s | 0.47 s | 130 |
+| | | one CPU node, 384 x 1 | out of memory | 0.55 s | |
+| | | one GH200 node, 4 x 72, MBD on the GPUs | -- | 0.39 s | |
+| | | one GH200 node, 4 x 72, MBD on the host cores | -- | 0.54 s | |
+| dense: black phosphorus, 144 atoms | 3,457 | one GH200, 1 x 72, MBD on the GPU | -- | 0.32 s | |
 
 Master's MBD is not threaded, and on the dense cell each of its ranks peaks
 at 5.5 GB (several 3N x 3N matrices, 0.86 GB each for a cluster of 3,500
 atoms): at 384 x 1 it ran a CPU node out of memory, so its row is 96 ranks of
 one thread with four cores each, the most that fit, run in the same job as
 the current code's two dense rows (on other nodes the 96 x 4 run took 0.43
-s). Master's dense cells were not run on a GH200 node; its P4 gas took 67 s
+s). Master's dense cells were not run on a GH200 node; its dilute run took 67 s
 there.
 
 Through `f28397a` the CPU build's output was master's byte for byte.
@@ -175,15 +193,13 @@ master, both CPU-node cells' forces differ by at most 1e-8 eV/A, the last
 printed digit, and their vdW energies print the same. MBD on the device and
 on the host threads print the same digits on every cell above.
 
-The P4 cell holds about a hundred atoms in each MBD cluster; black
-phosphorus, at 0.053 atoms/A^3, about 3,500 (580k pairs), and there the sites
-are what costs. One CPU node does the 576 sites of the dense cell in 0.43 s
-at 96 x 4 (0.57 s at 384 x 1, 0.48 s at 24 x 16; 5.2, 6.7 and 5.9 s before
-`9963898`, 0.83, 0.85 and 0.87 s at `b514ca9`). On a loaded node a thread
-spends about 0.22 s on a site: 0.09 s in the energy series, 0.09 s building
-the cluster's pair blocks, 0.02 s counting the pairs, 0.01 s setting up and
-0.02 s in the force passes; one idle alt core takes 0.074 s (0.25 s at
-`b514ca9`).
+In the dense cells the sites are what costs. One CPU node does the 576 sites
+of the dense cell in 0.43 s at 96 x 4 (0.57 s at 384 x 1, 0.48 s at 24 x 16;
+5.2, 6.7 and 5.9 s before `9963898`, 0.83, 0.85 and 0.87 s at `b514ca9`). On a
+loaded node a thread spends about 0.22 s on a site: 0.09 s in the energy
+series, 0.09 s building the cluster's pair blocks, 0.02 s counting the pairs,
+0.01 s setting up and 0.02 s in the force passes; one idle alt core takes
+0.074 s (0.25 s at `b514ca9`).
 
 At 96 x 4 that cell gives each thread 1.5 sites, so most sites are their
 thread's first and fault its per-thread buffers in (about 100 MB in dense
@@ -246,16 +262,25 @@ its SCS polarisabilities; the device forms every pair's values, as one 3 x 3
 block per pair, runs the energy series over the blocks and forms the 2b force
 terms, each host thread on a stream and a device allocation of its own
 (`vdw_mbd_device`, on by default). A site with fewer than
-`vdw_mbd_device_min_pairs` pairs (default 100,000) stays on the host
-threads, which are faster for small clusters: the P4 gas has a few thousand
-pairs a site and ran slower on a GH200 node's GPUs than on its host threads
-(0.19 against 0.13 s). vdW time of one single point on GH200s, one rank per
-GPU with 72 threads:
+`vdw_mbd_device_min_pairs` pairs (default 100,000) stays on the host threads,
+which are faster for small clusters: the dilute P4 clusters have a few
+thousand pairs a site and ran slower on a GH200 node's GPUs than on its host
+threads (0.19 against 0.13 s). vdW time of one single point on GH200s, one
+rank per GPU with 72 threads:
 
-| system | GPUs | MBD on the host threads | on the device |
-| --- | ---: | ---: | ---: |
-| black phosphorus, 144 atoms | 1 | 0.48 s | 0.32 s |
-| black phosphorus, 576 atoms | 4 | 0.54 s | 0.39 s |
+| system | atoms in a site's cluster | GH200s | MBD on the host threads | on the device | at `b514ca9`: host / device |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| dense: black phosphorus, 144 atoms | 3,457 | 1 | 0.48 s | 0.32 s | 0.86 / 0.36 s |
+| dense: black phosphorus, 576 atoms | 3,457 | 4 | 0.54 s | 0.39 s | 0.88 / 0.53 s |
+| dilute: 27 P4 clusters, 2,916 atoms | 108 | 4 | 0.14 s | 0.17 s | 0.20 / 0.18 s |
+
+The host and device columns (`42f2141`) ran in one job and the `b514ca9`
+column in another (the same code at `9a871ab`); run in one job, the
+dense 576-atom cell on four GH200s went from 0.87 to 0.54 s on the host
+threads and from 0.50 to 0.40 s on the device. The dilute clusters have far
+fewer pairs a site than `vdw_mbd_device_min_pairs`, so with the device on
+their sites still run on the host threads: the device column there differs
+from the host column only by run-to-run noise.
 
 For dense systems a GH200 node with MBD on the device now runs about as fast
 as a CPU node (0.39 s against 0.43 s), and its host cores alone are not far
@@ -282,7 +307,7 @@ What the measured code was tested with, and where:
 | `tests/xrd_debye` | the Debye pattern against an independent numpy sum, forces and virial against finite differences | alt |
 | XPS and Debye on 3 ranks under `dd_type` none, rcb and legacy | forces and energies against the binary before `b156426`: identical | alt |
 | `tests/pdf_virial`, `tests/xrd_lp_pdf` (gradient) | pdf, structure factor and XRD forces and virial against finite differences, with the device build | alt: RTX 5070 |
-| `tests/mbd_gpu` | MBD on the device against MBD on the host threads of the same GPU build, on the P4 cell (every site sent to the device) and a dense black-phosphorus cell, to the printed precision | alt: RTX 5070 |
+| `tests/mbd_gpu` | MBD on the device against MBD on the host threads of the same GPU build, on the dilute P4 cell (every site sent to the device) and a dense black-phosphorus cell, to the printed precision | alt: RTX 5070 |
 | MBD regression and golden cases, P4 cell at 1-12 threads and 4 and 6 ranks | the CPU build against master: printed outputs identical but for the two MD goldens (above); each commit from `496dd81` against `b514ca9`: identical | alt |
 | two dense black-phosphorus cells | each MBD commit against the one before it: printed outputs identical, CPU and device | alt |
 | 576-atom black phosphorus at 384 x 1, 96 x 4, 24 x 16 | `42f2141` against `0548fb4`, in one job: identical | Roihu CPU node |
