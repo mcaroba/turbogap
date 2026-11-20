@@ -1483,7 +1483,16 @@ contains
       logical :: mbd_one_freq
       logical :: mbd_compact
       logical :: mbd_blocks
-      logical :: p_far
+      real(dp) :: xyz_l(1:3)
+      real(dp) :: r_l
+      real(dp) :: tlr_l
+      real(dp) :: f_l
+      real(dp) :: t_l
+      integer :: n_act
+      integer :: n_iter
+      integer :: k2_base
+      integer, allocatable :: act_k2(:)
+      integer, allocatable :: act_ptr(:)
       integer :: nnz_cap
       integer :: cap_pairs
       integer :: cap_der
@@ -2285,6 +2294,7 @@ contains
 !                 next site faulted them in again.
                   if (n_mbd_pairs > cap_pairs) then
                      if (cap_pairs > 0) then
+                        deallocate (act_k2)
                         deallocate (r0_ii_SCS, f_damp_SCS, e_damp, mbd_neighbors_list, p_mbd, r0_ii_mbd, neighbor_alpha0_mbd, &
                                     xyz_mbd, rjs_mbd, T_mbd, a_mbd, o_mbd, rjs_0_mbd, xyz_0_mbd, &
                                     hirshfeld_mbd_neigh, T_LR_mult_0i, T_LR_mult_0j, T_LR_mult_ij, T_LR_mult_0ij, T_LR_mult_0ji)
@@ -2310,6 +2320,12 @@ contains
                      allocate (T_LR_mult_ij(1:cap_pairs))
                      allocate (T_LR_mult_0ij(1:cap_pairs))
                      allocate (T_LR_mult_0ji(1:cap_pairs))
+                     allocate (act_k2(1:cap_pairs))
+!                    Never written below: set once.
+                     T_LR_mult_0i = 1.d0
+                     T_LR_mult_0j = 1.d0
+                     T_LR_mult_0ij = 1.d0
+                     T_LR_mult_0ji = 1.d0
                   end if
                   if (.not. cent_appr) then
                      allocate (AT(1:3*n_mbd_sites, 1:3*n_mbd_sites, 1:n_freq))
@@ -2322,7 +2338,7 @@ contains
                      allocate (pcut_mbd(1:n_mbd_pairs))
                      pcut_mbd = poly_cut(sqrt(0.d0**2 + 0.d0**2 + 0.d0**2)*Bohr, x_min, x_max)
                   end if
-                  hirshfeld_mbd_neigh = 0.d0
+                  if (.not. mbd_compact) hirshfeld_mbd_neigh = 0.d0
                   if (do_derivatives) then
                      if (n_mbd_pairs > cap_der) then
                         if (cap_der > 0) then
@@ -2340,6 +2356,13 @@ contains
                         allocate (dT_LR_mult_0j(1:cap_der))
                         allocate (dT_LR_mult_ij(1:cap_der))
                         allocate (dT_LR_mult_ij0(1:cap_der))
+                        da_mbd = 0.d0
+                        do_mbd = 0.d0
+                        dr0_ii_SCS = 0.d0
+                        dT_LR_mult_0i = 0.d0
+                        dT_LR_mult_0j = 0.d0
+                        dT_LR_mult_ij = 0.d0
+                        dT_LR_mult_ij0 = 0.d0
                      end if
                      if (.not. cent_appr) then
                         allocate (dT_LR(1:3*n_mbd_sites, 1:3*n_mbd_sites))
@@ -2354,7 +2377,7 @@ contains
                         cap_hir = n_mbd_pairs + n_mbd_pairs/8
                         allocate (hirshfeld_v_mbd_der(1:3, 1:cap_hir))
                      end if
-                     hirshfeld_v_mbd_der = 0.d0
+                     if (.not. mbd_compact) hirshfeld_v_mbd_der = 0.d0
                   end if
 !                 Kept from site to site and grown when a site needs more: a site
 !                 writes entries 1:nnz before reading them. On the compact paths
@@ -2425,8 +2448,12 @@ contains
 
                   if (do_timing) call cpu_time(time1)
 
-                  a_mbd = 0.d0
-                  o_mbd = 0.d0
+!                 The compact paths write every per-pair entry they read
+!                 (see the central block's polarisabilities and T_LR_mult_ij).
+                  if (.not. mbd_compact) then
+                     a_mbd = 0.d0
+                     o_mbd = 0.d0
+                  end if
 
                   omegas_mbd = 0.d0
                   omega = 4.d0 ! Max frequency for integration
@@ -2440,25 +2467,25 @@ contains
                      T_LR = 0.d0
                      AT = 0.d0
                   end if
-                  r0_ii_SCS = 0.d0
-                  f_damp_SCS = 0.d0
-
-                  T_LR_mult_0i = 1.d0
-                  T_LR_mult_0j = 1.d0
-                  T_LR_mult_ij = 1.d0
-                  T_LR_mult_0ij = 1.d0
-                  T_LR_mult_0ji = 1.d0
-
+                  if (.not. mbd_compact) then
+                     r0_ii_SCS = 0.d0
+                     f_damp_SCS = 0.d0
+                     T_LR_mult_0i = 1.d0
+                     T_LR_mult_0j = 1.d0
+                     T_LR_mult_ij = 1.d0
+                     T_LR_mult_0ij = 1.d0
+                     T_LR_mult_0ji = 1.d0
+                     mbd_neighbors_list = 0
+                     p_mbd = 0
+                     r0_ii_mbd = 0.d0
+                     neighbor_alpha0_mbd = 0.d0
+                     xyz_mbd = 0.d0
+                     rjs_mbd = 0.d0
+                     T_mbd = 0.d0
+                     rjs_0_mbd = 0.d0
+                     xyz_0_mbd = 0.d0
+                  end if
                   n_mbd_neigh = 0
-                  mbd_neighbors_list = 0
-                  p_mbd = 0
-                  r0_ii_mbd = 0.d0
-                  neighbor_alpha0_mbd = 0.d0
-                  xyz_mbd = 0.d0
-                  rjs_mbd = 0.d0
-                  T_mbd = 0.d0
-                  rjs_0_mbd = 0.d0
-                  xyz_0_mbd = 0.d0
 
                   k4 = 0
 
@@ -2540,6 +2567,11 @@ contains
                      end do
                   end do
 
+                  if (mbd_blocks) then
+                     if (allocated(act_ptr)) deallocate (act_ptr)
+                     allocate (act_ptr(1:n_mbd_sites + 1))
+                     n_act = 0
+                  end if
                   k2 = 0
                   k_i = 0
                   p = 0
@@ -2551,6 +2583,7 @@ contains
                         if (do_timing) call cpu_time(time3)
                         p = p + 1
                         k2 = k2 + 1
+                        if (mbd_blocks) act_ptr(p) = n_act + 1
                         s = neighbor_species(n_tot + k_i)
                         mbd_neighbors_list(k2) = i2
                         n_mbd_neigh(p) = n_mbd_neigh(p) + 1
@@ -2644,7 +2677,16 @@ contains
                                     s = neighbor_species(n_tot + k_j)
                                     mbd_neighbors_list(k2) = j
                                     p_mbd(k2) = q
-                                    if (mbd_blocks) cpair(q) = k2
+                                    if (mbd_blocks) then
+                                       cpair(q) = k2
+                                       n_act = n_act + 1
+                                       act_k2(n_act) = k2
+                                    end if
+                                    if (mbd_compact) then
+                                       a_mbd(k2) = 0.d0
+                                       o_mbd(k2) = 0.d0
+                                       r0_ii_SCS(k2) = 0.d0
+                                    end if
                                     if (do_derivatives .and. do_hirshfeld_gradients) then
                                        hirshfeld_v_mbd_der(1:3, k2) = hirshfeld_v_cart_der_H(1:3, n_tot + k_j)
                                     end if
@@ -2715,6 +2757,8 @@ contains
                                                            + 2.d0*rb**3)
                                     else if (rjs_mbd(k2)*Bohr > rcut_mbd) then
                                        T_LR_mult_ij(k2) = 0.d0
+                                    else
+                                       T_LR_mult_ij(k2) = 1.d0
                                     end if
                                     r_vdw_j = r0_ii_SCS(k2)
                                     e_damp(k2) = exp(-d*(rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0))
@@ -2840,6 +2884,49 @@ contains
                                     p_mbd(k2) = q
 !                                   The device forms the pair's values itself.
                                     if (mbd_dev) cycle
+!                                   On the block path the force pass reads only pairs with an
+!                                   atom within rcut_loc or atom i0 (the others add nothing
+!                                   to it); the others keep only their block, formed in locals
+!                                   as below.
+                                    if (mbd_blocks) then
+                                       if (.not. (rjs(n_tot + k_i)/Bohr > rcut_loc/Bohr .and. &
+                                                  rjs(n_tot + k_j)/Bohr > rcut_loc/Bohr .and. i0 /= i2 .and. i0 /= j)) then
+                                          n_act = n_act + 1
+                                          act_k2(n_act) = k2
+                                       else
+                                          xyz_l = xyz_j - xyz_i
+                                          r_l = sqrt(sum((xyz_j - xyz_i)**2))
+                                          tlr_l = 1.d0
+                                          if (r_l*Bohr > rcut_mbd2 - r_buf_ij &
+                                              .and. r_l*Bohr .le. rcut_mbd2) then
+                                             rb = (r_l*Bohr - rcut_mbd2 + r_buf_ij)/r_buf_ij
+                                             tlr_l = (1.d0 &
+                                                      - 3.d0*rb**2 &
+                                                      + 2.d0*rb**3)
+                                          else if (r_l*Bohr > rcut_mbd2) then
+                                             tlr_l = 0.d0
+                                          end if
+                                          f_l = 1.d0/(1.d0 + exp(-d*(r_l/(sR*(r_vdw_i + r0_in(q))) - 1.d0)))
+                                          do c1 = 1, 3
+                                             do c2 = 1, 3
+                                                if (c1 == c2) then
+                                                   t_l = (3*xyz_l(c1)*xyz_l(c1) - r_l**2)/r_l**5
+                                                else
+                                                   t_l = (3*xyz_l(c1)*xyz_l(c2))/r_l**5
+                                                end if
+                                                if (abs(f_l*t_l*T_LR_mult_i*T_LR_mult_0j(k2) &
+                                                        *tlr_l) > 1.d-20) then
+                                                   blk(3*(c1 - 1) + c2, k2) = sqrt(a_mbd_i)*sqrt(a_in(q))* &
+                                                                              f_l*t_l*T_LR_mult_i*T_LR_mult_0j(k2) &
+                                                                              *tlr_l
+                                                else
+                                                   blk(3*(c1 - 1) + c2, k2) = 0.d0
+                                                end if
+                                             end do
+                                          end do
+                                          cycle
+                                       end if
+                                    end if
                                     if (do_derivatives .and. do_hirshfeld_gradients) then
                                        hirshfeld_v_mbd_der(1:3, k2) = hirshfeld_v_cart_der_H(1:3, n_tot + k_j)
                                     end if
@@ -2869,6 +2956,8 @@ contains
                                                            + 2.d0*rb**3)
                                     else if (rjs_mbd(k2)*Bohr > rcut_mbd2) then
                                        T_LR_mult_ij(k2) = 0.d0
+                                    else
+                                       T_LR_mult_ij(k2) = 1.d0
                                     end if
                                     r_vdw_j = r0_ii_SCS(k2)
                                     e_damp(k2) = exp(-d*(rjs_mbd(k2)/(sR*(r_vdw_i + r_vdw_j)) - 1.d0))
@@ -2945,6 +3034,7 @@ contains
                      end if
                   end do
                   nnz = k4
+                  if (mbd_blocks) act_ptr(n_mbd_sites + 1) = n_act + 1
 !                 The pattern, and the pattern with the diagonal that the
 !                 eigenvalue estimates add, are multiplied many times below.
                   if (.not. mbd_compact) then
@@ -4370,9 +4460,9 @@ contains
                         if (cent_appr) then
                            dT_LR_sym = 0.d0
                         end if
-!                       On the device path the host writes only own entries, each
-!                       direction, so these need zeroing once per site.
-                        if (.not. mbd_dev .or. c3 == 1) then
+!                       The compact paths write every entry they read (own entries each
+!                       direction, and the pairs below); these were cleared at allocation.
+                        if (.not. mbd_compact) then
                            dT_LR_mult_0i = 0.d0
                            dT_LR_mult_0j = 0.d0
                            dT_LR_mult_ij = 0.d0
@@ -4395,7 +4485,6 @@ contains
                            i2 = mbd_neighbors_list(k2)
                            i1 = modulo(i2 - 1, n_sites0) + 1
                            rjs_i = rjs_0_mbd(k2)
-                           p_far = rjs_i > rcut_loc/Bohr
                            xyz_i = xyz_0_mbd(:, k2)
                            if (rjs_0_mbd(k2) .le. (rcut_loc - r_buf_loc)/Bohr) then
                               r = findloc(sub_neighbors_list(1:n_sub_neigh(1)), i2, 1)
@@ -4521,17 +4610,22 @@ contains
                                  fq_hi(i_om) = 1.d0/2.d0*1.d0/fq_si(i_om)*fq_ti(i_om)
                               end do
                            end if
-                           do j3 = 2, n_mbd_neigh(p)
-                              k2 = k2 + 1
+!                          On the block path only the pairs on the active list: a pair
+!                          of two atoms beyond rcut_loc, neither of them i0, adds
+!                          exactly nothing here (their polarisabilities and their
+!                          dipole tensor do not move with i0).
+                           k2_base = k2
+                           n_iter = n_mbd_neigh(p) - 1
+                           if (mbd_blocks) n_iter = act_ptr(p + 1) - act_ptr(p)
+                           do j3 = 1, n_iter
+                              if (mbd_blocks) then
+                                 k2 = act_k2(act_ptr(p) + j3 - 1)
+                              else
+                                 k2 = k2 + 1
+                              end if
                               j = mbd_neighbors_list(k2)
                               j1 = modulo(j - 1, n_sites0) + 1
                               q = p_mbd(k2)
-!                             Two atoms beyond rcut_loc, neither of them atom i0: their
-!                             polarisabilities do not move with i0 and neither does their
-!                             dipole tensor, so the pair adds exactly nothing here.
-                              if (mbd_blocks .and. q .ne. -1) then
-                                 if (p_far .and. rjs_0_mbd(k2) > rcut_loc/Bohr .and. i0 /= i2 .and. i0 /= j) cycle
-                              end if
 
                               if (q .ne. -1) then
                                  rjs_j = rjs_0_mbd(k2)
@@ -4629,6 +4723,10 @@ contains
                                        dr0_ii_SCS(k2) = 0.d0
                                     end if
                                     do_mbd(k2) = 0.d0
+                                 else
+                                    da_mbd(k2) = 0.d0
+                                    dr0_ii_SCS(k2) = 0.d0
+                                    do_mbd(k2) = 0.d0
                                  end if
                                  !THIS SHIT
                                  !da_mbd(k2) = 0.d0
@@ -4687,6 +4785,7 @@ contains
                                     end do
                                  end do
                                  if (i0 == i2 .or. i0 == j) then
+                                    dT_LR_mult_ij(k2) = 0.d0
                                     f_damp_der_mbd(k2) = d/S_vdW_ij*f_damp_SCS(k2)**2* &
                                                          e_damp(k2)*xyz_mbd(c3, k2)/rjs_mbd(k2)
                                     if (p == 1) then
@@ -4907,6 +5006,7 @@ contains
                                  end if
                               end if ! q .ne. -1
                            end do
+                           if (mbd_blocks) k2 = k2_base + n_mbd_neigh(p) - 1
                            if (mbd_blocks .and. cent_appr .and. include_2b) then
                               do i_om = 1, n_freq
                                  dot_2b(i_om) = dot_2b(i_om) + sum_p(i_om)
