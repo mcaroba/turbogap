@@ -6,14 +6,14 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 
 ## Contents
 
-**The input file** &mdash; 304 keywords
+**The input file** &mdash; 305 keywords
 
 - [General](#general) (60)
 - [Run control](#run-control) (20)
 - [Molecular dynamics](#molecular-dynamics) (23)
 - [Nested sampling](#nested-sampling) (6)
 - [Monte Carlo](#monte-carlo) (35)
-- [Van der Waals](#van-der-waals) (32)
+- [Van der Waals](#van-der-waals) (33)
 - [Electrostatics](#electrostatics) (11)
 - [Experimental data (MAD)](#experimental-data-mad) (55)
 - [Electronic stopping and EPH](#electronic-stopping-and-eph) (32)
@@ -235,7 +235,8 @@ Tkatchenko-Scheffler and many-body dispersion.
 | `vdw_hirsh_grad` | logical | `true` |  | all | Include the derivative of the Hirshfeld volumes with respect to positions in the dispersion forces. Switching it off gives a cheaper but inconsistent force. | needs `vdw_type` |
 | `vdw_loc_rcut` | real | `5.0` | A | all | Radius of the local environment whose atoms enter the screened polarizability of a given atom. | needs `vdw_type` |
 | `vdw_mbd_cent_appr` | logical | `true` |  | all | Evaluate the many-body dispersion about the central atom only, rather than over every atom of its environment. The cheaper approximation. | needs `vdw_type` |
-| `vdw_mbd_device` | logical | `true` |  | all | GPU build: compute each MBD site's energy series and 2b force pass on the device, with the central approximation and the default series coefficients; the cluster and the SCS polarisabilities stay on the host threads, each handing its sites to the device. The result is the host's up to the order of the sums. .false. keeps all of MBD on the host. Ignored by the CPU build. | needs `vdw_type` |
+| `vdw_mbd_device` | logical | `true` |  | all | GPU build: run MBD on the device, with the central approximation and the default series coefficients: the host threads list each site's pairs and solve its SCS polarisabilities, and the device forms the pairs' values, the energy series and the 2b force terms. A site with fewer pairs than vdw_mbd_device_min_pairs stays on the host. The result is the host's up to the order of the sums. .false. keeps all of MBD on the host. Ignored by the CPU build. | needs `vdw_type` |
+| `vdw_mbd_device_min_pairs` | integer | `100000` |  | all | GPU build, with vdw_mbd_device: a site whose MBD cluster has fewer pairs than this runs on the host threads, where small clusters are faster. A dense solid has hundreds of thousands of pairs a site with the default cutoffs, a molecular gas thousands. | needs `vdw_type` |
 | `vdw_mbd_grad` | logical | `true` |  | all | Compute the gradient of the many-body dispersion energy. Off gives MBD energies with TS-only forces. | needs `vdw_type` |
 | `vdw_mbd_nfreq` | integer | `13` |  | all | Number of imaginary-frequency quadrature points used for the dynamic polarizability. More is more accurate and proportionally slower. | needs `vdw_type` |
 | `vdw_mbd_norder` | integer | `6` |  | all | Order at which the many-body expansion is truncated. | needs `vdw_type` |

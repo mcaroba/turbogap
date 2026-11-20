@@ -1642,12 +1642,22 @@ contains
       end if
       if (every .or. .not. gap_only) then
          write (*, '(A)') '  vdw_mbd_device                       [logical, default true]'
-         write (*, '(A)') '      GPU build: compute each MBD site''s energy series and 2b force pass'
-         write (*, '(A)') '      on the device, with the central approximation and the default series'
-         write (*, '(A)') '      coefficients; the cluster and the SCS polarisabilities stay on the'
-         write (*, '(A)') '      host threads, each handing its sites to the device. The result is'
-         write (*, '(A)') '      the host''s up to the order of the sums. .false. keeps all of MBD on'
-         write (*, '(A)') '      the host. Ignored by the CPU build.'
+         write (*, '(A)') '      GPU build: run MBD on the device, with the central approximation and'
+         write (*, '(A)') '      the default series coefficients: the host threads list each site''s'
+         write (*, '(A)') '      pairs and solve its SCS polarisabilities, and the device forms the'
+         write (*, '(A)') '      pairs'' values, the energy series and the 2b force terms. A site with'
+         write (*, '(A)') '      fewer pairs than vdw_mbd_device_min_pairs stays on the host. The'
+         write (*, '(A)') '      result is the host''s up to the order of the sums. .false. keeps all'
+         write (*, '(A)') '      of MBD on the host. Ignored by the CPU build.'
+         write (*, '(A)') '      -> needs vdw_type'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  vdw_mbd_device_min_pairs             [integer, default 100000]'
+         write (*, '(A)') '      GPU build, with vdw_mbd_device: a site whose MBD cluster has fewer'
+         write (*, '(A)') '      pairs than this runs on the host threads, where small clusters are'
+         write (*, '(A)') '      faster. A dense solid has hundreds of thousands of pairs a site with'
+         write (*, '(A)') '      the default cutoffs, a molecular gas thousands.'
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if

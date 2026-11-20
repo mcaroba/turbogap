@@ -240,7 +240,7 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">363 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">364 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
@@ -249,7 +249,7 @@ footer {
 <a href="#molecular-dynamics"><span>Molecular dynamics</span><span class="n">23</span></a>
 <a href="#nested-sampling"><span>Nested sampling</span><span class="n">6</span></a>
 <a href="#monte-carlo"><span>Monte Carlo</span><span class="n">35</span></a>
-<a href="#van-der-waals"><span>Van der Waals</span><span class="n">32</span></a>
+<a href="#van-der-waals"><span>Van der Waals</span><span class="n">33</span></a>
 <a href="#electrostatics"><span>Electrostatics</span><span class="n">11</span></a>
 <a href="#experimental-data-mad"><span>Experimental data (MAD)</span><span class="n">55</span></a>
 <a href="#electronic-stopping-and-eph"><span>Electronic stopping and EPH</span><span class="n">32</span></a>
@@ -1755,13 +1755,22 @@ footer {
 <td class="de">Evaluate the many-body dispersion about the central atom only, rather than over every atom of its environment. The cheaper approximation.</td>
 <td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
 </tr>
-<tr data-h="vdw_mbd_device gpu build: compute each mbd site&#x27;s energy series and 2b force pass on the device, with the central approximation and the default series coefficients; the cluster and the scs polarisabilities stay on the host threads, each handing its sites to the device. the result is the host&#x27;s up to the order of the sums. .false. keeps all of mbd on the host. ignored by the cpu build." data-m="predict md mc soap ipi">
+<tr data-h="vdw_mbd_device gpu build: run mbd on the device, with the central approximation and the default series coefficients: the host threads list each site&#x27;s pairs and solve its scs polarisabilities, and the device forms the pairs&#x27; values, the energy series and the 2b force terms. a site with fewer pairs than vdw_mbd_device_min_pairs stays on the host. the result is the host&#x27;s up to the order of the sums. .false. keeps all of mbd on the host. ignored by the cpu build." data-m="predict md mc soap ipi">
 <td class="kw"><code>vdw_mbd_device</code></td>
 <td class="ty">logical</td>
 <td class="df"><code>true</code></td>
 <td class="un"></td>
 <td class="mo">all</td>
-<td class="de">GPU build: compute each MBD site&#x27;s energy series and 2b force pass on the device, with the central approximation and the default series coefficients; the cluster and the SCS polarisabilities stay on the host threads, each handing its sites to the device. The result is the host&#x27;s up to the order of the sums. .false. keeps all of MBD on the host. Ignored by the CPU build.</td>
+<td class="de">GPU build: run MBD on the device, with the central approximation and the default series coefficients: the host threads list each site&#x27;s pairs and solve its SCS polarisabilities, and the device forms the pairs&#x27; values, the energy series and the 2b force terms. A site with fewer pairs than vdw_mbd_device_min_pairs stays on the host. The result is the host&#x27;s up to the order of the sums. .false. keeps all of MBD on the host. Ignored by the CPU build.</td>
+<td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
+</tr>
+<tr data-h="vdw_mbd_device_min_pairs gpu build, with vdw_mbd_device: a site whose mbd cluster has fewer pairs than this runs on the host threads, where small clusters are faster. a dense solid has hundreds of thousands of pairs a site with the default cutoffs, a molecular gas thousands." data-m="predict md mc soap ipi">
+<td class="kw"><code>vdw_mbd_device_min_pairs</code></td>
+<td class="ty">integer</td>
+<td class="df"><code>100000</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">GPU build, with vdw_mbd_device: a site whose MBD cluster has fewer pairs than this runs on the host threads, where small clusters are faster. A dense solid has hundreds of thousands of pairs a site with the default cutoffs, a molecular gas thousands.</td>
 <td class="dp"><span class="dep">needs <code>vdw_type</code></span></td>
 </tr>
 <tr data-h="vdw_mbd_grad compute the gradient of the many-body dispersion energy. off gives mbd energies with ts-only forces." data-m="predict md mc soap ipi">

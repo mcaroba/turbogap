@@ -58,6 +58,8 @@ run_one() {
   cp "$atoms" "$dir/cell.xyz"
   sed 's/p4_cell.xyz/cell.xyz/' "$CASE_INPUT" > "$dir/input"
   echo "vdw_mbd_device = $device" >> "$dir/input"
+  # Every site on the device, however few its pairs.
+  echo "vdw_mbd_device_min_pairs = 0" >> "$dir/input"
   (cd "$dir" && OMP_NUM_THREADS=$THREADS OPENBLAS_NUM_THREADS=1 "$BIN" predict > out.log 2>&1) || {
     printf '    FAIL: %s did not run; see %s/out.log\n' "$(basename "$dir")" "$dir" >&2
     return 1

@@ -38,9 +38,10 @@ module vdw
 #endif
 !$ use omp_lib, only: omp_get_thread_num
 
-!  GPU build: each MBD site's energy series and 2b force pass go to the device
-!  (vdw_mbd_device), on the default path.
+!  GPU build: on the default path a site's MBD runs on the device
+!  (vdw_mbd_device) when its cluster has at least mbd_device_min_pairs pairs.
    logical, save :: mbd_device_on = .false.
+   integer, save :: mbd_device_min_pairs = 100000
 !  Set once a call has used it, for the driver to say so.
    logical, save :: mbd_device_used = .false.
 
@@ -1480,6 +1481,8 @@ contains
       real(dp), allocatable :: pcut_mbd(:)
       integer :: mbd_tid
       logical :: mbd_dev
+      logical :: mbd_dev_on
+      logical :: dev_used
       logical :: mbd_one_freq
       logical :: mbd_compact
       logical :: mbd_blocks
@@ -1642,13 +1645,15 @@ contains
 !     and local virial. Its share of the virial is kept and added up after the
 !     loop in site order, so the result does not depend on the thread count.
 !     Everything else a site computes is its own, hence default(firstprivate).
-      mbd_dev = .false.
+      mbd_dev_on = .false.
 #ifdef _GPU
-      mbd_dev = mbd_device_on .and. cent_appr .and. include_2b .and. default_coeff .and. n_order > 2 .and. &
-                .not. do_log .and. .not. series_expansion .and. .not. lanczos .and. .not. do_total_energy
-      if (mbd_dev) call mbd_gpu_init()
-      if (mbd_dev) mbd_device_used = .true.
+      mbd_dev_on = mbd_device_on .and. cent_appr .and. include_2b .and. default_coeff .and. n_order > 2 .and. &
+                   .not. do_log .and. .not. series_expansion .and. .not. lanczos .and. .not. do_total_energy
+      if (mbd_dev_on) call mbd_gpu_init()
 #endif
+!     Set per site once its cluster is counted.
+      mbd_dev = .false.
+      dev_used = .false.
 !     On the default path every reader forms each frequency's element from the
 !     first's, as the build does: only that is stored.
       mbd_compact = cent_appr .and. default_coeff .and. n_order > 2 .and. &
@@ -1662,7 +1667,7 @@ contains
       cap_hir = 0
       allocate (vir_site(1:3, 1:3, 1:n_sites))
       vir_site = 0.d0
-      !$omp parallel do default(firstprivate) schedule(dynamic, 1) &
+      !$omp parallel do default(firstprivate) schedule(dynamic, 1) reduction(.or.:dev_used) &
       !$omp shared(hirshfeld_v_cart_der_ji, n_neigh, neighbors_list, neighbor_species, rjs, xyz, hirshfeld_v_neigh, &
       !$omp        c6_ref, r0_ref, alpha0_ref, energies, forces0, virial, local_virial_diag0, central_pol, central_omega, &
       !$omp        hirshfeld_v_cart_der_H, vir_site, n_sites)
@@ -2230,7 +2235,7 @@ contains
                      if (in_c(j3)) q = q + 1
                      q_of(j3) = q
                      xyz_c(:, j3) = xyz(:, n_tot + j3)/Bohr
-                     if (mbd_dev .and. in_c(j3)) then
+                     if (mbd_dev_on .and. in_c(j3)) then
                         pcut_c(j3) = poly_cut(sqrt(xyz_c(1, j3)**2 + xyz_c(2, j3)**2 + xyz_c(3, j3)**2)*Bohr, x_min, x_max)
                      end if
                   end do
@@ -2282,6 +2287,14 @@ contains
 
                !n_order = 4
                !n_freq = 12
+
+!              A small cluster runs faster on the host threads than on the device.
+               mbd_dev = .false.
+               if (mbd_dev_on .and. abs(rcut_tsscs) < 1.d-10) then
+                  mbd_dev = n_mbd_pairs >= mbd_device_min_pairs
+               end if
+               mbd_blocks = mbd_compact .and. .not. mbd_dev
+               if (mbd_dev) dev_used = .true.
 
                if (abs(rcut_tsscs) < 1.d-10) then
 
@@ -6468,6 +6481,7 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 
       end do
       !$omp end parallel do
+      if (dev_used) mbd_device_used = .true.
 
       do i = 1, n_sites
          do c3 = 1, 3
