@@ -223,9 +223,72 @@ A run is MPI ranks, each with OpenMP threads. Unless `OMP_NUM_THREADS` is
 set, each rank takes the node's cores divided by the ranks on it; the banner
 prints the number.
 
-**CPU** (`bin/turbogap`): one rank per physical core and one thread. Pure MPI
-is the fastest layout -- 16 threads reach about 60% of 16 ranks. For large
-systems, decompose space so each rank holds only its own region:
+#### Domain decomposition
+
+By default (`dd_type = none`) every rank holds every atom, and rank 0
+integrates: each step the structure is broadcast and the forces are reduced
+through rank 0, which stops scaling at about two CPU nodes. Decomposed, each
+rank holds its own region of the cell and a halo `rcut_max` wide, and with
+`dd_integrate = domain` it also integrates its own atoms. Two lines in
+`input` turn it on:
+
+```
+dd_type = rcb             # none (default), legacy or rcb
+dd_integrate = domain     # rank0 (default) or domain
+```
+
+| keyword | value | what it does |
+| --- | --- | --- |
+| `dd_type` | `none` | every rank holds the whole structure; the atoms are split by index |
+| | `legacy` | one domain per rank on a grid (`dd_grid`, chosen automatically), the cuts balanced by atom count (`dd_balance`) |
+| | `rcb` | the grid replaced by recursive bisection weighted by pair count: any number of ranks, and balanced for pores, clusters and surfaces. The one to use |
+| `dd_integrate` | `rank0` | rank 0 integrates the whole structure and redistributes it every step |
+| | `domain` | each domain integrates its own atoms, which migrate at neighbour rebuilds; rank 0 gathers the structure only to write it |
+
+The answer does not depend on the decomposition beyond the last digits of
+sums. What it does not cover falls back by itself, and says so at the top of
+the output:
+
+- evaluated as `none`: MBD van der Waals (which splits its sites over every
+  rank and thread either way; see "Fastest layout"), a run without
+  `do_prediction`, a build without MPI;
+- integrated on rank 0, with the evaluation still decomposed: optimisers,
+  thermostats other than none, Berendsen and Bussi, a barostat or box
+  scaling, a variable time step, electronic stopping, MC and nested sampling,
+  MAD-IR, and the pdf, structure factor, XRD and ND observables.
+
+How each mode, the layout and the number of nodes compare, measured on Roihu
+CPU nodes (2 x EPYC 9965, 384 cores) for 308k-atom CO, in seconds per MD step
+(`docs/LEGACY_DD.md` for the scaling, the layouts with this version):
+
+| nodes | `none` | `rcb` + `domain` |
+| ---: | ---: | ---: |
+| 1 | 1.50 | 0.46 |
+| 2 | 1.10 | 0.25 |
+| 4 | 1.18 | 0.13 |
+| 6 | 1.08 | 0.10 |
+
+| ranks x threads, one node, `rcb` + `domain` | 384 x 1 | 96 x 4 | 48 x 8 | 24 x 16 |
+| --- | ---: | ---: | ---: | ---: |
+| seconds per step | 0.42 | 0.45 | 0.51 | 0.67 |
+
+#### Fastest layout
+
+**CPU** (`bin/turbogap`): `rcb` with `dd_integrate = domain`, one rank per
+physical core and one thread, 100 atoms or more per core. Threads help only
+when memory forces fewer ranks per node: 16 threads per rank run at about 65%
+of the speed of 16 ranks.
+
+**MBD** (`vdw_type = mbd`) is the exception: it runs replicated, each rank
+taking a share of the sites, and each site's work is threaded, so give the
+ranks threads. On one CPU node MBD takes 0.027 s for 2,916 atoms of P4 gas at
+24 x 16 (0.081 s at 384 x 1; 7.6 s and 0.68 s with master's MBD), and 0.43 s
+for a dense 576-atom black-phosphorus cell at 96 x 4 (62 s with master's, at
+the 96 x 1 its memory allows). On a GH200 node the dense cell's sites run on
+the GPUs, fed by the 72 host cores per GPU: 0.39 s, against 0.54 s on the
+host cores alone (`vdw_mbd_device = .false.`); sites with small clusters,
+like the P4 gas's, stay on the host cores (`vdw_mbd_device_min_pairs`).
+`docs/PERFORMANCE.md` has the rest.
 
 ```sh
 # input:  dd_type = rcb
@@ -237,9 +300,11 @@ srun --ntasks-per-node=<cores per node> --cpu-bind=cores turbogap md
 
 **GPU** (`bin-gpu/turbogap`): one rank per GPU -- several ranks sharing a card
 are slower -- bound to that GPU and to the cores next to it, with those cores
-as its threads (they prepare the next batch while the GPU runs this one). With
-more than one GPU use the same `rcb` decomposition. Batch sizes follow the
-card's memory; leave `gpu_batch_gbytes` unset.
+as its threads (they prepare the next batch while the GPU runs this one), and
+100k atoms or more per GPU. With more than one GPU use the same `rcb`
+decomposition: on four GH200 it takes a 308k-atom step from 0.35 s
+replicated to 0.27 s. Batch sizes follow the card's memory; leave
+`gpu_batch_gbytes` unset.
 
 ```sh
 # input (more than one GPU):  dd_type = rcb
@@ -251,15 +316,17 @@ srun --ntasks-per-node=<GPUs per node> --cpus-per-task=<cores per GPU> \
 ```
 
 Without `--gpu-bind=closest` every rank can land on GPU 0, silently; check
-that the `GPUdev:` lines at the top of the output show a different
-`CUDA_VISIBLE_DEVICES` for each rank.
+that each `GPUdev:` line at the top of the output says the rank sees 1
+device. A rank that sees all of the node's cards has taken the first of them.
 Under `mpirun`, give each rank its own card through a wrapper that sets
 `CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK` (ROCm:
 `HIP_VISIBLE_DEVICES`).
 
 **How many atoms per core or GPU.** Give each GPU at least 50k atoms, and
-100k or more when spreading over several; give each CPU core 100 or more. One
-GH200 does about the work of two 384-core CPU nodes. Experimental biasing
+100k or more when spreading over several; give each CPU core 100 or more. For
+308k-atom CO a 384-core CPU node now takes 0.46 s a step and one GH200 0.74 s:
+since the host build contracts the SOAP forces first, a CPU node does the
+work of about 1.6 GH200s. Experimental biasing
 costs 1.1-2 times the potential's step on CPUs for XPS and Debye XRD and 5
 times for XRD from the pdf, and 2.3-4.4 times on GPUs.
 The measurements, and what a profile of each build shows, are in

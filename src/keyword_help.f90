@@ -114,11 +114,11 @@ contains
          write (*, '(A)') '      How the atoms are split over MPI ranks. "none" gives every rank the'
          write (*, '(A)') '      whole structure and splits the atoms in index order. "legacy" cuts'
          write (*, '(A)') '      the cell into the dd_grid of spatial domains, each holding its own'
-         write (*, '(A)') '      atoms and a halo rcut_max wide; it supports SOAP, 2b, 3b and'
-         write (*, '(A)') '      core_pot only, and refuses anything else at start-up. "rcb" is'
-         write (*, '(A)') '      legacy with the grid replaced by recursive coordinate bisection'
-         write (*, '(A)') '      weighted by pair count, for any number of domains and for clusters,'
-         write (*, '(A)') '      pores and surfaces. See docs/LEGACY_DD.md.'
+         write (*, '(A)') '      atoms and a halo rcut_max wide. "rcb" is legacy with the grid'
+         write (*, '(A)') '      replaced by recursive coordinate bisection weighted by pair count,'
+         write (*, '(A)') '      for any number of domains and for clusters, pores and surfaces. A'
+         write (*, '(A)') '      run with MBD van der Waals, without do_prediction or without MPI'
+         write (*, '(A)') '      evaluates as "none" instead, and says so. See docs/LEGACY_DD.md.'
          write (*, '(A)') '      -> see dd_grid, dd_grid_affinity'
          write (*, '(A)') ''
       end if
@@ -930,6 +930,18 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
+         write (*, '(A)') '  soap_contract                        [logical, default true]'
+         write (*, '(A)') '      CPU build: compute SOAP forces and local-property gradients by'
+         write (*, '(A)') '      contracting the energy gradient with the descriptor''s expansion,'
+         write (*, '(A)') '      without forming the derivative of every descriptor component for'
+         write (*, '(A)') '      every neighbour. Faster and much smaller in memory; the result is'
+         write (*, '(A)') '      the same up to the order of the sums. .false. forms the derivatives'
+         write (*, '(A)') '      as before. Dipole models and write_derivatives always form them. The'
+         write (*, '(A)') '      GPU build always contracts.'
+         write (*, '(A)') '      -> see do_derivatives'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  soap_radial_legacy_filter            [logical, default true]'
          write (*, '(A)') '      Keep the pre-2026 seed of the SOAP radial filter recursion. That'
          write (*, '(A)') '      seed drops the surface term at rcut_hard, which leaves the radial'
@@ -1625,6 +1637,27 @@ contains
          write (*, '(A)') '      Evaluate the many-body dispersion about the central atom only,'
          write (*, '(A)') '      rather than over every atom of its environment. The cheaper'
          write (*, '(A)') '      approximation.'
+         write (*, '(A)') '      -> needs vdw_type'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  vdw_mbd_device                       [logical, default true]'
+         write (*, '(A)') '      GPU build: run MBD on the device, with the central approximation and'
+         write (*, '(A)') '      the default series coefficients: the host threads list each site''s'
+         write (*, '(A)') '      pairs and solve its SCS polarisabilities, and the device forms the'
+         write (*, '(A)') '      pairs'' values, the energy series and the 2b force terms. A site with'
+         write (*, '(A)') '      fewer pairs than vdw_mbd_device_min_pairs stays on the host. The'
+         write (*, '(A)') '      result is the host''s up to the order of the sums. .false. keeps all'
+         write (*, '(A)') '      of MBD on the host. Ignored by the CPU build.'
+         write (*, '(A)') '      -> needs vdw_type'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
+         write (*, '(A)') '  vdw_mbd_device_min_pairs             [integer, default 100000]'
+         write (*, '(A)') '      GPU build, with vdw_mbd_device: a site whose MBD cluster has fewer'
+         write (*, '(A)') '      pairs than this runs on the host threads, where small clusters are'
+         write (*, '(A)') '      faster. A dense solid has hundreds of thousands of pairs a site with'
+         write (*, '(A)') '      the default cutoffs, a molecular gas thousands.'
          write (*, '(A)') '      -> needs vdw_type'
          write (*, '(A)') ''
       end if

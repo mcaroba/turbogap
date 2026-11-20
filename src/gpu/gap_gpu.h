@@ -118,6 +118,16 @@ void gpu_3b(const int n_sparse, const int n_sites, const int n_atom_pairs, const
             const int i_end, //not sure is really needed though. need to check with nsites.
             double* energy, double* forces, double* virials, const int* kappas_array_d);
 
+
+// ---- gap_mbd.cu
+void mbd_gpu_init();
+void mbd_gpu_site(int tid, int n_atoms, int n_pairs, int n_freq, int n_order, int i0, double d, double sR, double Bohr,
+                  double rcut_mbd, double rcut_mbd2, double r_buf_ij, const int* n_neigh, const int* neigh, const int* p_mbd,
+                  const double* omegas, const double* a_mbd, const double* o_mbd, const double* r0_scs, const double* xyz0,
+                  const double* pcut, const double* a_in, const double* r0_in, const double* t_lr_sym, double* integrand,
+                  double* pol);
+void mbd_gpu_force(int tid, int c3, const double* da, const double* dO, const double* dr0, double* dot_2b, double* virial_2b,
+                   double* damped_2b, double* dt_lr_sym);
 } // extern "C"
 
 #endif // TURBOGAP_GAP_GPU_H

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# The OpenMP regions in the SOAP descriptor, its derivatives and the GAP
-# prediction (src/soap_turbo, src/gap.f90, src/local_properties.f90,
-# src/gap_interface.f90) are written so the result does not depend on the
-# thread count: every thread writes only its own sites and pairs, and the sums
-# into forces and virial stay serial and in pair order.
+# The OpenMP regions in the SOAP descriptor, its derivatives, the GAP
+# prediction and the two- and three-body terms (src/soap_turbo, src/gap.f90,
+# src/local_properties.f90, src/gap_interface.f90) are written so the result
+# does not depend on the thread count: every thread writes only its own sites,
+# pairs and triplets, and the sums into forces and virial stay serial and in
+# pair or triplet order.
 #
 # So the check is exact: a single point with forces, Hirshfeld volumes and
 # SOAP derivatives, at one thread and at several, must produce byte-identical

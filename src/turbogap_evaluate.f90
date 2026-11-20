@@ -323,7 +323,7 @@ contains
          call time_end(time%gap)
          !       Communicate all energies and forces here for all
          !       terms
-         call domain_complete_contributions(dom, comm, res, state, params, model, time)
+         call domain_complete_contributions(dom, comm, res, state, params, model, perform, time)
 
          !       Add up all the energy terms
          res%energies = res%energies + res%energies_soap + res%energies_2b +&
@@ -349,7 +349,10 @@ contains
       end if
 
       if (params%do_forces) then
-         res%forces = res%forces_soap + res%forces_2b + res%forces_3b + res%forces_core_pot + res%forces_vdw
+!        Replicated data sums the families before the reduce, in this order.
+         if (.not. res%forces_summed) then
+            res%forces = res%forces_soap + res%forces_2b + res%forces_3b + res%forces_core_pot + res%forces_vdw
+         end if
          res%virial = res%virial_soap + res%virial_2b + res%virial_3b + res%virial_core_pot + res%virial_vdw
 
 !           MAD IR bias. The dipole of this configuration joins the ensemble,
@@ -362,22 +365,20 @@ contains
 !           and a stress from it would be wrong rather than merely missing.
          call ir_after_forces(ir, params, state, res, loop, comm, dyn%md_time, time3, write_condition, time, dom)
 
-         if (model%valid_estat_charges) res%forces = res%forces + res%forces_estat
+         if (.not. res%forces_summed) then
+            if (model%valid_estat_charges) res%forces = res%forces + res%forces_estat
+            if (perform%xps_forces) res%forces = res%forces + res%forces_lp
+            if (perform%pdf_forces) res%forces = res%forces + res%forces_pdf
+            if (perform%sf_forces) res%forces = res%forces + res%forces_sf
+            if (perform%xrd_forces) res%forces = res%forces + res%forces_xrd
+            if (perform%nd_forces) res%forces = res%forces + res%forces_nd
+         end if
+
          if (model%valid_estat_charges) res%virial = res%virial + res%virial_estat
-
-         if (perform%xps_forces) res%forces = res%forces + res%forces_lp
          if (perform%xps_forces) res%virial = res%virial + res%virial_lp
-
-         if (perform%pdf_forces) res%forces = res%forces + res%forces_pdf
          if (perform%pdf_forces) res%virial = res%virial + res%virial_pdf
-
-         if (perform%sf_forces) res%forces = res%forces + res%forces_sf
          if (perform%sf_forces) res%virial = res%virial + res%virial_sf
-
-         if (perform%xrd_forces) res%forces = res%forces + res%forces_xrd
          if (perform%xrd_forces) res%virial = res%virial + res%virial_xrd
-
-         if (perform%nd_forces) res%forces = res%forces + res%forces_nd
          if (perform%nd_forces) res%virial = res%virial + res%virial_nd
 
          call write_debug_forces(comm, res, state, dom, params, model, perform, loop)

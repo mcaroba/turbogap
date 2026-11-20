@@ -33,6 +33,8 @@ module local_prop
 #ifdef _GPU
    use F_B_C
    use iso_c_binding
+#else
+   use soap_turbo_desc, only: soap_contract
 #endif
 contains
 
@@ -366,7 +368,7 @@ contains
 
    subroutine local_property_predict(soap, Qs, alphas, V0, delta, zeta, V, &
                                      do_derivatives, soap_cart_der, n_neigh, V_der, &
-                                     zero_trunc, label)
+                                     zero_trunc, label, contract)
 
       implicit none
 
@@ -388,7 +390,11 @@ contains
 !     Named only for the warning below, so that "a negative value was floored"
 !     says which property it was.
       character(len=*), intent(in), optional :: label
+!     The gradients from soap_contract, against the expansion get_soap kept,
+!     instead of against soap_cart_der, which is then not read.
+      logical, intent(in), optional :: contract
       logical :: truncate
+      logical :: use_contract
       integer :: n_floored
       real(dp), intent(out) :: V_der(:, :)
       real(dp), allocatable :: K(:, :)
@@ -411,8 +417,10 @@ contains
       n_sites = size(soap, 2)
 
       allocate (K(1:n_sites, 1:n_sparse))
+      use_contract = .false.
+      if (present(contract)) use_contract = contract
       if (do_derivatives) then
-         n_pairs = size(soap_cart_der, 3)
+         n_pairs = size(V_der, 2)
          allocate (K_der(1:n_sites, 1:n_sparse))
          allocate (Qss(1:n_sites, 1:n_soap))
          allocate (Qs_copy(1:n_soap, 1:n_sparse))
@@ -487,26 +495,37 @@ contains
             j_first(i) = j
             j = j + n_neigh(i)
          end do
-         !$omp parallel do default(none) schedule(dynamic, 16) &
-         !$omp shared(n_sites, n_neigh, j_first, truncate, V, V_der, Qss, soap_cart_der) &
-         !$omp private(i, i2, j, cart)
-         do i = 1, n_sites
-            j = j_first(i)
-            do i2 = 1, n_neigh(i)
-!              A clamped site has no gradient, because its value no longer
-!              depends on the descriptor. Without the clamp a zero is an
-!              ordinary value and its gradient is the ordinary one.
+         if (use_contract) then
+#ifndef _GPU
+            if (n_sites > 0) call soap_contract(soap, Qss, 1.d0, V_der)
+#endif
+            do i = 1, n_sites
                if (truncate .and. V(i) == 0.d0) then
-                  V_der(1:3, j) = 0.d0
-               else
-                  do cart = 1, 3
-                     V_der(cart, j) = dot_product(Qss(i, :), soap_cart_der(cart, :, j))
-                  end do
+                  V_der(1:3, j_first(i):j_first(i) + n_neigh(i) - 1) = 0.d0
                end if
-               j = j + 1
             end do
-         end do
-         !$omp end parallel do
+         else
+            !$omp parallel do default(none) schedule(dynamic, 16) &
+            !$omp shared(n_sites, n_neigh, j_first, truncate, V, V_der, Qss, soap_cart_der) &
+            !$omp private(i, i2, j, cart)
+            do i = 1, n_sites
+               j = j_first(i)
+               do i2 = 1, n_neigh(i)
+                  !              A clamped site has no gradient, because its value no longer
+                  !              depends on the descriptor. Without the clamp a zero is an
+                  !              ordinary value and its gradient is the ordinary one.
+                  if (truncate .and. V(i) == 0.d0) then
+                     V_der(1:3, j) = 0.d0
+                  else
+                     do cart = 1, 3
+                        V_der(cart, j) = dot_product(Qss(i, :), soap_cart_der(cart, :, j))
+                     end do
+                  end if
+                  j = j + 1
+               end do
+            end do
+            !$omp end parallel do
+         end if
          deallocate (j_first)
          deallocate (Qs_copy)
          deallocate (Qss)

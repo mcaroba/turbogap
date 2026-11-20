@@ -2313,10 +2313,11 @@ contains
          !> @kw dd_type
          !> How the atoms are split over MPI ranks. "none" gives every rank the whole structure and
          !> splits the atoms in index order. "legacy" cuts the cell into the dd_grid of spatial
-         !> domains, each holding its own atoms and a halo rcut_max wide; it supports SOAP, 2b, 3b
-         !> and core_pot only, and refuses anything else at start-up. "rcb" is legacy with the grid
-         !> replaced by recursive coordinate bisection weighted by pair count, for any number of
-         !> domains and for clusters, pores and surfaces. See docs/LEGACY_DD.md.
+         !> domains, each holding its own atoms and a halo rcut_max wide. "rcb" is legacy with the
+         !> grid replaced by recursive coordinate bisection weighted by pair count, for any number of
+         !> domains and for clusters, pores and surfaces. A run with MBD van der Waals, without
+         !> do_prediction or without MPI evaluates as "none" instead, and says so. See
+         !> docs/LEGACY_DD.md.
          !> @see dd_grid, dd_grid_affinity
       else if (keyword == 'dd_type') then
          backspace (unit)
@@ -2532,6 +2533,19 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%do_derivatives
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("do_derivatives", params%do_derivatives)
+         !> @kw soap_contract
+         !> CPU build: compute SOAP forces and local-property gradients by contracting the energy
+         !> gradient with the descriptor's expansion, without forming the derivative of every
+         !> descriptor component for every neighbour. Faster and much smaller in memory; the
+         !> result is the same up to the order of the sums. .false. forms the derivatives as
+         !> before. Dipole models and write_derivatives always form them. The GPU build always
+         !> contracts.
+         !> @see do_derivatives
+      else if (keyword == 'soap_contract') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%soap_contract
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("soap_contract", params%soap_contract)
          !> @kw do_derivatives_fd
          !> Compute the descriptor derivatives by finite differences instead of analytically. A
          !> correctness check on the analytic route, far slower, and not meant for production.
@@ -3866,6 +3880,29 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_cent_appr
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("vdw_mbd_cent_appr", params%vdw_mbd_cent_appr)
+         !> @kw vdw_mbd_device
+         !> GPU build: run MBD on the device, with the central approximation and the default series
+         !> coefficients: the host threads list each site's pairs and solve its SCS
+         !> polarisabilities, and the device forms the pairs' values, the energy series and the 2b
+         !> force terms. A site with fewer pairs than vdw_mbd_device_min_pairs stays on the host. The
+         !> result is the host's up to the order of the sums. .false. keeps all of MBD on the host.
+         !> Ignored by the CPU build.
+         !> @needs vdw_type
+      else if (keyword == "vdw_mbd_device") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_device
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_mbd_device", params%vdw_mbd_device)
+         !> @kw vdw_mbd_device_min_pairs
+         !> GPU build, with vdw_mbd_device: a site whose MBD cluster has fewer pairs than this runs on
+         !> the host threads, where small clusters are faster. A dense solid has hundreds of
+         !> thousands of pairs a site with the default cutoffs, a molecular gas thousands.
+         !> @needs vdw_type
+      else if (keyword == "vdw_mbd_device_min_pairs") then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%vdw_mbd_device_min_pairs
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("vdw_mbd_device_min_pairs", params%vdw_mbd_device_min_pairs)
          !> @kw vdw_mbd_grad
          !> Compute the gradient of the many-body dispersion energy. Off gives MBD energies with
          !> TS-only forces.

@@ -145,6 +145,9 @@ module turbogap_results
       real(dp), allocatable :: energies_dipole(:)
       real(dp), allocatable :: this_energies_dipole(:)
       real(dp) :: dipole(1:3)
+!     The reduce left the total in forces, so the per-family force arrays
+!     still hold this rank's partial sums and must not be added up again.
+      logical :: forces_summed = .false.
    end type results_t
 
 contains
@@ -312,6 +315,7 @@ contains
 
 !     Written out, and read by MC, even for a frame that computes no forces.
       res%virial = 0.d0
+      res%forces_summed = .false.
       if (params%do_forces) then
          if (state%n_sites /= loop%n_sites_prev .or. params%do_mc .or. .not. allocated(res%forces)) then
             if (allocated(res%forces)) deallocate (res%forces, res%forces_soap, res%forces_2b, res%forces_3b, &

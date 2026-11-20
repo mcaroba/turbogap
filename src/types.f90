@@ -333,6 +333,9 @@ module types
       logical :: do_forces = .false.
       logical :: do_derivatives = .false.
       logical :: do_derivatives_fd = .false.
+!     Host build: SOAP forces and local-property gradients contracted against
+!     the kept expansion instead of formed from the descriptor derivatives.
+      logical :: soap_contract = .true.
 !     Which of the two filter recursions the SOAP radial expansion uses.
 !     Applied to soap_turbo_radial's legacy_filter_seed in turbogap_setup; the
 !     comment at the top of soap_turbo_radial.f90 says what the two mean.
@@ -807,6 +810,8 @@ module types
       integer :: mbd_correction_freq = 100
       logical :: vdw_mbd_grad = .true.
       logical :: vdw_mbd_cent_appr = .true.
+      logical :: vdw_mbd_device = .true.
+      integer :: vdw_mbd_device_min_pairs = 100000
       logical :: vdw_polynomial = .false.
       real(dp) :: poly_cut_xmin = 3.d0
       real(dp) :: poly_cut_xmax = 10.d0

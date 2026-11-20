@@ -1289,6 +1289,58 @@ MODULE F_B_C
 !        logical(c_bool), value :: do_forces
 !      end subroutine
 
+!     MBD (gap_mbd.cu): one site's energy series, then its 2b force pass per c3,
+!     on the calling host thread's stream.
+      subroutine mbd_gpu_init() bind(C, name="mbd_gpu_init")
+      end subroutine mbd_gpu_init
+
+      subroutine mbd_gpu_site(tid, n_atoms, n_pairs, n_freq, n_order, i0, d, sR, Bohr, rcut_mbd, rcut_mbd2, &
+                              r_buf_ij, n_neigh, neigh, p_mbd, omegas, a_mbd, o_mbd, r0_scs, xyz0, pcut, a_in, &
+                              r0_in, t_lr_sym, integrand, pol) &
+         bind(C, name="mbd_gpu_site")
+         use iso_c_binding
+         integer(c_int), value :: tid
+         integer(c_int), value :: n_atoms
+         integer(c_int), value :: n_pairs
+         integer(c_int), value :: n_freq
+         integer(c_int), value :: n_order
+         integer(c_int), value :: i0
+         real(c_double), value :: d
+         real(c_double), value :: sR
+         real(c_double), value :: Bohr
+         real(c_double), value :: rcut_mbd
+         real(c_double), value :: rcut_mbd2
+         real(c_double), value :: r_buf_ij
+         integer(c_int), intent(in) :: n_neigh(*)
+         integer(c_int), intent(in) :: neigh(*)
+         integer(c_int), intent(in) :: p_mbd(*)
+         real(c_double), intent(in) :: omegas(*)
+         real(c_double), intent(in) :: a_mbd(*)
+         real(c_double), intent(in) :: o_mbd(*)
+         real(c_double), intent(in) :: r0_scs(*)
+         real(c_double), intent(in) :: xyz0(*)
+         real(c_double), intent(in) :: pcut(*)
+         real(c_double), intent(in) :: a_in(*)
+         real(c_double), intent(in) :: r0_in(*)
+         real(c_double), intent(in) :: t_lr_sym(*)
+         real(c_double), intent(inout) :: integrand(*)
+         real(c_double), intent(inout) :: pol(*)
+      end subroutine mbd_gpu_site
+
+      subroutine mbd_gpu_force(tid, c3, da, dO, dr0, dot_2b, virial_2b, damped_2b, dt_lr_sym) &
+         bind(C, name="mbd_gpu_force")
+         use iso_c_binding
+         integer(c_int), value :: tid
+         integer(c_int), value :: c3
+         real(c_double), intent(in) :: da(*)
+         real(c_double), intent(in) :: dO(*)
+         real(c_double), intent(in) :: dr0(*)
+         real(c_double), intent(inout) :: dot_2b(*)
+         real(c_double), intent(inout) :: virial_2b(*)
+         real(c_double), intent(inout) :: damped_2b(*)
+         real(c_double), intent(inout) :: dt_lr_sym(*)
+      end subroutine mbd_gpu_force
+
    END INTERFACE
 END MODULE F_B_C
 

@@ -128,7 +128,7 @@ run evaluate replicated, with a line in the output saying which and why.
 | pair distribution, structure factor, XRD, ND, Debye XRD | the whole-structure view: the structure on every rank with a replicated neighbour list, as the replicated mode does. They are global by nature, so only the potential is decomposed |
 | MC, nested sampling, i-PI | domains; the moves and the exchange run on rank 0, which keeps the whole structure. Nested sampling uses `replicate_after` |
 | `write_soap`, `write_derivatives` | domains; serial-only in every mode, as before |
-| MBD, `ts+mbd` | replicated: its clusters reach beyond `rcut_max` and need polarisabilities and volume derivatives that other domains own |
+| MBD, `ts+mbd` | replicated: each site needs the SCS polarisabilities of its whole cluster (`vdw_rcut`, 25 A in the tests) and the Hirshfeld-volume derivatives that other domains own. Replicated, MBD already splits its sites over every rank and thread, so it loses nothing to the fallback but the decomposition of the rest of the step |
 | a cell that needs a supercell, a grid too fine for the cell | replicated, from the step it is found on |
 | a build without MPI, a run without `do_prediction` | replicated |
 
@@ -367,6 +367,39 @@ changes nothing. What stays serial inside a rank: the 2b and 3b terms, the
 radial expansion, allocating and clearing soap_cart_der per batch, and the
 ordered sum of the pair forces.
 
+## Threads in 2b, 3b and the radial expansion; the replicated reduce
+
+The serial parts the section above lists are now threaded, byte-identical to
+the serial code at any thread count: the 2b and 3b terms, the radial
+expansion (soap_turbo c214efd), and the per-element work of the SOAP
+prediction. Same machine and input, `dd_type = rcb`, one node, s/step:
+
+| layout | 384x1 | 96x4 | 48x8 | 24x16 |
+| --- | ---: | ---: | ---: | ---: |
+| before | 1.437 | 1.687 | 1.985 | 2.695 |
+| after | 1.465 | 1.587 | 1.704 | 1.986 |
+| and SOAP forces contracted first | 0.421 | 0.450 | 0.505 | 0.667 |
+
+At 24x16, 2b went from 0.53 to 0.16 s a step and 3b from 0.12 to 0.01; 16
+threads now reach 74% of 16 ranks. Pure MPI is still the fastest layout (the
+384x1 difference is within run-to-run spread). What is left of the gap: the
+SOAP descriptor's own barriers and the 2b virial, which keeps its serial
+summation order and so stays partly serial.
+
+The host SOAP forces now contract the model's gradient with the expansion
+before differentiating (`soap_contract`, on by default), as the device build
+does, instead of forming every descriptor derivative: 3.4 times faster at
+384x1, 4 times at 24x16. At 24x16 the 2b term (0.17 s of 0.67) and threads
+waiting at barriers are now the gap to pure MPI. At 384x1, rank 191 spends
+38% of its time waiting in MPI, against 3% on rank 0, which spends ~8%
+formatting output: load balance and rank 0's output are the next costs.
+
+Replicated mode now sums the force families on each rank before the reduce,
+so one force array reaches rank 0 instead of one per family. 308k atoms, one
+node, 384 ranks: reduce traffic 18.0 to 9.5 GB a step, rank 0's MPI time
+0.80 to 0.46 s, the step 3.07 to 2.81 s. On four GH200 the reduce halves
+(0.061 to 0.030 s) and the step is unchanged within noise.
+
 ## `dd_type = rcb`: recursive bisection instead of the grid
 
 legacy cuts each axis once across the whole cell. That balances a slab, but
@@ -458,14 +491,17 @@ cannot grid; either for a uniform bulk or slab.
 
 ## Not yet done
 
-- MBD on the domains: a halo as wide as its cluster radius, a forward exchange
-  of the SCS polarisabilities, and the volume-derivative transfer moved onto
-  the domain map.
-- The replicated mode's per-family energy and force reduce to rank 0, now
-  most of its traffic: summing the families before the reduce would cut it by
-  their number.
-- OpenMP in the 2b and 3b terms and the radial expansion, and a persistent
-  soap_cart_der, so threads per rank catch up with ranks.
+- MBD on the domains: a forward exchange of the SCS polarisabilities to halo
+  copies (`legacy_share_sites` does this for local properties already), the
+  Hirshfeld-volume derivatives of pairs that straddle a domain boundary sent
+  to the domain that owns the far atom, and the vdW collectives moved from
+  MPI_COMM_WORLD to the domain's communicator. It would decompose the rest of
+  an MBD run's step; MBD itself is already split by site.
+- Threads in what the SOAP prediction still sums serially (the ordered
+  pair-force sum, the matmul of the energies) and in the 2b virial, so
+  threads per rank catch up with ranks.
+- rcb's balance at 384 ranks a node now that SOAP is cheaper: a rank can wait
+  over a third of the step in MPI.
 - `dd_integrate = domain` for the thermostats and features it does not cover
   yet: GLE and Langevin (whose per-atom bath state would migrate with the
   atom), the barostat (its box change moves the cuts), and the optimisers.
