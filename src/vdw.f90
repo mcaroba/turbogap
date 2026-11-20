@@ -1508,6 +1508,11 @@ contains
       real(dp) :: sum_p(1:n_freq)
       real(dp), allocatable :: blk(:, :)
       integer, allocatable :: cpair(:)
+!     The series' per-thread workspace (mbd_series_blocks).
+      real(dp), allocatable :: ser_pw(:, :)
+      real(dp), allocatable :: ser_zw(:, :)
+      real(dp), allocatable :: ser_dw(:, :)
+      logical, allocatable :: ser_in(:)
       real(dp) :: lim_sqrd
       real(dp) :: d_sqrd
       real(dp) :: r0_q
@@ -3441,7 +3446,8 @@ contains
                               res_sym(k2) = -1.d0/(k2 - 1)
                            end do
                            call mbd_series_blocks(n_mbd_neigh, p_mbd, blk, cpair, s_out, AT_sym, n_freq, n_order, res_sym, &
-                                                  include_2b, do_derivatives, integrand_sym, pol_sym)
+                                                  include_2b, do_derivatives, integrand_sym, pol_sym, &
+                                                  ser_pw, ser_zw, ser_dw, ser_in)
                         else
                            do i2 = 1, n_freq
                               if (.not. cent_appr) then
@@ -6576,9 +6582,14 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 !  A_w = D_w A_1 D_w, with D_w the atoms' factors s(w, p) (1 at w = 1) and A_1
 !  one 3 x 3 block per pair, blk(:, k) for atom p's pair k with atom p_mbd(k);
 !  an atom q paired with the central atom also has that pair's block at (q, 1).
-!  Each power is one walk over the blocks for all frequencies.
+!  Each power is one walk over the blocks for all frequencies: column
+!  m = w + n_freq*(c - 1) of an atom's three, padded to nw, a multiple of 8.
+!  x1 = AT_sym is nonzero only on the central atom's partners (inner), and
+!  only they and the central atom are read from the last power: the first
+!  power takes inner partners only, the last power inner rows only.
+!  pw, zw, dwm and inner are the caller's per-thread workspace, grown here.
    subroutine mbd_series_blocks(n_neigh, p_mbd, blk, cpair, s_out, AT_sym, n_freq, n_order, res_sym, include_2b, &
-                                do_derivatives, integrand_sym, pol_sym)
+                                do_derivatives, integrand_sym, pol_sym, pw, zw, dwm, inner)
 
       implicit none
 
@@ -6595,75 +6606,136 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
       logical, intent(in) :: do_derivatives
       real(dp), intent(inout) :: integrand_sym(:)
       real(dp), allocatable, intent(inout) :: pol_sym(:, :, :)
-      real(dp), allocatable :: pw(:, :, :)
-      real(dp), allocatable :: zw(:, :, :)
-      real(dp), allocatable :: dw(:, :)
-      real(dp), allocatable :: col(:)
-      real(dp) :: y(1:n_freq, 1:3, 1:3)
-      real(dp) :: v
+      real(dp), allocatable, intent(inout) :: pw(:, :)
+      real(dp), allocatable, intent(inout) :: zw(:, :)
+      real(dp), allocatable, intent(inout) :: dwm(:, :)
+      logical, allocatable, intent(inout) :: inner(:)
+      real(dp) :: y(1:8*((3*n_freq + 7)/8), 1:3)
+      real(dp) :: b11
+      real(dp) :: b12
+      real(dp) :: b13
+      real(dp) :: b21
+      real(dp) :: b22
+      real(dp) :: b23
+      real(dp) :: b31
+      real(dp) :: b32
+      real(dp) :: b33
+      real(dp) :: z1
+      real(dp) :: z2
+      real(dp) :: z3
       real(dp) :: coef
+      real(dp) :: dot
+      integer :: nw
       integer :: n_atoms
       integer :: n3
       integer :: p
       integer :: q
       integer :: k
       integer :: kb
+      integer :: j
+      integer :: m
       integer :: c
       integer :: c1
-      integer :: c2
       integer :: w
       integer :: k2
+      integer :: row
+      logical :: first
+      logical :: last
 
       n_atoms = size(n_neigh)
       n3 = 3*n_atoms
-      allocate (pw(1:n_freq, 1:3, 1:n3))
-      allocate (zw(1:n_freq, 1:3, 1:n3))
-      allocate (dw(1:n_freq, 1:n_atoms))
-      allocate (col(1:n3))
+      nw = size(y, 1)
+      if (allocated(pw)) then
+         if (size(pw, 1) /= nw .or. size(pw, 2) < n3) deallocate (pw, zw)
+      end if
+      if (.not. allocated(pw)) then
+         allocate (pw(1:nw, 1:n3 + n3/8))
+         allocate (zw(1:nw, 1:n3 + n3/8))
+      end if
+      if (allocated(dwm)) then
+         if (size(dwm, 1) /= nw .or. size(dwm, 2) < n_atoms) deallocate (dwm, inner)
+      end if
+      if (.not. allocated(dwm)) then
+         allocate (dwm(1:nw, 1:n_atoms + n_atoms/8))
+         allocate (inner(1:n_atoms + n_atoms/8))
+      end if
+
       do p = 1, n_atoms
-         dw(1, p) = 1.d0
-         dw(2:n_freq, p) = s_out(2:n_freq, p)
-      end do
-      do w = 1, n_freq
+         inner(p) = cpair(p) > 0
+         dwm(:, p) = 0.d0
          do c = 1, 3
-            pw(w, c, :) = AT_sym(:, c, w)
+            dwm(1 + n_freq*(c - 1), p) = 1.d0
+            dwm(2 + n_freq*(c - 1):n_freq*c, p) = s_out(2:n_freq, p)
+         end do
+      end do
+      do row = 1, n3
+         pw(:, row) = 0.d0
+         do c = 1, 3
+            pw(1 + n_freq*(c - 1):n_freq*c, row) = AT_sym(row, c, 1:n_freq)
          end do
       end do
 
       do k2 = 3, n_order
+         first = k2 == 3
+         last = k2 == n_order
          do p = 1, n_atoms
-            do c2 = 1, 3
-               do c = 1, 3
-                  zw(:, c, 3*(p - 1) + c2) = dw(:, p)*pw(:, c, 3*(p - 1) + c2)
-               end do
+            do c = 1, 3
+               zw(:, 3*(p - 1) + c) = dwm(:, p)*pw(:, 3*(p - 1) + c)
             end do
          end do
          kb = 0
          do p = 1, n_atoms
+            if (last .and. .not. (p == 1 .or. inner(p))) then
+               kb = kb + n_neigh(p)
+               cycle
+            end if
             y = 0.d0
             do k = kb + 2, kb + n_neigh(p)
                q = p_mbd(k)
                if (q == -1) cycle
-               do c2 = 1, 3
-                  do c1 = 1, 3
-                     v = blk(3*(c1 - 1) + c2, k)
-                     y(:, :, c1) = y(:, :, c1) + v*zw(:, :, 3*(q - 1) + c2)
-                  end do
+               if (first .and. .not. inner(q)) cycle
+               j = 3*(q - 1)
+               b11 = blk(1, k)
+               b12 = blk(2, k)
+               b13 = blk(3, k)
+               b21 = blk(4, k)
+               b22 = blk(5, k)
+               b23 = blk(6, k)
+               b31 = blk(7, k)
+               b32 = blk(8, k)
+               b33 = blk(9, k)
+               do m = 1, nw
+                  z1 = zw(m, j + 1)
+                  z2 = zw(m, j + 2)
+                  z3 = zw(m, j + 3)
+                  y(m, 1) = y(m, 1) + b11*z1 + b12*z2 + b13*z3
+                  y(m, 2) = y(m, 2) + b21*z1 + b22*z2 + b23*z3
+                  y(m, 3) = y(m, 3) + b31*z1 + b32*z2 + b33*z3
                end do
             end do
-            if (cpair(p) > 0) then
+!           x1 is zero on the central atom.
+            if (cpair(p) > 0 .and. .not. first) then
                k = cpair(p)
-               do c2 = 1, 3
-                  do c1 = 1, 3
-                     v = blk(3*(c1 - 1) + c2, k)
-                     y(:, :, c1) = y(:, :, c1) + v*zw(:, :, c2)
-                  end do
+               b11 = blk(1, k)
+               b12 = blk(2, k)
+               b13 = blk(3, k)
+               b21 = blk(4, k)
+               b22 = blk(5, k)
+               b23 = blk(6, k)
+               b31 = blk(7, k)
+               b32 = blk(8, k)
+               b33 = blk(9, k)
+               do m = 1, nw
+                  z1 = zw(m, 1)
+                  z2 = zw(m, 2)
+                  z3 = zw(m, 3)
+                  y(m, 1) = y(m, 1) + b11*z1 + b12*z2 + b13*z3
+                  y(m, 2) = y(m, 2) + b21*z1 + b22*z2 + b23*z3
+                  y(m, 3) = y(m, 3) + b31*z1 + b32*z2 + b33*z3
                end do
             end if
             do c1 = 1, 3
-               do c = 1, 3
-                  pw(:, c, 3*(p - 1) + c1) = dw(:, p)*y(:, c, c1)
-               end do
+               pw(:, 3*(p - 1) + c1) = dwm(:, p)*y(:, c1)
             end do
             kb = kb + n_neigh(p)
          end do
@@ -6671,12 +6743,19 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
          do w = 1, n_freq
             if (k2 > 3) then
                do c1 = 1, 3
-                  integrand_sym(w) = integrand_sym(w) + res_sym(k2)*pw(w, c1, c1)
+                  integrand_sym(w) = integrand_sym(w) + res_sym(k2)*pw(w + n_freq*(c1 - 1), c1)
                end do
             end if
             if (do_derivatives) then
                do c1 = 1, 3
-                  pol_sym(:, c1, w) = pol_sym(:, c1, w) - coef*pw(w, c1, :)
+                  m = w + n_freq*(c1 - 1)
+                  do p = 1, n_atoms
+                     if (last .and. .not. (p == 1 .or. inner(p))) cycle
+                     do c = 1, 3
+                        row = 3*(p - 1) + c
+                        pol_sym(row, c1, w) = pol_sym(row, c1, w) - coef*pw(m, row)
+                     end do
+                  end do
                end do
             end if
          end do
@@ -6684,8 +6763,16 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
 
       do w = 1, n_freq
          do c1 = 1, 3
-            col(:) = pw(w, c1, :)
-            integrand_sym(w) = integrand_sym(w) + res_sym(n_order + 1)*dot_product(AT_sym(:, c1, w), col)
+            m = w + n_freq*(c1 - 1)
+            dot = 0.d0
+            do p = 1, n_atoms
+               if (.not. (p == 1 .or. inner(p))) cycle
+               do c = 1, 3
+                  row = 3*(p - 1) + c
+                  dot = dot + AT_sym(row, c1, w)*pw(m, row)
+               end do
+            end do
+            integrand_sym(w) = integrand_sym(w) + res_sym(n_order + 1)*dot
          end do
          if (include_2b) then
             do c1 = 1, 3
@@ -6693,7 +6780,6 @@ sqrt(a_mbd(k3 + 1)/(1.d0 + (omegas_mbd(j)/o_mbd(k3 + 1))**2)) + &               
             end do
          end if
       end do
-      deallocate (pw, zw, dw, col)
 
    end subroutine mbd_series_blocks
 
