@@ -179,8 +179,7 @@ you can `make clean; make` or `make deepclean; make`.
 
 ## Running TurboGAP
 
-TurboGAP reads `input` from the directory it runs in, and the files `input`
-names:
+TurboGAP reads the input file `input` from the directory it runs in, and it can run in several modes:
 
 ```sh
 turbogap predict    # single points: energy, forces, stress, observables
@@ -321,7 +320,7 @@ OMP_NUM_THREADS=<cores per GPU> mpirun -np <GPUs> ./one_gpu.sh turbogap md
 
 `vdw_type = mbd` makes the whole run replicated, whatever `dd_type` says. Each
 rank takes a share of the sites, one per atom, and each site is one iteration
-of a threaded loop, so here threads pay. A site costs according to the atoms
+of a threaded loop, so here threads help. A site costs according to the atoms
 within `vdw_rcut` (25 A) of it, so dense and dilute systems differ about a
 hundredfold. vdW time of one single point:
 
