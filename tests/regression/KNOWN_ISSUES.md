@@ -725,8 +725,8 @@ round-off, not how wrong it is:
 
 A relaxation follows a path, and two paths that start 1e-12 apart separate.
 
-**It is not the batch decomposition**, which is the explanation this file and
-`docs/BUILD_AND_TEST.md` have been carrying. Running `co_predict` against the
+**It is not the batch decomposition**, which is the explanation this file used
+to give. Running `co_predict` against the
 baseline binary at `max_Gbytes_per_process = 1.0` and at `64.0` -- many batches
 and one -- gives the *same* worst deviation, 2.5e-7, to every digit. Regrouping
 the partial sums does not produce this and does not remove it.

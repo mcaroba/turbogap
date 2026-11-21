@@ -26,7 +26,7 @@
 ! HND X
 ! HND XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
-!  The legacy spatial decomposition (dd_type = legacy); docs/LEGACY_DD.md.
+!  The legacy spatial decomposition (dd_type = legacy).
 !
 !  The cell is cut into grid(1) x grid(2) x grid(3) slabs of fractional
 !  coordinate, at cuts placed so that each slab holds the same number of atoms

@@ -81,7 +81,7 @@ mkdir -p "$WORK"
 [ "$KEEP" = 1 ] || trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
 
-# ---- stage the case, mirroring tests/gpu/run_regression.sh -----------------
+# ---- stage the case -------------------------------------------------------
 case "$CASE" in
   vdw_ts)
     d=$DATA_ROOT/vdw_P

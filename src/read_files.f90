@@ -2316,8 +2316,7 @@ contains
          !> domains, each holding its own atoms and a halo rcut_max wide. "rcb" is legacy with the
          !> grid replaced by recursive coordinate bisection weighted by pair count, for any number of
          !> domains and for clusters, pores and surfaces. A run with MBD van der Waals, without
-         !> do_prediction or without MPI evaluates as "none" instead, and says so. See
-         !> docs/LEGACY_DD.md.
+         !> do_prediction or without MPI evaluates as "none" instead, and says so.
          !> @see dd_grid, dd_grid_affinity
       else if (keyword == 'dd_type') then
          backspace (unit)

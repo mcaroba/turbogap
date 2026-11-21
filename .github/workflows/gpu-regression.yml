@@ -6,10 +6,9 @@
 #
 #   ./config.sh --url https://github.com/<owner>/turbogap --labels gpu,cuda
 #
-# and set the repository variable TURBOGAP_TEST_DATA to the directory holding
-# atoms_7176.xyz and gap_files. Until such a runner exists the job simply
-# stays queued/skipped; the "checks" job below still runs everywhere and
-# catches the cheap mistakes.
+# and set the repository variable TURBOGAP_TEST_DATA to a checkout of
+# turbogap_tests. Until such a runner exists the job simply
+# stays queued/skipped.
 
 name: gpu-regression
 
@@ -20,22 +19,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  checks:
-    name: static checks
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Shell syntax
-        run: bash -n tests/gpu/run_regression.sh
-
-      - name: Python syntax
-        run: |
-          python3 -m py_compile tools/compare_xyz.py tools/add_velocities_to_xyz.py
-
-      - name: Comparison tool self-test
-        run: python3 tests/gpu/test_compare_xyz.py
-
   gpu-regression:
     name: GPU regression vs CPU reference
     runs-on: [self-hosted, gpu]
@@ -65,14 +48,6 @@ jobs:
         env:
           TURBOGAP_DATA_ROOT: ${{ vars.TURBOGAP_TEST_DATA }}
         run: tests/regression/run.sh --gpu
-
-      # The older four-case device suite, which compares whole trajectories
-      # rather than the regression decks.
-      - name: Device trajectory suite
-        env:
-          TURBOGAP_TEST_DATA: ${{ vars.TURBOGAP_TEST_DATA }}
-          TURBOGAP_REF_BIN: ${{ vars.TURBOGAP_REF_BIN }}
-        run: tests/gpu/run_regression.sh
 
       - name: Upload logs on failure
         if: failure()

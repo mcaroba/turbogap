@@ -70,7 +70,7 @@ endif
 #
 # DEBUG=1 is the wrong thing to profile and the mistake is easy to make, so it
 # is refused rather than warned about: -G disables essentially all device
-# optimisation, and docs/BUILD_AND_TEST.md measures that at a 2.1x slowdown.
+# optimisation, a 2.1x slowdown.
 # Numbers from such a build do not rank the kernels in the order the real build
 # ranks them, which is the only thing a profile is for.
 PROFILE ?= 0

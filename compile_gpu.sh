@@ -12,7 +12,7 @@ set -euo pipefail
 ARCH=${TURBOGAP_ARCH:-Aalto_gfortran_openblas_hip_cuda}
 JOBS=${JOBS:-8}
 # DEBUG=1 is -G and about 2.1x slower. Never profile or time a DEBUG=1
-# build; see docs/PROFILING.md.
+# build.
 DEBUG=${DEBUG:-0}
 # Its own object tree, so the host build is not overwritten.
 TAG=${BUILD_TAG_EXTRA:--gpu}

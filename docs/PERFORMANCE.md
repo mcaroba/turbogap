@@ -2,8 +2,8 @@
 
 How fast TurboGAP runs, how many atoms to give each CPU core or GPU, what
 experimental biasing (MAD) costs on top of the potential, and what a profile
-of each build shows. For how to profile, see `docs/PROFILING.md`; for how to
-launch a run, the README's "Running in parallel".
+of each build shows. For how to launch a run, see the README's "Running
+TurboGAP".
 
 ## What was measured, and on what
 
@@ -255,7 +255,7 @@ What made the difference, in order of effect:
 split by site, and its communication -- the SCS polarisabilities of every
 atom (a reduce and a broadcast) and the Hirshfeld-volume derivatives (an
 all-to-all) -- is a handful of collectives a step. What a decomposition would
-buy is the rest of the step on domains (`docs/LEGACY_DD.md`, "Not yet done").
+buy is the rest of the step on domains.
 
 **GPU.** In the GPU build the host threads list each site's pairs and solve
 its SCS polarisabilities; the device forms every pair's values, as one 3 x 3

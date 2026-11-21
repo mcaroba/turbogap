@@ -134,7 +134,7 @@ contains
 !        ... but not more than gpu_batch_gbytes. The ceiling above is about what
 !        fits; this is about what is fast. Negative means auto, an eighth of the
 !        budget: fastest on both an RTX A2000 (0.5 of ~4.5 GB) and a GH200 (8 of
-!        75 GB) -- see docs/PROFILING.md.
+!        75 GB).
          if (.not. params%max_Gbytes_set) then
             params%max_Gbytes_per_process = budget_gb
             if (params%gpu_batch_gbytes < 0.d0) then

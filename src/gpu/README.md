@@ -97,9 +97,9 @@ backtrace, the `gpu_exp.cu` copy did not. `gpu_common.h` keeps the backtrace
 version, because behind a thin C shim the wrapper's own file and line name the
 shim, and only the backtrace lets `addr2line` name the Fortran call site.
 
-**The headers are generated from the definitions**, by `tools/split_gpu.py`,
-not typed. Their only job is to fail the build when a signature drifts, which a
-hand-written copy would not reliably do.
+**The headers were generated from the definitions** when the sources were
+split, not typed. Their only job is to fail the build when a signature drifts,
+which a hand-written copy would not reliably do.
 
 Dropped in the move, both dead: a file-scope `int counter = 0` that no
 uncommented line read, and a commented-out `atomicDoubleAdd` superseded by the

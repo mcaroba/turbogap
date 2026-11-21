@@ -118,7 +118,7 @@ contains
          write (*, '(A)') '      replaced by recursive coordinate bisection weighted by pair count,'
          write (*, '(A)') '      for any number of domains and for clusters, pores and surfaces. A'
          write (*, '(A)') '      run with MBD van der Waals, without do_prediction or without MPI'
-         write (*, '(A)') '      evaluates as "none" instead, and says so. See docs/LEGACY_DD.md.'
+         write (*, '(A)') '      evaluates as "none" instead, and says so.'
          write (*, '(A)') '      -> see dd_grid, dd_grid_affinity'
          write (*, '(A)') ''
       end if

@@ -232,7 +232,7 @@ contains
    end subroutine domain_configure
 
 !  The first feature of the run that the domains do not compute yet, or blank.
-!  Such a run evaluates replicated instead; docs/LEGACY_DD.md lists them.
+!  Such a run evaluates replicated instead.
    function legacy_unsupported(params) result(why)
       type(input_parameters), intent(in) :: params
       character(len=64) :: why
