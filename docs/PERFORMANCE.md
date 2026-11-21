@@ -143,156 +143,63 @@ rank 0 waits little but spends ~8% formatting output.
 
 ## MBD van der Waals
 
-MBD runs replicated under every `dd_type`: each rank takes a share of the
-sites, and each site -- its SCS polarisabilities, then the MBD energy and
-forces of its cluster -- is one iteration of a threaded loop. Measured with
-the `vdw_mbd_cell_mpi2` settings (`vdw_rcut` 25 A, MBD cutoffs 15/10 A, 13
-frequencies, order 6), vdW time of one single point.
+**No domain decomposition.** MBD runs replicated under every `dd_type`, and so
+does the rest of any step that includes it. Each rank takes a share of the
+sites, and each site -- its SCS polarisabilities, then the MBD energy and forces
+of its cluster -- is one iteration of a threaded loop. Decomposing MBD itself
+would not make it faster: it is already split by site and exchanges only a
+handful of collectives a step. A decomposition would put the GAP part of the
+step on domains; that is not done yet.
 
+Measured with the `vdw_mbd_cell_mpi2` settings (`vdw_rcut` 25 A, MBD cutoffs
+15/10 A, 13 frequencies, order 6): vdW time of one single point at `42f2141`.
 A site's cost is set by the atoms within 25 A of it, its cluster, not by the
-size of the cell, so the table keeps two kinds of system apart:
+size of the cell:
 
-- **dilute**: `p4_cell.xyz` is one cluster of 27 P4 molecules (108 atoms) in
-  a 64.5 A box, and the 2,916-atom system is 27 copies of it in a 193 A box,
-  too far apart to see each other. Every site's cluster is its own 108 atoms,
-  with on average 57 of them within 10 A.
-- **dense**: black phosphorus, 0.053 atoms/A^3. Every site's cluster holds
-  3,457 atoms, periodic images included, each with about 210 others within
-  10 A: 580k pairs a site, roughly a hundred times a dilute site's.
+- **dilute**: 27 P4 molecules (108 atoms) in a 64.5 A box, and 27 copies of
+  that, 2,916 atoms in a 193 A box, too far apart to see each other. Each
+  site's cluster is its own 108 atoms.
+- **dense**: black phosphorus, 0.053 atoms/A^3. Each site's cluster holds
+  3,457 atoms, periodic images included: 580k pairs, about a hundred times a
+  dilute site's.
 
-| system | atoms in a site's cluster | where | master | now | speed-up |
-| --- | ---: | --- | ---: | ---: | ---: |
-| dilute: one P4 cluster, 108 atoms | 108 | alt, 1 rank x 1 / 4 / 12 threads | 6.1 s | 0.17 / 0.045 / 0.024 s | 37 / 136 / 254 |
-| dilute: 27 P4 clusters, 2,916 atoms | 108 | one CPU node, 384 x 1 | 0.68 s | 0.081 s | 8.4 |
-| | | one CPU node, 24 x 16 | 7.6 s | 0.027 s | 280 |
-| | | one GH200 node, 4 x 72 | 67 s | 0.17 s | 400 |
-| dense: black phosphorus, 16 atoms | 3,457 | alt, 1 rank x 4 threads (master: 1) | 217 s | 0.41 s | 540 |
-| dense: black phosphorus, 576 atoms | 3,457 | one CPU node, 96 x 4 (master: 96 x 1, the most ranks its memory allows) | 62 s | 0.47 s | 130 |
-| | | one CPU node, 384 x 1 | out of memory | 0.55 s | |
-| | | one GH200 node, 4 x 72, MBD on the GPUs | -- | 0.39 s | |
-| | | one GH200 node, 4 x 72, MBD on the host cores | -- | 0.54 s | |
-| dense: black phosphorus, 144 atoms | 3,457 | one GH200, 1 x 72, MBD on the GPU | -- | 0.32 s | |
+| system | atoms in a site's cluster | where, ranks x threads | vdW time |
+| --- | ---: | --- | ---: |
+| dilute, 108 atoms | 108 | alt, 1 x 1 / 1 x 4 / 1 x 12 | 0.17 / 0.045 / 0.024 s |
+| dilute, 2,916 atoms | 108 | one CPU node, 384 x 1 / 24 x 16 | 0.081 / 0.027 s |
+| | | one GH200 node, 4 x 72 | 0.14 s |
+| dense, 16 atoms | 3,457 | alt, 1 x 4 | 0.41 s |
+| dense, 576 atoms | 3,457 | one CPU node, 384 x 1 / 96 x 4 / 24 x 16 | 0.57 / 0.43 / 0.48 s |
+| | | one GH200 node, 4 x 72: on the GPUs / on the host cores | 0.39 / 0.54 s |
+| dense, 144 atoms | 3,457 | one GH200, 1 x 72: on the GPU / on the host cores | 0.32 / 0.48 s |
 
-Master's MBD is not threaded, and on the dense cell each of its ranks peaks
-at 5.5 GB (several 3N x 3N matrices, 0.86 GB each for a cluster of 3,500
-atoms): at 384 x 1 it ran a CPU node out of memory, so its row is 96 ranks of
-one thread with four cores each, the most that fit, run in the same job as
-the current code's two dense rows (on other nodes the 96 x 4 run took 0.43
-s). Master's dense cells were not run on a GH200 node; its dilute run took 67 s
-there.
+On CPUs use threads: 4 per rank for dense systems, 16 for dilute ones. Each
+thread holds about 100 MB on a dense system. On GPUs (`vdw_mbd_device`, on by
+default) the host threads list each site's pairs and solve its SCS
+polarisabilities, and the device does the rest; a site with fewer than
+`vdw_mbd_device_min_pairs` pairs (100,000) stays on the host threads, which
+are faster for small clusters, so dilute systems run on the host cores either
+way.
 
-Through `f28397a` the CPU build's output was master's byte for byte.
-`62ea743`, `950b66a` and `0548fb4` sum the host's default path in their own
-order (below): the printed outputs of the MBD regression cases and of five of
-the seven vdW golden cases, at 1, 2, 4 and 12 threads and on 4 and 6 ranks,
-are still master's; the two MD goldens, `vdw_tsmbd_md` and
-`vdw_tsmbd_md_mpi2`, move by up to 2e-11 in the per-atom MBD scaling after
-four steps (their first frame is master's). Every commit since prints what
-`0548fb4` printed, byte for byte, on alt and on a Roihu CPU node. Against
-master, both CPU-node cells' forces differ by at most 1e-8 eV/A, the last
-printed digit, and their vdW energies print the same. MBD on the device and
-on the host threads print the same digits on every cell above.
+What made it fast:
 
-In the dense cells the sites are what costs. One CPU node does the 576 sites
-of the dense cell in 0.43 s at 96 x 4 (0.57 s at 384 x 1, 0.48 s at 24 x 16;
-5.2, 6.7 and 5.9 s before `9963898`, 0.83, 0.85 and 0.87 s at `b514ca9`). On a
-loaded node a thread spends about 0.22 s on a site: 0.09 s in the energy
-series, 0.09 s building the cluster's pair blocks, 0.02 s counting the pairs,
-0.01 s setting up and 0.02 s in the force passes; one idle alt core takes
-0.074 s (0.25 s at `b514ca9`).
-
-At 96 x 4 that cell gives each thread 1.5 sites, so most sites are their
-thread's first and fault its per-thread buffers in (about 100 MB in dense
-black phosphorus). A 2,304-atom cell of the same density, 6 sites a thread,
-measured at `d0ad564`: setting up 0.031 -> 0.008 s a site and the build
-0.091 -> 0.065 s. The buffers live for one call, so every MD step pays this
-again; keeping them across calls is not done yet.
-
-What made the difference, in order of effect:
-
-- `cpu_time` was called for every pair to feed timing prints that are
-  switched off, and that clock is a system call summing over every thread of
-  the process, so threads serialised on it.
-- The sites run in threads, SCS included.
-- Only the first frequency's dipole matrix is kept: every frequency's matrix
-  is A_w = D_w A_1 D_w with per-atom factors, so the series multiplies A_1
-  with all 13 frequencies' columns at once, with 13 times less memory
-  traffic (the dense cell on a CPU node at 384 x 1, 6.7 -> 2.7 s).
-- The energy series applies each pair's 3 x 3 block to an atom's three
-  columns in one pass over the 13 frequencies' columns, packed 40 wide (39
-  padded to a multiple of 8), instead of nine 39-long updates. The first
-  power takes only the central atom's partners, where the first column is
-  nonzero, and the last power only their rows, the only rows the integrand
-  and the forces read: about a third fewer block products. Loaded node:
-  0.24 -> 0.09 s a site (`496dd81`).
-- The force passes' 2b terms are formed per pair from two sums over its nine
-  elements, and only for the pairs that move with the atom whose force is
-  computed: pairs with an atom within `vdw_loc_rcut`, whose SCS
-  polarisability moves, or with that atom itself. The other ~99% of a dense
-  cluster's pairs add exactly nothing. One core: 0.38 -> 0.012 s a site.
-- Per-pair arrays are kept per thread instead of allocated, cleared and
-  freed for every site. glibc returned their pages after each site and the
-  next one faulted them in again, and on a loaded node the clearing alone
-  took a fifth of a site.
-- The matrix is kept as one 3 x 3 block per pair, so a block reads its
-  column atom's rows once for three output rows.
-- What depends on one atom (its polarisability, its frequency factors, its
-  damping radius) is formed once per atom, not once per pair, and the
-  never-read 3N x 3N arrays are gone (`b9ecedb`).
-- The cluster's pairs are found by one scan of each pair, not two scans of
-  every atom against every other, and the build walks per-row partner
-  lists; a pair with neither atom near the central one has its block formed
-  once for both directions (`edea662`). One core: 0.069 -> 0.025 s a site
-  counting and building.
-- G_sym, which the force passes dot with the series' result, is nonzero only
-  on the central atom's partners (a fifth of the cluster) and is now formed
-  there only; AT_sym and pol_sym live in per-thread buffers (`d0ad564`), and
-  seven per-pair arrays that only ever held 1 or 0 are constants
-  (`42f2141`). Loaded node: force passes 0.026 -> 0.016 s and setting up
-  0.031 -> 0.011 s a site.
-
-**Domains.** Decomposing MBD itself would not make it faster: it is already
-split by site, and its communication -- the SCS polarisabilities of every
-atom (a reduce and a broadcast) and the Hirshfeld-volume derivatives (an
-all-to-all) -- is a handful of collectives a step. What a decomposition would
-buy is the rest of the step on domains.
-
-**GPU.** In the GPU build the host threads list each site's pairs and solve
-its SCS polarisabilities; the device forms every pair's values, as one 3 x 3
-block per pair, runs the energy series over the blocks and forms the 2b force
-terms, each host thread on a stream and a device allocation of its own
-(`vdw_mbd_device`, on by default). A site with fewer than
-`vdw_mbd_device_min_pairs` pairs (default 100,000) stays on the host threads,
-which are faster for small clusters: the dilute P4 clusters have a few
-thousand pairs a site and ran slower on a GH200 node's GPUs than on its host
-threads (0.19 against 0.13 s). vdW time of one single point on GH200s, one
-rank per GPU with 72 threads:
-
-| system | atoms in a site's cluster | GH200s | MBD on the host threads | on the device | at `b514ca9`: host / device |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| dense: black phosphorus, 144 atoms | 3,457 | 1 | 0.48 s | 0.32 s | 0.86 / 0.36 s |
-| dense: black phosphorus, 576 atoms | 3,457 | 4 | 0.54 s | 0.39 s | 0.88 / 0.53 s |
-| dilute: 27 P4 clusters, 2,916 atoms | 108 | 4 | 0.14 s | 0.17 s | 0.20 / 0.18 s |
-
-The host and device columns (`42f2141`) ran in one job and the `b514ca9`
-column in another (the same code at `9a871ab`); run in one job, the
-dense 576-atom cell on four GH200s went from 0.87 to 0.54 s on the host
-threads and from 0.50 to 0.40 s on the device. The dilute clusters have far
-fewer pairs a site than `vdw_mbd_device_min_pairs`, so with the device on
-their sites still run on the host threads: the device column there differs
-from the host column only by run-to-run noise.
-
-For dense systems a GH200 node with MBD on the device now runs about as fast
-as a CPU node (0.39 s against 0.43 s), and its host cores alone are not far
-behind (0.54 s). The host's share of a device site -- counting and listing
-its pairs, setting up -- went from 0.055 to 0.016 s, and the device, fed by
-72 threads per GPU, is what limits it now: the series and force phases,
-mostly device work, take 0.042 s a site with the old host code and 0.058 s
-with the new, as more threads queue on it. Splitting the sites between the
-device and the host threads would use both; that is not done yet. Of the
-device's work, the series' four products take 0.36 ms each per dense site
-on a GH200. Between jobs the same binary's GH200 times vary by up to a
-third, so compare builds within one job.
+- **Threads**: the sites, SCS included, are a threaded loop, with nothing in
+  it that serialises the threads.
+- **One dipole matrix**: every frequency's matrix is the first one scaled per
+  atom, so the series multiplies the first with all 13 frequencies' columns
+  at once.
+- **3 x 3 blocks**: the matrix is one block per pair, applied to all 13
+  frequencies' columns in one pass, skipping the rows and columns the result
+  never reads.
+- **Sparse forces**: the 2b force terms are formed only for the pairs that
+  move with the atom whose force is computed, about 1% of a dense cluster's.
+- **Memory**: per-pair arrays live in per-thread buffers instead of being
+  allocated and cleared for every site; per-atom quantities are formed once
+  per atom; the unread 3N x 3N arrays are gone.
+- **Pair search**: a cluster's pairs are found in one scan, and a pair away
+  from the central atom is formed once for both directions.
+- **GPU**: the pair blocks, the series and the 2b force terms run on the
+  device, each host thread on a stream of its own.
 
 ## The checks behind these numbers
 
@@ -308,7 +215,7 @@ What the measured code was tested with, and where:
 | XPS and Debye on 3 ranks under `dd_type` none, rcb and legacy | forces and energies against the binary before `b156426`: identical | alt |
 | `tests/pdf_virial`, `tests/xrd_lp_pdf` (gradient) | pdf, structure factor and XRD forces and virial against finite differences, with the device build | alt: RTX 5070 |
 | `tests/mbd_gpu` | MBD on the device against MBD on the host threads of the same GPU build, on the dilute P4 cell (every site sent to the device) and a dense black-phosphorus cell, to the printed precision | alt: RTX 5070 |
-| MBD regression and golden cases, P4 cell at 1-12 threads and 4 and 6 ranks | the CPU build against master: printed outputs identical but for the two MD goldens (above); each commit from `496dd81` against `b514ca9`: identical | alt |
+| MBD regression and golden cases, P4 cell at 1-12 threads and 4 and 6 ranks | printed outputs against the MBD before these changes: identical, but for the per-atom MBD scaling of the two MD goldens, `vdw_tsmbd_md` and `vdw_tsmbd_md_mpi2`, which moves by up to 2e-11 after four steps; each commit from `496dd81` against `b514ca9`: identical | alt |
 | two dense black-phosphorus cells | each MBD commit against the one before it: printed outputs identical, CPU and device | alt |
 | 576-atom black phosphorus at 384 x 1, 96 x 4, 24 x 16 | `42f2141` against `0548fb4`, in one job: identical | Roihu CPU node |
 | `tests/regression --gpu`, the vdW cases | vdw_mbd and vdw_mbd_cell_mpi2 pass; the seven others fail with MBD on the device and on the host alike | alt: RTX 5070 |
