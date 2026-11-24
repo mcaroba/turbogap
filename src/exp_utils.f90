@@ -49,6 +49,27 @@ module exp_utils
    real(dp), save :: exp_dissimilarity = 0.d0
    real(dp), save :: exp_dissim_ref = 0.d0
 
+!  Gaussian pdf kernels are evaluated within PDF_KDE_CUT sigma of each pair;
+!  past that they are below 3e-18 of their peak.
+   real(dp), parameter :: PDF_KDE_CUT = 9.d0
+
+!  What a force routine needs to rebuild one pair's d g / d r row on the fly,
+!  rather than read it from an n_samples x n_pairs array: the pdf's r grid and
+!  kernel as get_pair_distribution builds them (make_pdf_kernel), and, when
+!  has_scale is set, the partial's normalisation v_uc / n_a / n_b / f.
+   type pdf_kernel_t
+      integer :: n_samples = 0
+      real(dp) :: r_min = 0.d0
+      real(dp) :: r_max = 0.d0
+      real(dp) :: dr = 0.d0
+      real(dp) :: sigma = 0.d0
+      real(dp) :: norm = 0.d0
+      real(dp), allocatable :: x(:)
+      real(dp), allocatable :: dv(:)
+      logical :: has_scale = .false.
+      real(dp) :: scale(1:4) = 1.d0
+   end type pdf_kernel_t
+
 contains
 
    ! subroutine get_single_partial_structure_factor_derivative(sinc_factor_matrix,&
@@ -505,7 +526,7 @@ contains
    subroutine get_structure_factor_forces(n_sites0, energy_scale, x, y_exp, forces0, virial,  &
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
-        & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
+        & species_2, kern, partial_rdf, kde_sigma,&
         & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank, lp)
       implicit none
       real(dp), intent(in) :: rjs(:)
@@ -557,7 +578,10 @@ contains
       real(dp), intent(in) :: x_structure_factor(:)
       real(dp), intent(in) :: structure_factor(:)
       real(dp), intent(in) :: n_atoms_of_species(:)
-      real(dp), intent(in) :: pair_distribution_der(:, :)
+!     The pdf kernel, from which each pair's d g / d r row is rebuilt.
+      type(pdf_kernel_t), intent(in) :: kern
+      real(dp), allocatable :: kde_row(:)
+      real(dp), allocatable :: column(:)
       real(dp), intent(inout) :: forces0(:, :)
       real(dp), intent(inout) :: virial(1:3, 1:3)
       character*32, intent(in) :: output
@@ -698,6 +722,8 @@ contains
 
       ! Not reinitalizing the forces as these will be added to for each partial
       !    forces0 = 0.d0
+      allocate (kde_row(1:kern%n_samples))
+      allocate (column(1:kern%n_samples))
       k = 0
       do i = 1, n_sites
          ! k is the index which keeps a number of the atom pairs
@@ -726,9 +752,10 @@ contains
             if (r < 1e-3 .or. r > r_cut) cycle
             if (r < r_min) cycle
             if (r > r_max + kde_sigma*6.d0) cycle
+            call pair_der_column(kern, r, kde_row, column)
 
             if ((.not. all(xyz(1:3, k) == 0.d0)) .and. &
-                 & (.not. all(pair_distribution_der(1:n_samples, k) == 0.d0))) then
+                 & (.not. all(column(1:n_samples) == 0.d0))) then
 
                ! Actual derivative of the pair distribution function given here, no normalisation needed I think
 
@@ -738,7 +765,7 @@ contains
 
                structure_factor_der = 0.d0
                call dgemv("N", n_samples_sf, n_samples, -2.d0*xyz(1, k)*c_factor, sinc_factor_matrix, n_samples_sf,&
-                    &  pair_distribution_der(1:n_samples, k), 1, 0.d0,&
+                    &  column(1:n_samples), 1, 0.d0,&
                     & structure_factor_der, 1)
 
                if (do_xrd) structure_factor_der = all_scattering_factors*structure_factor_der
@@ -747,7 +774,7 @@ contains
 
                structure_factor_der = 0.d0
                call dgemv("N", n_samples_sf, n_samples, -2.d0*xyz(2, k)*c_factor, sinc_factor_matrix, n_samples_sf,&
-                    & pair_distribution_der(1:n_samples, k), 1, 0.d0,&
+                    & column(1:n_samples), 1, 0.d0,&
                     & structure_factor_der, 1)
 
                if (do_xrd) structure_factor_der = all_scattering_factors*structure_factor_der
@@ -756,7 +783,7 @@ contains
 
                structure_factor_der = 0.d0
                call dgemv("N", n_samples_sf, n_samples, -2.d0*xyz(3, k)*c_factor, sinc_factor_matrix, n_samples_sf,&
-                    &  pair_distribution_der(1:n_samples, k), 1, 0.d0,&
+                    &  column(1:n_samples), 1, 0.d0,&
                     & structure_factor_der, 1)
 
                if (do_xrd) structure_factor_der = all_scattering_factors*structure_factor_der
@@ -797,6 +824,8 @@ contains
 
       if (do_xrd) deallocate (all_scattering_factors)
       if (do_xrd) deallocate (sf_parameters)
+      deallocate (column)
+      deallocate (kde_row)
       deallocate (structure_factor_der)
       deallocate (prefactor)
 
@@ -1329,7 +1358,7 @@ contains
    subroutine get_structure_factor_forces_matrix(n_sites0, energy_scale, x, y_exp, forces0, virial,  &
         & neighbors_list, n_neigh, neighbor_species, species_types, rjs, xyz, r_min,&
         & r_max, n_samples, n_samples_sf, n_species, x_structure_factor, structure_factor, r_cut, species_1,&
-        & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
+        & species_2, kern, partial_rdf, kde_sigma,&
         & c_factor, sinc_factor_matrix, n_dim_idx, do_xrd, output, n_atoms_of_species, neutron, rank, lp, w)
       implicit none
 !     Per-sample weights on the residual, entering SQUARED, so that this is
@@ -1386,7 +1415,8 @@ contains
       real(dp), intent(in) :: x_structure_factor(:)
       real(dp), intent(in) :: structure_factor(:)
       real(dp), intent(in) :: n_atoms_of_species(:)
-      real(dp), intent(in) :: pair_distribution_der(:, :)
+!     The pdf kernel, from which each pair's d g / d r row is rebuilt.
+      type(pdf_kernel_t), intent(in) :: kern
       real(dp), intent(inout) :: forces0(:, :)
       real(dp), intent(inout) :: virial(1:3, 1:3)
       character*32, intent(in) :: output
@@ -1416,6 +1446,11 @@ contains
       real(dp), allocatable :: pair_force(:, :)
       integer, allocatable :: owner_species(:)
       logical, allocatable :: pair_used(:)
+      real(dp), allocatable :: kde_row(:)
+      real(dp), allocatable :: der_row(:)
+      real(dp) :: dot
+      integer :: lo
+      integer :: hi
 
       ! First allocate the pair correlation function array
 
@@ -1546,7 +1581,10 @@ contains
       allocate (pair_used(1:n_pairs))
       call pair_owner_species(n_neigh, neighbor_species, owner_species)
 
-!$omp parallel do schedule(static) default(shared) private(k, species_i, species_j, r, f)
+!$omp parallel default(shared) private(k, l, lo, hi, species_i, species_j, r, f, dot, kde_row, der_row)
+      allocate (kde_row(1:kern%n_samples))
+      allocate (der_row(1:kern%n_samples))
+!$omp do schedule(static)
       do k = 1, n_pairs
          pair_used(k) = .false.
          species_i = owner_species(k)
@@ -1562,11 +1600,20 @@ contains
          if (r < r_min) cycle
          if (r > r_max + kde_sigma*6.d0) cycle
 
-         f = -2.d0*c_factor*dot_product(w_r, pair_distribution_der(1:n_samples, k))
+!        d g / d r is zero outside lo..hi, where the dot would only add zeros.
+         call pair_der_window(kern, r, kde_row, der_row, lo, hi)
+         dot = 0.d0
+         do l = lo, hi
+            dot = dot + w_r(l)*der_row(l)
+         end do
+         f = -2.d0*c_factor*dot
          pair_force(1:3, k) = energy_scale*f*xyz(1:3, k)
          pair_used(k) = .true.
       end do
-!$omp end parallel do
+!$omp end do
+      deallocate (der_row)
+      deallocate (kde_row)
+!$omp end parallel
 
       do k = 1, n_pairs
          if (.not. pair_used(k)) cycle
@@ -1634,7 +1681,7 @@ contains
         & neighbors_list, n_neigh, neighbor_species, rjs, xyz, r_min,&
         & r_max, n_samples, pair_distribution, r_cut, species_1,&
         & species_2, pair_distribution_der, partial_rdf, kde_sigma,&
-        & c_factor, rho, output)
+        & c_factor, rho, output, kern)
       implicit none
       real(dp), intent(in) :: rjs(:)
       real(dp), intent(in) :: xyz(:, :)
@@ -1677,7 +1724,11 @@ contains
       character*32, intent(in) :: output
       real(dp), intent(in) :: pair_distribution(1:n_samples)
       real(dp), intent(in) :: rho
-      real(dp), intent(in) :: pair_distribution_der(:, :)
+!     Either every pair's d g / d r row, or the pdf kernel to rebuild them from.
+      real(dp), intent(in), optional :: pair_distribution_der(:, :)
+      type(pdf_kernel_t), intent(in), optional :: kern
+      real(dp), allocatable :: kde_row(:)
+      real(dp), allocatable :: column(:)
       real(dp), intent(inout) :: forces0(:, :)
       real(dp), intent(inout) :: virial(1:3, 1:3)
       real(dp), allocatable :: prefactor(:)
@@ -1714,7 +1765,10 @@ contains
       allocate (pair_used(1:n_pairs))
       call pair_owner_species(n_neigh, neighbor_species, owner_species)
 
-!$omp parallel do schedule(static) default(shared) private(k, species_i, species_j, r, f, temp)
+!$omp parallel default(shared) private(k, species_i, species_j, r, f, temp, kde_row, column)
+      allocate (kde_row(1:n_samples))
+      allocate (column(1:n_samples))
+!$omp do schedule(static)
       do k = 1, n_pairs
          pair_used(k) = .false.
          species_i = owner_species(k)
@@ -1732,26 +1786,34 @@ contains
          if (r < r_min) cycle
          if (r > r_max + kde_sigma*6.d0) cycle
          if (all(xyz(1:3, k) == 0.d0)) cycle
+         if (present(kern)) then
+            call pair_der_column(kern, r, kde_row, column)
+         else
+            column = pair_distribution_der(1:n_samples, k)
+         end if
 
          if (species_1 == species_2) f = 1.d0
          if (species_1 /= species_2) f = 2.d0
 
-         temp = -2.d0*xyz(1, k)*f*c_factor*pair_distribution_der(1:n_samples, k)
+         temp = -2.d0*xyz(1, k)*f*c_factor*column(1:n_samples)
          if (trim(output) == "D(r)") temp = 4.d0*pi*rho*x*temp
          pair_force(1, k) = dot_product(temp, prefactor(1:n_samples))
 
-         temp = -2.d0*xyz(2, k)*f*c_factor*pair_distribution_der(1:n_samples, k)
+         temp = -2.d0*xyz(2, k)*f*c_factor*column(1:n_samples)
          if (trim(output) == "D(r)") temp = 4.d0*pi*rho*x*temp
          pair_force(2, k) = dot_product(temp, prefactor(1:n_samples))
 
-         temp = -2.d0*xyz(3, k)*f*c_factor*pair_distribution_der(1:n_samples, k)
+         temp = -2.d0*xyz(3, k)*f*c_factor*column(1:n_samples)
          if (trim(output) == "D(r)") temp = 4.d0*pi*rho*x*temp
          pair_force(3, k) = dot_product(temp, prefactor(1:n_samples))
 
          pair_force(1:3, k) = energy_scale*pair_force(1:3, k)
          pair_used(k) = .true.
       end do
-!$omp end parallel do
+!$omp end do
+      deallocate (column)
+      deallocate (kde_row)
+!$omp end parallel
 
       do k = 1, n_pairs
          if (.not. pair_used(k)) cycle
@@ -1834,9 +1896,6 @@ contains
       real(dp) :: n_pc
       real(dp) :: dr
       real(dp) :: kde_norm
-!     Gaussian kernels are evaluated within KDE_CUT sigma of each pair; past
-!     that they are below 3e-18 of their peak.
-      real(dp), parameter :: KDE_CUT = 9.d0
       integer :: l_lo
       integer :: l_hi
       real(dp) :: ri_vec(1:3)
@@ -1850,7 +1909,7 @@ contains
       ! First allocate the pair correlation function array
 
       allocate (bin_edges(1:n_samples + 1))
-      if (.not. return_histogram) allocate (dV(1:n_samples))
+      allocate (dV(1:n_samples))
 
       n_sites = size(n_neigh)
       n_pairs = size(neighbors_list)
@@ -1873,18 +1932,7 @@ contains
          r_min = r
       end if
 
-      do i = 1, n_samples + 1
-         bin_edges(i) = r_min + (real((i - 1))/real(n_samples))*(r_max - r_min)
-      end do
-
-      do i = 1, n_samples
-         x(i) = (bin_edges(i) + bin_edges(i + 1))/2.d0
-
-         if (.not. return_histogram) then
-            dV(i) = 4.d0*pi/3.d0*(bin_edges(i + 1)**3 - bin_edges(i)**3)
-         end if
-
-      end do
+      call pdf_grid(r_min, r_max, n_samples, bin_edges, x, dV)
 
       dr = (r_max - r_min)/dfloat(n_samples)
       kde_norm = sqrt(2.d0*pi)*kde_sigma
@@ -1893,7 +1941,7 @@ contains
       count_species_1 = 0
       if (kde_sigma > 0.d0) then
          call accumulate_pair_kde(n_neigh, neighbor_species, rjs, r_min, r_max, r_cut, n_samples, x, dV, &
-              & dr, kde_sigma, KDE_CUT, kde_norm, partial_rdf, species_1, species_2, do_derivatives, &
+              & dr, kde_sigma, PDF_KDE_CUT, kde_norm, partial_rdf, species_1, species_2, do_derivatives, &
               & pair_distribution_der, n_dim_idx, pair_distribution, count, der_scale)
       else
          k = 0
@@ -1941,8 +1989,8 @@ contains
       if (.not. return_histogram) then
          ! Instead of giving the Radial distribution function (which goes as r^2), we give the pair distribution function
          pair_distribution = pair_distribution/dV
-         deallocate (dV)
       end if
+      deallocate (dV)
 
       deallocate (bin_edges)
 
@@ -1986,6 +2034,143 @@ contains
       end do
    end subroutine pair_owner_species
 
+!  The pdf's r grid: n_samples bins on [r_min, r_max], their centres and shell volumes.
+   subroutine pdf_grid(r_min, r_max, n_samples, bin_edges, x, dV)
+      implicit none
+      real(dp), intent(in) :: r_min
+      real(dp), intent(in) :: r_max
+      integer, intent(in) :: n_samples
+      real(dp), intent(out) :: bin_edges(1:n_samples + 1)
+      real(dp), intent(out) :: x(1:n_samples)
+      real(dp), intent(out) :: dV(1:n_samples)
+      real(dp), parameter :: pi = acos(-1.0)
+      integer :: i
+
+      do i = 1, n_samples + 1
+         bin_edges(i) = r_min + (real((i - 1))/real(n_samples))*(r_max - r_min)
+      end do
+      do i = 1, n_samples
+         x(i) = (bin_edges(i) + bin_edges(i + 1))/2.d0
+         dV(i) = 4.d0*pi/3.d0*(bin_edges(i + 1)**3 - bin_edges(i)**3)
+      end do
+   end subroutine pdf_grid
+
+!  The kernel get_pair_distribution uses on [r_min, r_max] in n_samples bins at
+!  width sigma, as the force routines need it to rebuild a pair's d g / d r.
+   subroutine make_pdf_kernel(r_min, r_max, n_samples, sigma, kern)
+      implicit none
+      real(dp), intent(in) :: r_min
+      real(dp), intent(in) :: r_max
+      integer, intent(in) :: n_samples
+      real(dp), intent(in) :: sigma
+      type(pdf_kernel_t), intent(out) :: kern
+      real(dp), allocatable :: bin_edges(:)
+      real(dp), parameter :: pi = acos(-1.0)
+
+!     get_pair_distribution swaps a reversed range the same way.
+      kern%r_min = min(r_min, r_max)
+      kern%r_max = max(r_min, r_max)
+      kern%n_samples = n_samples
+      allocate (bin_edges(1:n_samples + 1))
+      allocate (kern%x(1:n_samples))
+      allocate (kern%dv(1:n_samples))
+      call pdf_grid(kern%r_min, kern%r_max, n_samples, bin_edges, kern%x, kern%dv)
+      deallocate (bin_edges)
+      kern%dr = (kern%r_max - kern%r_min)/dfloat(n_samples)
+      kern%sigma = sigma
+      kern%norm = sqrt(2.d0*pi)*sigma
+   end subroutine make_pdf_kernel
+
+!  The kernel of one pair at distance r, exp(-(x - r)^2 / 2 sigma^2), at the
+!  samples lo..hi within kde_cut sigma. The pdf and the force routines both call
+!  this, so they see the same values to the last bit.
+   subroutine pair_kde_row(r, n_samples, x, r_min, dr, sigma, kde_cut, lo, hi, kde_row)
+      implicit none
+      real(dp), intent(in) :: r
+      integer, intent(in) :: n_samples
+      real(dp), intent(in) :: x(1:n_samples)
+      real(dp), intent(in) :: r_min
+      real(dp), intent(in) :: dr
+      real(dp), intent(in) :: sigma
+      real(dp), intent(in) :: kde_cut
+      integer, intent(out) :: lo
+      integer, intent(out) :: hi
+      real(dp), intent(inout) :: kde_row(1:n_samples)
+      integer :: l
+
+      lo = max(1, int((r - kde_cut*sigma - r_min)/dr))
+      hi = min(n_samples, int((r + kde_cut*sigma - r_min)/dr) + 2)
+      do l = lo, hi
+         kde_row(l) = exp(-((x(l) - r)/sigma)**2/2.d0)
+      end do
+   end subroutine pair_kde_row
+
+!  d g / d r of one pair at the samples lo..hi, before its direction is applied,
+!  times the partial's v_uc / n_a / n_b / f when scale is given.
+   subroutine pair_der_row(r, n_samples, x, dV, dr, sigma, norm, lo, hi, kde_row, der_row, scale)
+      implicit none
+      real(dp), intent(in) :: r
+      integer, intent(in) :: n_samples
+      real(dp), intent(in) :: x(1:n_samples)
+      real(dp), intent(in) :: dV(1:n_samples)
+      real(dp), intent(in) :: dr
+      real(dp), intent(in) :: sigma
+      real(dp), intent(in) :: norm
+      integer, intent(in) :: lo
+      integer, intent(in) :: hi
+      real(dp), intent(in) :: kde_row(1:n_samples)
+      real(dp), intent(inout) :: der_row(1:n_samples)
+      real(dp), intent(in), optional :: scale(1:4)
+      integer :: l
+
+      do l = lo, hi
+         der_row(l) = kde_row(l)*((x(l) - r)/sigma**2)/r/dV(l)*dr/norm
+      end do
+      if (present(scale)) then
+         do l = lo, hi
+            der_row(l) = der_row(l)*scale(1)/scale(2)/scale(3)/scale(4)
+         end do
+      end if
+   end subroutine pair_der_row
+
+!  A pair's d g / d r at the samples lo..hi, from kern; zero elsewhere. A
+!  histogram (sigma 0) has no derivative, and gives an empty window.
+   subroutine pair_der_window(kern, r, kde_row, der_row, lo, hi)
+      implicit none
+      type(pdf_kernel_t), intent(in) :: kern
+      real(dp), intent(in) :: r
+      real(dp), intent(inout) :: kde_row(:)
+      real(dp), intent(inout) :: der_row(:)
+      integer, intent(out) :: lo
+      integer, intent(out) :: hi
+
+      lo = 1
+      hi = 0
+      if (kern%sigma <= 0.d0) return
+      call pair_kde_row(r, kern%n_samples, kern%x, kern%r_min, kern%dr, kern%sigma, PDF_KDE_CUT, lo, hi, kde_row)
+      if (kern%has_scale) then
+         call pair_der_row(r, kern%n_samples, kern%x, kern%dv, kern%dr, kern%sigma, kern%norm, lo, hi, &
+              & kde_row, der_row, kern%scale)
+      else
+         call pair_der_row(r, kern%n_samples, kern%x, kern%dv, kern%dr, kern%sigma, kern%norm, lo, hi, &
+              & kde_row, der_row)
+      end if
+   end subroutine pair_der_window
+
+!  A pair's whole d g / d r row, as get_pair_distribution used to store it.
+   subroutine pair_der_column(kern, r, kde_row, column)
+      implicit none
+      type(pdf_kernel_t), intent(in) :: kern
+      real(dp), intent(in) :: r
+      real(dp), intent(inout) :: kde_row(:)
+      real(dp), intent(out) :: column(:)
+      integer :: lo
+      integer :: hi
+
+      column = 0.d0
+      call pair_der_window(kern, r, kde_row, column, lo, hi)
+   end subroutine pair_der_column
+
 !  The kernel density estimate of get_pair_distribution. A pair's kernel values
 !  and its derivative row depend on that pair alone, so they are formed in
 !  parallel, KDE_PAIR_CHUNK pairs at a time; the histogram then takes them in
@@ -2024,6 +2209,7 @@ contains
       integer, allocatable :: l_hi(:)
       real(dp), allocatable :: kde(:, :)
       real(dp), allocatable :: kde_row(:)
+      real(dp), allocatable :: der_row(:)
       real(dp) :: r
       integer :: n_pairs
       integer :: width
@@ -2055,8 +2241,9 @@ contains
 !        kde_row(l), indexed by sample as the serial loop indexed its kernel,
 !        so that the exp loop vectorises the same way: the vector and scalar exp
 !        differ in the last bit, and bit-identity rests on the same split.
-!$omp parallel default(shared) private(k, kk, l, lo, hi, species_i, species_j, r, kde_row)
+!$omp parallel default(shared) private(k, kk, l, lo, hi, species_i, species_j, r, kde_row, der_row)
          allocate (kde_row(1:n_samples))
+         allocate (der_row(1:n_samples))
 !$omp do schedule(static)
          do k = k_beg, k_end
             kk = k - k_beg + 1
@@ -2076,11 +2263,7 @@ contains
             if (r < r_min) cycle
             if (r > r_max + kde_sigma*6.d0) cycle
 
-            lo = max(1, int((r - kde_cut*kde_sigma - r_min)/dr))
-            hi = min(n_samples, int((r + kde_cut*kde_sigma - r_min)/dr) + 2)
-            do l = lo, hi
-               kde_row(l) = exp(-((x(l) - r)/kde_sigma)**2/2.d0)
-            end do
+            call pair_kde_row(r, n_samples, x, r_min, dr, kde_sigma, kde_cut, lo, hi, kde_row)
             l_lo(kk) = lo
             l_hi(kk) = hi
             kde(1:hi - lo + 1, kk) = kde_row(lo:hi)
@@ -2088,19 +2271,12 @@ contains
 !           The derivative row of pair k is written once, so the
 !           normalisations are applied here rather than over the whole array.
             if (do_derivatives) then
-               do l = lo, hi
-                  pair_distribution_der(l, n_dim_idx, k) = &
-                       & kde_row(l)*((x(l) - r)/kde_sigma**2)/r/dV(l)*dr/kde_norm
-               end do
-               if (present(der_scale)) then
-                  do l = lo, hi
-                     pair_distribution_der(l, n_dim_idx, k) = pair_distribution_der(l, n_dim_idx, k) &
-                                                             & *der_scale(1)/der_scale(2)/der_scale(3)/der_scale(4)
-                  end do
-               end if
+               call pair_der_row(r, n_samples, x, dV, dr, kde_sigma, kde_norm, lo, hi, kde_row, der_row, der_scale)
+               pair_distribution_der(lo:hi, n_dim_idx, k) = der_row(lo:hi)
             end if
          end do
 !$omp end do
+         deallocate (der_row)
          deallocate (kde_row)
 !$omp end parallel
 

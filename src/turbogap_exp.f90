@@ -1580,7 +1580,7 @@ contains
               & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
               & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
               & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-              & pair_distribution_partial_der, energies_sf, forces_sf, virial_sf, &
+              & energies_sf, forces_sf, virial_sf, &
               & params%structure_factor_matrix_forces)
 
          call time_end(time%sf)
@@ -1602,7 +1602,7 @@ contains
                  & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                  & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                  & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-                 & pair_distribution_partial_der, energies_xrd,&
+                 & energies_xrd,&
                  & forces_xrd, virial_xrd, .false., params&
                  &%structure_factor_matrix_forces)
          end if
@@ -1628,7 +1628,7 @@ contains
                  & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
                  & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
                  & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
-                 & pair_distribution_partial_der, energies_nd,&
+                 & energies_nd,&
                  & forces_nd, virial_nd, .true., params&
                  &%structure_factor_matrix_forces)
          end if

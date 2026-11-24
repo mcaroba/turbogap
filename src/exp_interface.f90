@@ -556,6 +556,7 @@ contains
       real(dp), intent(inout) :: virial(1:3, 1:3)
       real(dp) :: v_uc
       real(dp) :: f
+      type(pdf_kernel_t) :: kern
 !     -V dE/dV, the cell half of this observable's virial.
       real(dp) :: dedv
       integer, intent(in) :: n_species
@@ -639,7 +640,7 @@ contains
 
          pair_distribution_partial = 0.d0
 
-         if (params%do_forces .and. params%exp_forces) then
+         if (params%do_forces .and. params%exp_forces .and. pdf_stores_der()) then
             allocate (pair_distribution_partial_der(1:params%pair_distribution_n_samples,&
               & 1:pdf_der_slot(n_dim_partial), j_beg:j_end))
             call zero_pair_columns(pair_distribution_partial_der)
@@ -651,7 +652,7 @@ contains
 
          end if
       else
-         if (params%do_forces .and. params%exp_forces) then
+         if (params%do_forces .and. params%exp_forces .and. pdf_stores_der()) then
             allocate (pair_distribution_partial_der(1:params%pair_distribution_n_samples, 1:1, &
               &  j_beg:j_end))
             call zero_pair_columns(pair_distribution_partial_der)
@@ -708,7 +709,7 @@ contains
                     &%pair_distribution_rcut, .false.,&
                     & params%pair_distribution_partial, j, k,&
                     & params%pair_distribution_kde_sigma,&
-                    & dfloat(n_sites)/v_uc, params%exp_forces,&
+                    & dfloat(n_sites)/v_uc, params%exp_forces .and. pdf_stores_der(),&
                     & pair_distribution_partial_der, pdf_der_slot(n_dim_idx), &
                     & j_beg, j_end, [v_uc, n_atoms_of_species(j), n_atoms_of_species(k), factors(n_dim_idx)])
 
@@ -730,7 +731,8 @@ contains
               & y_pair_distribution, params &
               &%pair_distribution_rcut, .false., .false., 1, 1,&
               & params%pair_distribution_kde_sigma, dfloat(n_sites)&
-              &/v_uc, params%do_forces .and. params%exp_forces, pair_distribution_partial_der, 1, &
+              &/v_uc, params%do_forces .and. params%exp_forces .and. pdf_stores_der(), &
+              & pair_distribution_partial_der, 1, &
               & j_beg, j_end)
       end if
 
@@ -835,12 +837,18 @@ contains
 
             if (params%do_forces .and. params%exp_forces) then
 
+#ifndef _GPU
+               call make_pdf_kernel(params%r_range_min, params%r_range_max, params%pair_distribution_n_samples, &
+                    & params%pair_distribution_kde_sigma, kern)
+               kern%has_scale = .true.
+#endif
                n_dim_idx = 1
                outerforces: do j = 1, n_species
                   do k = 1, n_species
 
                      if (j > k) cycle
 
+#ifdef _GPU
                      call get_pair_distribution_forces(n_sites, params%exp_energy_scales(params%pdf_idx),&
                           & params%exp_data(params%pdf_idx)%x, params%exp_data(params%pdf_idx)%y,&
                           & forces_pair_distribution, virial,&
@@ -857,6 +865,24 @@ contains
                           & ((n_atoms_of_species(j)*&
                           & n_atoms_of_species(k))/dfloat(n_sites)/&
                           & dfloat(n_sites)), (dfloat(n_sites)/v_uc), params%pair_distribution_output)
+#else
+                     kern%scale = [v_uc, n_atoms_of_species(j), n_atoms_of_species(k), factors(n_dim_idx)]
+                     call get_pair_distribution_forces(n_sites, params%exp_energy_scales(params%pdf_idx),&
+                          & params%exp_data(params%pdf_idx)%x, params%exp_data(params%pdf_idx)%y,&
+                          & forces_pair_distribution, virial,&
+                          & neighbors_list(j_beg:j_end), n_neigh(i_beg:i_end),&
+                          & neighbor_species(j_beg:j_end), rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), params&
+                          &%r_range_min, params%r_range_max, params&
+                          &%pair_distribution_n_samples,&
+                          & y_pair_distribution(1:params&
+                          &%pair_distribution_n_samples), params%pair_distribution_rcut&
+                          &, j, k, partial_rdf=params%pair_distribution_partial,&
+                          & kde_sigma=params%pair_distribution_kde_sigma,&
+                          & c_factor=((n_atoms_of_species(j)*&
+                          & n_atoms_of_species(k))/dfloat(n_sites)/&
+                          & dfloat(n_sites)), rho=(dfloat(n_sites)/v_uc), output=params%pair_distribution_output,&
+                          & kern=kern)
+#endif
 
                      n_dim_idx = n_dim_idx + 1
 
@@ -1044,6 +1070,17 @@ contains
       slot = 1
 #endif
    end function pdf_der_slot
+
+!  Whether the pdf stores each pair's d g / d r for the force routines. The
+!  host rebuilds it there from a pdf_kernel_t instead, which saves a
+!  n_samples x n_pairs array per step; the device transfers the stored one.
+   pure logical function pdf_stores_der() result(stores)
+#ifdef _GPU
+      stores = .true.
+#else
+      stores = .false.
+#endif
+   end function pdf_stores_der
 
 #ifdef _GPU
    subroutine calculate_structure_factor(params, x_structure_factor, x_structure_factor_temp,&
@@ -1598,7 +1635,7 @@ contains
         & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
         & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
         & neighbor_species, species, rank, q_beg, q_end, ntasks,&
-        & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
+        & sinc_factor_matrix, do_derivatives,&
         & energies_sf, forces_sf, virial_sf, use_matrix_forces)
       implicit none
       type(input_parameters), intent(inout) :: params
@@ -1614,7 +1651,6 @@ contains
       real(dp), intent(in), allocatable :: y_pair_distribution(:)
       real(dp), intent(in), allocatable :: pair_distribution_partial(:, :)
       real(dp), intent(in), allocatable :: n_atoms_of_species(:)
-      real(dp), intent(in), allocatable :: pair_distribution_partial_der(:, :, :)
       integer, intent(in), allocatable :: neighbors_list(:)
       integer, intent(in), allocatable :: n_neigh(:)
       integer, intent(in), allocatable :: neighbor_species(:)
@@ -1630,6 +1666,7 @@ contains
       real(dp), allocatable :: sinc_factor_matrix_temp(:, :)
       real(dp), allocatable :: temp_pdf(:, :)
       real(dp) :: v_uc
+      type(pdf_kernel_t) :: kern
       integer, intent(in) :: n_species
       integer, intent(in) :: n_sites
       integer, intent(in) :: i_beg
@@ -1946,6 +1983,9 @@ contains
                   allocate (forces_sf(1:3, 1:n_sites))
                   forces_sf = 0.d0
 
+                  call make_pdf_kernel(params%r_range_min, params%r_range_max, params%pair_distribution_n_samples, &
+                       & params%pair_distribution_kde_sigma, kern)
+                  kern%has_scale = .true.
                   n_dim_idx = 1
                   outerf: do j = 1, n_species
                      do k = 1, n_species
@@ -1954,6 +1994,7 @@ contains
 
                         if (j == k) f = 1.d0
                         if (j /= k) f = 2.d0
+                        kern%scale = [v_uc, n_atoms_of_species(j), n_atoms_of_species(k), f]
 
                         if (use_matrix_forces) then
                            call get_structure_factor_forces_matrix(n_sites, params%exp_energy_scales(params%sf_idx),&
@@ -1967,9 +2008,7 @@ contains
                                 & x_structure_factor(1:params&
                                 &%structure_factor_n_samples), y_structure_factor(1:params&
                                 &%structure_factor_n_samples), params%pair_distribution_rcut&
-                                &, j, k, pair_distribution_partial_der(1:params &
-                                &%pair_distribution_n_samples, pdf_der_slot(n_dim_idx),&
-                                & j_beg:j_end), params%pair_distribution_partial,&
+                                &, j, k, kern, params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
@@ -1989,9 +2028,7 @@ contains
                                 & x_structure_factor(1:params&
                                 &%structure_factor_n_samples), y_structure_factor(1:params&
                                 &%structure_factor_n_samples), params%pair_distribution_rcut&
-                                &, j, k, pair_distribution_partial_der(1:params &
-                                &%pair_distribution_n_samples, pdf_der_slot(n_dim_idx),&
-                                & j_beg:j_end), params%pair_distribution_partial,&
+                                &, j, k, kern, params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
@@ -2468,7 +2505,7 @@ contains
         & n_sites, a_box, b_box, c_box, indices, md_istep, mc_istep, i_beg,&
         & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
         & neighbor_species, species, rank, q_beg, q_end, ntasks,&
-        & sinc_factor_matrix, do_derivatives, pair_distribution_partial_der,&
+        & sinc_factor_matrix, do_derivatives,&
         & energies_xrd, forces_xrd, virial_xrd, neutron, use_matrix_forces)
       implicit none
       type(input_parameters), intent(inout) :: params
@@ -2483,7 +2520,6 @@ contains
       real(dp), allocatable, intent(in) :: x_structure_factor(:)
       real(dp), allocatable, intent(in) :: x_structure_factor_temp(:)
       real(dp), allocatable, intent(in) :: sinc_factor_matrix(:, :)
-      real(dp), allocatable, intent(in) :: pair_distribution_partial_der(:, :, :)
       real(dp), intent(in), allocatable :: rjs(:)
       real(dp), intent(in), allocatable :: xyz(:, :)
       real(dp), intent(in), allocatable :: n_atoms_of_species(:)
@@ -2497,6 +2533,7 @@ contains
       real(dp), intent(in) :: c_box(1:3)
       character*8, allocatable, intent(in) :: species_types(:)
       real(dp) :: v_uc
+      type(pdf_kernel_t) :: kern
       integer, intent(in) :: n_species
       integer, intent(in) :: n_sites
       integer, intent(in) :: i_beg
@@ -2673,6 +2710,9 @@ contains
                   allocate (forces_xrd(1:3, 1:n_sites))
                   forces_xrd = 0.d0
 
+                  call make_pdf_kernel(params%r_range_min, params%r_range_max, params%pair_distribution_n_samples, &
+                       & params%pair_distribution_kde_sigma, kern)
+                  kern%has_scale = .true.
                   n_dim_idx = 1
                   outerf: do j = 1, n_species
                      do k = 1, n_species
@@ -2681,6 +2721,7 @@ contains
 
                         if (j == k) f = 1.d0
                         if (j /= k) f = 2.d0
+                        kern%scale = [v_uc, n_atoms_of_species(j), n_atoms_of_species(k), f]
 
                         if (use_matrix_forces) then
 
@@ -2695,9 +2736,7 @@ contains
                                 & x_xrd(1:params&
                                 &%structure_factor_n_samples), y_xrd(1:params&
                                 &%structure_factor_n_samples), params%pair_distribution_rcut&
-                                &, j, k, pair_distribution_partial_der(1:params &
-                                &%pair_distribution_n_samples, pdf_der_slot(n_dim_idx),&
-                                & j_beg:j_end), params%pair_distribution_partial,&
+                                &, j, k, kern, params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
@@ -2716,9 +2755,7 @@ contains
                                 & x_xrd(1:params&
                                 &%structure_factor_n_samples), y_xrd(1:params&
                                 &%structure_factor_n_samples), params%pair_distribution_rcut&
-                                &, j, k, pair_distribution_partial_der(1:params &
-                                &%pair_distribution_n_samples, pdf_der_slot(n_dim_idx),&
-                                & j_beg:j_end), params%pair_distribution_partial,&
+                                &, j, k, kern, params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
                                 & n_atoms_of_species(k))/dfloat(n_sites)/&
