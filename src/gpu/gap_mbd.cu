@@ -69,6 +69,18 @@ struct mbd_consts {
   double d, sR, Bohr, rcut_mbd, rcut_mbd2, r_buf_ij;
 };
 
+// Correctly rounded operations, so no multiply-add is fused out of the host's
+// order. The intrinsics are device-only; Kokkos also compiles these for the host.
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+#define MBD_ADD(a, b) __dadd_rn(a, b)
+#define MBD_SUB(a, b) __dsub_rn(a, b)
+#define MBD_MUL(a, b) __dmul_rn(a, b)
+#else
+#define MBD_ADD(a, b) ((a) + (b))
+#define MBD_SUB(a, b) ((a) - (b))
+#define MBD_MUL(a, b) ((a) * (b))
+#endif
+
 TG_INLINE_FUNCTION double mbd_pow5(double x) {
   double x2 = x * x;
   return x2 * (x * x2);
@@ -110,13 +122,13 @@ void mbd_at_sym(mbd_site_d s, const double* q_d, double* at_d, hipStream_t* stre
 // multiply-adds).
 TG_INLINE_FUNCTION double mbd_pair_tensor(const mbd_site_d& s, int p, int q, double* x, double* tm9) {
   for (int c = 0; c < 3; c++)
-    x[c] = __dsub_rn(s.pos[3 * q + c], s.pos[3 * p + c]);
-  double rjs = sqrt(__dadd_rn(__dadd_rn(__dmul_rn(x[0], x[0]), __dmul_rn(x[1], x[1])), __dmul_rn(x[2], x[2])));
+    x[c] = MBD_SUB(s.pos[3 * q + c], s.pos[3 * p + c]);
+  double rjs = sqrt(MBD_ADD(MBD_ADD(MBD_MUL(x[0], x[0]), MBD_MUL(x[1], x[1])), MBD_MUL(x[2], x[2])));
   double r5 = mbd_pow5(rjs);
   for (int c1 = 0; c1 < 3; c1++)
     for (int c2 = 0; c2 < 3; c2++)
-      tm9[3 * c1 + c2] = c1 == c2 ? __dsub_rn(__dmul_rn(__dmul_rn(3.0, x[c1]), x[c1]), __dmul_rn(rjs, rjs)) / r5
-                                  : __dmul_rn(__dmul_rn(3.0, x[c1]), x[c2]) / r5;
+      tm9[3 * c1 + c2] = c1 == c2 ? MBD_SUB(MBD_MUL(MBD_MUL(3.0, x[c1]), x[c1]), MBD_MUL(rjs, rjs)) / r5
+                                  : MBD_MUL(MBD_MUL(3.0, x[c1]), x[c2]) / r5;
   return rjs;
 }
 
@@ -134,12 +146,12 @@ void mbd_pair_values(mbd_site_d s, mbd_consts k, hipStream_t* stream) {
           double tm9[9];
           double rjs = mbd_pair_tensor(s, p, q, x, tm9);
           double rcut = p == 0 ? k.rcut_mbd : k.rcut_mbd2;
-          double r_b = __dmul_rn(rjs, k.Bohr);
+          double r_b = MBD_MUL(rjs, k.Bohr);
           double tlr = 1.0;
           if (r_b > rcut - k.r_buf_ij && r_b <= rcut) {
-            double rb = __dadd_rn(__dsub_rn(r_b, rcut), k.r_buf_ij) / k.r_buf_ij;
-            double rb2 = __dmul_rn(rb, rb);
-            tlr = __dadd_rn(__dsub_rn(1.0, __dmul_rn(3.0, rb2)), __dmul_rn(2.0, __dmul_rn(rb2, rb)));
+            double rb = MBD_ADD(MBD_SUB(r_b, rcut), k.r_buf_ij) / k.r_buf_ij;
+            double rb2 = MBD_MUL(rb, rb);
+            tlr = MBD_ADD(MBD_SUB(1.0, MBD_MUL(3.0, rb2)), MBD_MUL(2.0, MBD_MUL(rb2, rb)));
           } else if (r_b > rcut) {
             tlr = 0.0;
           }

@@ -50,6 +50,9 @@
 
 #ifdef _KOKKOS
 #include <Kokkos_Core.hpp>
+#include <mutex>
+#include <utility>
+#include <vector>
 #endif
 
 // The annotation a kernel body carries. Both spellings need nvcc's
@@ -179,33 +182,24 @@ inline void tg_backend_finalize() {
 // driver API -- and the pdf and electrostatics paths launch dozens of kernels
 // per step, so they are cached by stream handle. The cache LEAKS its entries
 // deliberately: a Kokkos::Cuda destructor running at static-destruction time,
-// after Kokkos::finalize, is undefined. Eight handles is the whole cost, and
-// TurboGAP uses two.
+// after Kokkos::finalize, is undefined.
+//
+// Host threads look it up concurrently -- MBD gives each OpenMP thread its own
+// stream -- so the lookup is locked, and the cache grows with the streams: a
+// kernel handed another stream's space runs out of order with the raw launches
+// on its own.
 inline TGDeviceType& tg_exec(hipStream_t* stream) {
-  constexpr int NCACHE = 8;
-  static hipStream_t keys[NCACHE];
-  static TGDeviceType* vals[NCACHE];
-  static int n_cached = 0;
+  static std::mutex lock;
+  static std::vector<std::pair<hipStream_t, TGDeviceType*>> cache;
 
   hipStream_t s = (stream == nullptr) ? (hipStream_t) 0 : stream[0];
-  for (int i = 0; i < n_cached; i++)
-    if (keys[i] == s)
-      return *vals[i];
+  std::lock_guard<std::mutex> guard(lock);
+  for (const auto& entry : cache)
+    if (entry.first == s)
+      return *entry.second;
 
-  if (n_cached == NCACHE) {
-    // Not fatal: fall back to the first entry's space, which is still a valid
-    // place to run, and say so once rather than growing without bound.
-    static bool warned = false;
-    if (!warned) {
-      fprintf(stderr, "GPUbackend: more than %d streams; reusing the first. Raise NCACHE.\n", NCACHE);
-      warned = true;
-    }
-    return *vals[0];
-  }
-
-  keys[n_cached] = s;
-  vals[n_cached] = new TGDeviceType(s);
-  return *vals[n_cached++];
+  cache.emplace_back(s, new TGDeviceType(s));
+  return *cache.back().second;
 }
 
 #else // plain CUDA/HIP
