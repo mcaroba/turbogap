@@ -1413,6 +1413,9 @@ contains
       logical :: species_in_list
       logical :: counted_1 = .false.
       real(dp), allocatable :: w_r(:)
+      real(dp), allocatable :: pair_force(:, :)
+      integer, allocatable :: owner_species(:)
+      logical, allocatable :: pair_used(:)
 
       ! First allocate the pair correlation function array
 
@@ -1535,38 +1538,54 @@ contains
       call dgemv("T", n_samples_sf, n_samples, 1.d0, sinc_factor_matrix, n_samples_sf,&
            & temp, 1, 0.d0, w_r, 1)
 
-      k = 0
-      do i = 1, n_sites
-         species_i = neighbor_species(k + 1)
-         k = k + 1
-         do j = 2, n_neigh(i)
-            k = k + 1
-            species_j = neighbor_species(k)
+!     Each pair's dot product is its own, so they are formed in parallel; the
+!     forces and the virial then take them in pair order, which keeps both
+!     bit-identical to the serial loop at any thread count.
+      allocate (owner_species(1:n_pairs))
+      allocate (pair_force(1:3, 1:n_pairs))
+      allocate (pair_used(1:n_pairs))
+      call pair_owner_species(n_neigh, neighbor_species, owner_species)
 
-            if (((species_i /= species_1) .or. (species_j /= species_2))) then
-               if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
-            end if
+!$omp parallel do schedule(static) default(shared) private(k, species_i, species_j, r, f)
+      do k = 1, n_pairs
+         pair_used(k) = .false.
+         species_i = owner_species(k)
+         if (species_i == 0) cycle
+         species_j = neighbor_species(k)
 
-            r = rjs(k)
-            if (r < 1e-3 .or. r > r_cut) cycle
-            if (r < r_min) cycle
-            if (r > r_max + kde_sigma*6.d0) cycle
+         if (((species_i /= species_1) .or. (species_j /= species_2))) then
+            if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
+         end if
 
-            j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
-            f = -2.d0*c_factor*dot_product(w_r, pair_distribution_der(1:n_samples, k))
-            this_force(1:3) = energy_scale*f*xyz(1:3, k)
-            forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
+         r = rjs(k)
+         if (r < 1e-3 .or. r > r_cut) cycle
+         if (r < r_min) cycle
+         if (r > r_max + kde_sigma*6.d0) cycle
 
-!           See the note in get_structure_factor_forces: 0.25 is 0.5 to
-!           symmetrise, times 0.5 because the pairs are ordered and the
-!           reversed pair reproduces this term rather than adding a new one.
-            do k1 = 1, 3
-               do k2 = 1, 3
-                  virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
-               end do
+         f = -2.d0*c_factor*dot_product(w_r, pair_distribution_der(1:n_samples, k))
+         pair_force(1:3, k) = energy_scale*f*xyz(1:3, k)
+         pair_used(k) = .true.
+      end do
+!$omp end parallel do
+
+      do k = 1, n_pairs
+         if (.not. pair_used(k)) cycle
+         j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
+         this_force(1:3) = pair_force(1:3, k)
+         forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
+
+!        See the note in get_structure_factor_forces: 0.25 is 0.5 to
+!        symmetrise, times 0.5 because the pairs are ordered and the
+!        reversed pair reproduces this term rather than adding a new one.
+         do k1 = 1, 3
+            do k2 = 1, 3
+               virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
             end do
          end do
       end do
+      deallocate (pair_used)
+      deallocate (pair_force)
+      deallocate (owner_species)
 
       if (do_xrd) then
          call add_structure_factor_volume_virial(virial, rank, energy_scale, c_factor,&
@@ -1667,6 +1686,9 @@ contains
       real(dp) :: this_force(1:3)
       real(dp) :: f
       real(dp) :: temp(1:n_samples)
+      real(dp), allocatable :: pair_force(:, :)
+      integer, allocatable :: owner_species(:)
+      logical, allocatable :: pair_used(:)
       real(dp), parameter :: pi = acos(-1.0)
       logical, intent(in) :: partial_rdf
       logical :: species_in_list
@@ -1683,86 +1705,75 @@ contains
 
       ! Not reinitalizing the forces as these will be added to for each partial
       !    forces0 = 0.d0
-      k = 0
-      do i = 1, n_sites
-         ! k is the index which keeps a number of the atom pairs
-         ! i2 is the index of a particular atom
-         i2 = modulo(neighbors_list(k + 1) - 1, n_sites0) + 1
-         species_i = neighbor_species(k + 1)
-         k = k + 1
-         do j = 2, n_neigh(i)
-            ! Loop through the neighbors of atom i
-            ! j2 is the index of a neighboring atom to i
-            k = k + 1
-            j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
 
-            species_j = neighbor_species(k)
+!     Each pair's force is its own, so they are formed in parallel; the forces
+!     and the virial then take them in pair order, which keeps both
+!     bit-identical to the serial loop at any thread count.
+      allocate (owner_species(1:n_pairs))
+      allocate (pair_force(1:3, 1:n_pairs))
+      allocate (pair_used(1:n_pairs))
+      call pair_owner_species(n_neigh, neighbor_species, owner_species)
 
-            if (partial_rdf) then
-               ! if (species_i /= species_1) cycle
-               ! if (species_j /= species_2) cycle
+!$omp parallel do schedule(static) default(shared) private(k, species_i, species_j, r, f, temp)
+      do k = 1, n_pairs
+         pair_used(k) = .false.
+         species_i = owner_species(k)
+         if (species_i == 0) cycle
+         species_j = neighbor_species(k)
 
-               if (((species_i /= species_1) .or. (species_j /= species_2))) then
-                  if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
-               end if
-
+         if (partial_rdf) then
+            if (((species_i /= species_1) .or. (species_j /= species_2))) then
+               if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
             end if
+         end if
 
-            r = rjs(k) ! atom pair distance
+         r = rjs(k)
+         if (r < 1e-3 .or. r > r_cut) cycle
+         if (r < r_min) cycle
+         if (r > r_max + kde_sigma*6.d0) cycle
+         if (all(xyz(1:3, k) == 0.d0)) cycle
 
-            if (r < 1e-3 .or. r > r_cut) cycle
-            if (r < r_min) cycle
-            if (r > r_max + kde_sigma*6.d0) cycle
+         if (species_1 == species_2) f = 1.d0
+         if (species_1 /= species_2) f = 2.d0
 
-            if (.not. all(xyz(1:3, k) == 0.d0)) then
-               ! Actual derivative of the pair distribution function given here, no normalisation needed I think
-               if (species_1 == species_2) f = 1.d0
-               if (species_1 /= species_2) f = 2.d0
+         temp = -2.d0*xyz(1, k)*f*c_factor*pair_distribution_der(1:n_samples, k)
+         if (trim(output) == "D(r)") temp = 4.d0*pi*rho*x*temp
+         pair_force(1, k) = dot_product(temp, prefactor(1:n_samples))
 
-               temp = -2.d0*xyz(1, k)*f*c_factor*pair_distribution_der(1:n_samples, k)
-               if (trim(output) == "D(r)") temp = 4.d0*pi*rho*x*temp
-               this_force(1) = dot_product(temp, prefactor(1:n_samples))
+         temp = -2.d0*xyz(2, k)*f*c_factor*pair_distribution_der(1:n_samples, k)
+         if (trim(output) == "D(r)") temp = 4.d0*pi*rho*x*temp
+         pair_force(2, k) = dot_product(temp, prefactor(1:n_samples))
 
-               temp = -2.d0*xyz(2, k)*f*c_factor*pair_distribution_der(1:n_samples, k)
-               if (trim(output) == "D(r)") temp = 4.d0*pi*rho*x*temp
-               this_force(2) = dot_product(temp, prefactor(1:n_samples))
+         temp = -2.d0*xyz(3, k)*f*c_factor*pair_distribution_der(1:n_samples, k)
+         if (trim(output) == "D(r)") temp = 4.d0*pi*rho*x*temp
+         pair_force(3, k) = dot_product(temp, prefactor(1:n_samples))
 
-               temp = -2.d0*xyz(3, k)*f*c_factor*pair_distribution_der(1:n_samples, k)
-               if (trim(output) == "D(r)") temp = 4.d0*pi*rho*x*temp
-               this_force(3) = dot_product(temp, prefactor(1:n_samples))
+         pair_force(1:3, k) = energy_scale*pair_force(1:3, k)
+         pair_used(k) = .true.
+      end do
+!$omp end parallel do
 
-               ! this_force(2) = dot_product( - 2.d0 * xyz( 2, k ) * f * c_factor * &
-               !      & pair_distribution_der(1:n_samples,  k),&
-               !      & prefactor(1:n_samples))
+      do k = 1, n_pairs
+         if (.not. pair_used(k)) cycle
+         j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
+         this_force(1:3) = pair_force(1:3, k)
+         forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 
-               ! this_force(3) = dot_product( - 2.d0 * xyz( 3, k ) * f * c_factor * &
-               !      & pair_distribution_der(1:n_samples,  k),&
-               !      & prefactor(1:n_samples))
-
-               this_force(1:3) = energy_scale*this_force(1:3)
-
-               forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
-
-               !             Sign is plus because this force is acting on j2. Factor of one is because this is
-               !             derived from a local energy
-               !              virial = virial + dot_product(this_force(1:3), xyz(1:3,k))
-               !
-               !             See the note in get_structure_factor_forces for the
-               !             0.25: this loop runs over ordered pairs, and
-               !             sum_a F_a (x) r_a has one term per unordered pair.
-               !             The cell half of this observable's virial -- the pair
-               !             distribution is normalised by V -- is added by the
-               !             caller, which holds the assembled pattern.
-               do k1 = 1, 3
-                  do k2 = 1, 3
-                     virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
-                  end do
-               end do
-            end if
-
+!        The force acts on j2. See the note in get_structure_factor_forces for
+!        the 0.25: this loop runs over ordered pairs, and sum_a F_a (x) r_a has
+!        one term per unordered pair. The cell half of this observable's
+!        virial -- the pair distribution is normalised by V -- is added by the
+!        caller, which holds the assembled pattern.
+         do k1 = 1, 3
+            do k2 = 1, 3
+               virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+            end do
          end do
       end do
 
+      deallocate (pair_used)
+      deallocate (pair_force)
+      deallocate (owner_species)
       deallocate (prefactor)
 
    end subroutine get_pair_distribution_forces
@@ -1819,7 +1830,6 @@ contains
       real(dp), intent(inout), allocatable :: pair_distribution_der(:, :, :)
       real(dp), allocatable :: bin_edges(:)
       real(dp), allocatable :: dV(:)
-      real(dp), allocatable :: kde(:)
       real(dp) :: r
       real(dp) :: n_pc
       real(dp) :: dr
@@ -1841,11 +1851,6 @@ contains
 
       allocate (bin_edges(1:n_samples + 1))
       if (.not. return_histogram) allocate (dV(1:n_samples))
-
-      if (kde_sigma > 0.d0) then
-         allocate (kde(1:n_samples))
-         kde = 0.d0
-      end if
 
       n_sites = size(n_neigh)
       n_pairs = size(neighbors_list)
@@ -1886,84 +1891,35 @@ contains
 
       count = 0
       count_species_1 = 0
-      k = 0
-      do i = 1, n_sites
-         ! k is the index which keeps a number of the atom pairs
-         ! i2 is the index of a particular atom
-         i2 = modulo(neighbors_list(k + 1) - 1, n_sites0) + 1
-         species_i = neighbor_species(k + 1)
-         k = k + 1
-         do j = 2, n_neigh(i)
-            ! Loop through the neighbors of atom i
-            ! j2 is the index of a neighboring atom to i
+      if (kde_sigma > 0.d0) then
+         call accumulate_pair_kde(n_neigh, neighbor_species, rjs, r_min, r_max, r_cut, n_samples, x, dV, &
+              & dr, kde_sigma, KDE_CUT, kde_norm, partial_rdf, species_1, species_2, do_derivatives, &
+              & pair_distribution_der, n_dim_idx, pair_distribution, count, der_scale)
+      else
+         k = 0
+         do i = 1, n_sites
+            species_i = neighbor_species(k + 1)
             k = k + 1
-            j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
+            do j = 2, n_neigh(i)
+               k = k + 1
+               species_j = neighbor_species(k)
 
-            species_j = neighbor_species(k)
-
-            if (partial_rdf) then
-
-               if (((species_i /= species_1) .or. (species_j /= species_2))) then
-                  if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
-               end if
-
-               ! if (species_i /= species_1) then
-               !    cycle
-               ! elseif(j == 1)then
-               !    count_species_1 = count_species_1 + 1
-               ! end if
-
-            end if
-
-            r = rjs(k) ! atom pair distance
-
-            if (r > r_cut) then
-               ! if i2 == j2 or r out of range
-               cycle
-            end if
-
-            ! edge cases where r is not in range
-            if (r < r_min) then
-               cycle
-            end if
-
-            if (r > r_max + kde_sigma*6.d0) then
-               cycle
-            end if
-
-            if (kde_sigma > 0.d0) then
-               ! do a kernel density estimate
-               count = count + 1
-               l_lo = max(1, int((r - KDE_CUT*kde_sigma - r_min)/dr))
-               l_hi = min(n_samples, int((r + KDE_CUT*kde_sigma - r_min)/dr) + 2)
-               do l = l_lo, l_hi
-                  kde(l) = exp(-((x(l) - r)/kde_sigma)**2/2.d0)
-                  pair_distribution(l) = pair_distribution(l) + kde(l)
-               end do
-
-!              The derivative row of pair k is written once, so the
-!              normalisations are applied here rather than over the whole array.
-               if (do_derivatives) then
-                  do l = l_lo, l_hi
-                     pair_distribution_der(l, n_dim_idx, k) = &
-                          & kde(l)*((x(l) - r)/kde_sigma**2)/r/dV(l)*dr/kde_norm
-                  end do
-                  if (present(der_scale)) then
-                     do l = l_lo, l_hi
-                        pair_distribution_der(l, n_dim_idx, k) = pair_distribution_der(l, n_dim_idx, k) &
-                                                                & *der_scale(1)/der_scale(2)/der_scale(3)/der_scale(4)
-                     end do
+               if (partial_rdf) then
+                  if (((species_i /= species_1) .or. (species_j /= species_2))) then
+                     if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
                   end if
                end if
-            else
+
+               r = rjs(k)
+               if (r > r_cut) cycle
+               if (r < r_min) cycle
+               if (r > r_max + kde_sigma*6.d0) cycle
 
                call binary_search_real(r, bin_edges, 1, n_samples + 1, ind_bin_l, ind_bin_h)
                pair_distribution(ind_bin_l) = pair_distribution(ind_bin_l) + 1.d0
-
-            end if
-
+            end do
          end do
-      end do
+      end if
 
       ! The factor of 1 / ( n_samples * kde_sigma * sqrt(2 pi) )
       !   is for the kernel density estimate.
@@ -1989,9 +1945,179 @@ contains
       end if
 
       deallocate (bin_edges)
-      if (kde_sigma > 0.d0) deallocate (kde)
 
    end subroutine get_pair_distribution
+
+!  Zeroes a pair-derivative array a pair column at a time across the OpenMP
+!  threads. It is freshly allocated every step, n_samples x n_pairs doubles, so
+!  its pages are first touched here, in parallel rather than by one thread.
+   subroutine zero_pair_columns(a)
+      implicit none
+      real(dp), intent(inout) :: a(:, :, :)
+      integer :: k
+
+!$omp parallel do schedule(static)
+      do k = 1, size(a, 3)
+         a(:, :, k) = 0.d0
+      end do
+!$omp end parallel do
+   end subroutine zero_pair_columns
+
+!  For each entry k of a neighbour list, the species of the site whose list it
+!  is in, or 0 for the site's own entry. A loop over k can then be split
+!  anywhere, which a loop over sites carrying a running k cannot.
+   subroutine pair_owner_species(n_neigh, neighbor_species, owner_species)
+      implicit none
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbor_species(:)
+      integer, intent(out) :: owner_species(:)
+      integer :: i
+      integer :: j
+      integer :: k
+
+      k = 0
+      do i = 1, size(n_neigh)
+         k = k + 1
+         owner_species(k) = 0
+         do j = 2, n_neigh(i)
+            k = k + 1
+            owner_species(k) = neighbor_species(k - j + 1)
+         end do
+      end do
+   end subroutine pair_owner_species
+
+!  The kernel density estimate of get_pair_distribution. A pair's kernel values
+!  and its derivative row depend on that pair alone, so they are formed in
+!  parallel, KDE_PAIR_CHUNK pairs at a time; the histogram then takes them in
+!  pair order, which keeps it bit-identical to the serial sum at any thread
+!  count. Arguments as in get_pair_distribution; count is incremented per pair.
+   subroutine accumulate_pair_kde(n_neigh, neighbor_species, rjs, r_min, r_max, r_cut, n_samples, x, dV, &
+        & dr, kde_sigma, kde_cut, kde_norm, partial_rdf, species_1, species_2, do_derivatives, &
+        & pair_distribution_der, n_dim_idx, pair_distribution, count, der_scale)
+      implicit none
+      integer, intent(in) :: n_neigh(:)
+      integer, intent(in) :: neighbor_species(:)
+      real(dp), intent(in) :: rjs(:)
+      real(dp), intent(in) :: r_min
+      real(dp), intent(in) :: r_max
+      real(dp), intent(in) :: r_cut
+      integer, intent(in) :: n_samples
+      real(dp), intent(in) :: x(1:n_samples)
+      real(dp), allocatable, intent(in) :: dV(:)
+      real(dp), intent(in) :: dr
+      real(dp), intent(in) :: kde_sigma
+      real(dp), intent(in) :: kde_cut
+      real(dp), intent(in) :: kde_norm
+      logical, intent(in) :: partial_rdf
+      integer, intent(in) :: species_1
+      integer, intent(in) :: species_2
+      logical, intent(in) :: do_derivatives
+      real(dp), allocatable, intent(inout) :: pair_distribution_der(:, :, :)
+      integer, intent(in) :: n_dim_idx
+      real(dp), intent(inout) :: pair_distribution(1:n_samples)
+      integer, intent(inout) :: count
+      real(dp), intent(in), optional :: der_scale(1:4)
+!     Scratch is width x KDE_PAIR_CHUNK doubles: 6 MB at sigma 0.1 A, dr 0.04 A.
+      integer, parameter :: KDE_PAIR_CHUNK = 16384
+      integer, allocatable :: owner_species(:)
+      integer, allocatable :: l_lo(:)
+      integer, allocatable :: l_hi(:)
+      real(dp), allocatable :: kde(:, :)
+      real(dp), allocatable :: kde_row(:)
+      real(dp) :: r
+      integer :: n_pairs
+      integer :: width
+      integer :: k_beg
+      integer :: k_end
+      integer :: k
+      integer :: kk
+      integer :: l
+      integer :: lo
+      integer :: hi
+      integer :: species_i
+      integer :: species_j
+
+      n_pairs = sum(n_neigh)
+      if (n_pairs == 0) return
+      allocate (owner_species(1:n_pairs))
+      call pair_owner_species(n_neigh, neighbor_species, owner_species)
+
+!     l_hi - l_lo + 1 is at most int(2 kde_cut sigma / dr) + 4; one more for
+!     the rounding of the two ends, which are truncated separately.
+      width = int(2.d0*kde_cut*kde_sigma/dr) + 5
+      allocate (kde(1:width, 1:KDE_PAIR_CHUNK))
+      allocate (l_lo(1:KDE_PAIR_CHUNK))
+      allocate (l_hi(1:KDE_PAIR_CHUNK))
+
+      do k_beg = 1, n_pairs, KDE_PAIR_CHUNK
+         k_end = min(n_pairs, k_beg + KDE_PAIR_CHUNK - 1)
+
+!        kde_row(l), indexed by sample as the serial loop indexed its kernel,
+!        so that the exp loop vectorises the same way: the vector and scalar exp
+!        differ in the last bit, and bit-identity rests on the same split.
+!$omp parallel default(shared) private(k, kk, l, lo, hi, species_i, species_j, r, kde_row)
+         allocate (kde_row(1:n_samples))
+!$omp do schedule(static)
+         do k = k_beg, k_end
+            kk = k - k_beg + 1
+            l_lo(kk) = 0
+            species_i = owner_species(k)
+            if (species_i == 0) cycle
+            species_j = neighbor_species(k)
+
+            if (partial_rdf) then
+               if (((species_i /= species_1) .or. (species_j /= species_2))) then
+                  if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
+               end if
+            end if
+
+            r = rjs(k)
+            if (r > r_cut) cycle
+            if (r < r_min) cycle
+            if (r > r_max + kde_sigma*6.d0) cycle
+
+            lo = max(1, int((r - kde_cut*kde_sigma - r_min)/dr))
+            hi = min(n_samples, int((r + kde_cut*kde_sigma - r_min)/dr) + 2)
+            do l = lo, hi
+               kde_row(l) = exp(-((x(l) - r)/kde_sigma)**2/2.d0)
+            end do
+            l_lo(kk) = lo
+            l_hi(kk) = hi
+            kde(1:hi - lo + 1, kk) = kde_row(lo:hi)
+
+!           The derivative row of pair k is written once, so the
+!           normalisations are applied here rather than over the whole array.
+            if (do_derivatives) then
+               do l = lo, hi
+                  pair_distribution_der(l, n_dim_idx, k) = &
+                       & kde_row(l)*((x(l) - r)/kde_sigma**2)/r/dV(l)*dr/kde_norm
+               end do
+               if (present(der_scale)) then
+                  do l = lo, hi
+                     pair_distribution_der(l, n_dim_idx, k) = pair_distribution_der(l, n_dim_idx, k) &
+                                                             & *der_scale(1)/der_scale(2)/der_scale(3)/der_scale(4)
+                  end do
+               end if
+            end if
+         end do
+!$omp end do
+         deallocate (kde_row)
+!$omp end parallel
+
+         do kk = 1, k_end - k_beg + 1
+            if (l_lo(kk) == 0) cycle
+            count = count + 1
+            do l = l_lo(kk), l_hi(kk)
+               pair_distribution(l) = pair_distribution(l) + kde(l - l_lo(kk) + 1, kk)
+            end do
+         end do
+      end do
+
+      deallocate (kde)
+      deallocate (l_hi)
+      deallocate (l_lo)
+      deallocate (owner_species)
+   end subroutine accumulate_pair_kde
 
    subroutine binary_search_real(xs, x, lin, hin, l, h)
       ! give delimiting indices (lout, hout) of array of x (which is a set of delimited bins) where xs (x search) is in range

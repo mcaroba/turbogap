@@ -118,6 +118,11 @@ jobs:
         working-directory: turbogap
         run: tests/xrd_species_order/run.sh
 
+      - name: Threaded pdf and diffraction forces do not depend on the thread count
+        if: always()
+        working-directory: turbogap
+        run: tests/exp_omp/run.sh
+
       - name: Dipole prediction against QUIP
         if: always()
         working-directory: turbogap

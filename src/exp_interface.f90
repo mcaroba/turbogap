@@ -642,7 +642,7 @@ contains
          if (params%do_forces .and. params%exp_forces) then
             allocate (pair_distribution_partial_der(1:params%pair_distribution_n_samples,&
               & 1:pdf_der_slot(n_dim_partial), j_beg:j_end))
-            pair_distribution_partial_der = 0.d0
+            call zero_pair_columns(pair_distribution_partial_der)
 
             if (rank == 0 .and. md_istep == 0) write (*, '(A,1X,F7.4,1X,A)') "Gb/core: partial pdfder = ", dfloat(params&
                  &%pair_distribution_n_samples*n_dim_partial*j_end)&
@@ -654,7 +654,7 @@ contains
          if (params%do_forces .and. params%exp_forces) then
             allocate (pair_distribution_partial_der(1:params%pair_distribution_n_samples, 1:1, &
               &  j_beg:j_end))
-            pair_distribution_partial_der = 0.d0
+            call zero_pair_columns(pair_distribution_partial_der)
          end if
 
       end if
