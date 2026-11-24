@@ -113,6 +113,11 @@ jobs:
         working-directory: turbogap
         run: TURBOGAP_PYTHON=python tests/pdf_virial/run.sh
 
+      - name: XRD and ND do not depend on atom order
+        if: always()
+        working-directory: turbogap
+        run: tests/xrd_species_order/run.sh
+
       - name: Dipole prediction against QUIP
         if: always()
         working-directory: turbogap

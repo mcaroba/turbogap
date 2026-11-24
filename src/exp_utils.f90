@@ -1876,7 +1876,7 @@ contains
          x(i) = (bin_edges(i) + bin_edges(i + 1))/2.d0
 
          if (.not. return_histogram) then
-            dV(i) = 4.d0*pi*(bin_edges(i)**2*(bin_edges(i + 1) - bin_edges(i)))
+            dV(i) = 4.d0*pi/3.d0*(bin_edges(i + 1)**3 - bin_edges(i)**3)
          end if
 
       end do
@@ -4742,7 +4742,7 @@ contains
       do i = 1, n_samples
          x(i) = (bin_edges(i) + bin_edges(i + 1))/2.d0
 
-         dV(i) = 4.d0*pi*(bin_edges(i)**2*(bin_edges(i + 1) - bin_edges(i)))
+         dV(i) = 4.d0*pi/3.d0*(bin_edges(i + 1)**3 - bin_edges(i)**3)
       end do
 
       deallocate (bin_edges)

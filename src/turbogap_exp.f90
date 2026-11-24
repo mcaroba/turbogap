@@ -551,23 +551,12 @@ contains
       ! Total scattering function F^X(q)
       ! F^x(q) = [ XRD(q) - \sum_n c_i f_i(q)^2 ] / [ \sum_n c_i f_i(q) ]^2
 
-      ! First get the number of species in actuality
-      n_species_actual = 0
-      do i = 1, n_sites
-         if (species(i) > n_species_actual) n_species_actual = n_species_actual + 1
-      end do
-
-      ! Now find the unique species ids
+      ! Partials and n_atoms_of_species are indexed by species id, so slot k
+      ! must name species k whatever order the atoms come in.
+      n_species_actual = maxval(species(1:n_sites))
       if (allocated(species_types_actual)) deallocate (species_types_actual)
       allocate (species_types_actual(1:n_species_actual))
-
-      n_species_actual = 0
-      do i = 1, n_sites
-         if (species(i) > n_species_actual) then
-            n_species_actual = n_species_actual + 1
-            species_types_actual(n_species_actual) = params%species_types(species(i))
-         end if
-      end do
+      species_types_actual(1:n_species_actual) = params%species_types(1:n_species_actual)
 
       n_dim_partial = n_species_actual*(n_species_actual + 1)/2
 
@@ -1554,23 +1543,12 @@ contains
       ! Total scattering function F^X(q)
       ! F^x(q) = [ XRD(q) - \sum_n c_i f_i(q)^2 ] / [ \sum_n c_i f_i(q) ]^2
 
-      ! First get the number of species in actuality
-      n_species_actual = 0
-      do i = 1, n_sites
-         if (species(i) > n_species_actual) n_species_actual = n_species_actual + 1
-      end do
-
-      ! Now find the unique species ids
+      ! Partials and n_atoms_of_species are indexed by species id, so slot k
+      ! must name species k whatever order the atoms come in.
+      n_species_actual = maxval(species(1:n_sites))
       if (allocated(species_types_actual)) deallocate (species_types_actual)
       allocate (species_types_actual(1:n_species_actual))
-
-      n_species_actual = 0
-      do i = 1, n_sites
-         if (species(i) > n_species_actual) then
-            n_species_actual = n_species_actual + 1
-            species_types_actual(n_species_actual) = params%species_types(species(i))
-         end if
-      end do
+      species_types_actual(1:n_species_actual) = params%species_types(1:n_species_actual)
 
       if (params%do_pair_distribution) then
          call time_start(time%pdf)
