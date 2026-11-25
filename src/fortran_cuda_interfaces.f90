@@ -684,61 +684,57 @@ MODULE F_B_C
          logical(c_bool), value :: do_derivatives
       end subroutine
 
-      subroutine gpu_get_2b_forces_energies(i_beg, i_end, n_sparse, energies_d, e0, n_neigh_d, do_forces, forces_d, virial_d, &
-                                            rjs_d, rcut, species_d, neighbor_species_d, sp1, sp2, buffer, delta, cutoff_d, &
-                                            Qs_d, sigma, alphas_d, xyz_d, gpu_stream) &
-         bind(C, name="gpu_get_2b_forces_energies")
+      subroutine gpu_get_2b_all(i_beg, i_end, n_pairs, n_desc, desc_int_d, desc_real_d, alphas_d, cutoff_d, Qs_d, &
+                                buffer, n_neigh_d, species_d, neighbor_species_d, rjs_d, xyz_d, do_forces, energies_d, &
+                                forces_d, virial_d, gpu_stream) &
+         bind(C, name="gpu_get_2b_all")
          use iso_c_binding
-         type(c_ptr), value :: energies_d
-         type(c_ptr), value :: n_neigh_d
-         type(c_ptr), value :: forces_d
-         type(c_ptr), value :: virial_d
-         type(c_ptr), value :: rjs_d
-         type(c_ptr), value :: species_d
-         type(c_ptr), value :: neighbor_species_d
-         type(c_ptr), value :: cutoff_d
-         type(c_ptr), value :: Qs_d
-         type(c_ptr), value :: alphas_d
-         type(c_ptr), value :: xyz_d
-         type(c_ptr) :: gpu_stream
          integer(c_int), value :: i_beg
          integer(c_int), value :: i_end
-         integer(c_int), value :: n_sparse
-         integer(c_int), value :: sp1
-         integer(c_int), value :: sp2
-         logical(c_bool), value :: do_forces
-         real(c_double), value :: e0
-         real(c_double), value :: rcut
+         integer(c_int), value :: n_pairs
+         integer(c_int), value :: n_desc
+         type(c_ptr), value :: desc_int_d
+         type(c_ptr), value :: desc_real_d
+         type(c_ptr), value :: alphas_d
+         type(c_ptr), value :: cutoff_d
+         type(c_ptr), value :: Qs_d
          real(c_double), value :: buffer
-         real(c_double), value :: delta
-         real(c_double), value :: sigma
-      end subroutine
-
-      subroutine gpu_get_core_pot_energy_and_forces(i_beg, i_end, do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d, &
-                                                    rjs_d, n_sparse, x_d, V_d, dVdx2_d, yp1, ypn, xyz_d, forces_d, virial_d, &
-                                                    energies_d, gpu_stream) &
-         bind(C, name="gpu_get_core_pot_energy_and_forces")
-         use iso_c_binding
-         type(c_ptr), value :: species_d
          type(c_ptr), value :: n_neigh_d
+         type(c_ptr), value :: species_d
          type(c_ptr), value :: neighbor_species_d
          type(c_ptr), value :: rjs_d
+         type(c_ptr), value :: xyz_d
+         logical(c_bool), value :: do_forces
+         type(c_ptr), value :: energies_d
+         type(c_ptr), value :: forces_d
+         type(c_ptr), value :: virial_d
+         type(c_ptr) :: gpu_stream
+      end subroutine
+
+      subroutine gpu_get_core_pot_all(i_beg, i_end, n_pairs, n_desc, desc_int_d, desc_real_d, x_d, V_d, dVdx2_d, &
+                                      n_neigh_d, species_d, neighbor_species_d, rjs_d, xyz_d, do_forces, energies_d, &
+                                      forces_d, virial_d, gpu_stream) &
+         bind(C, name="gpu_get_core_pot_all")
+         use iso_c_binding
+         integer(c_int), value :: i_beg
+         integer(c_int), value :: i_end
+         integer(c_int), value :: n_pairs
+         integer(c_int), value :: n_desc
+         type(c_ptr), value :: desc_int_d
+         type(c_ptr), value :: desc_real_d
          type(c_ptr), value :: x_d
          type(c_ptr), value :: V_d
          type(c_ptr), value :: dVdx2_d
+         type(c_ptr), value :: n_neigh_d
+         type(c_ptr), value :: species_d
+         type(c_ptr), value :: neighbor_species_d
+         type(c_ptr), value :: rjs_d
          type(c_ptr), value :: xyz_d
+         logical(c_bool), value :: do_forces
+         type(c_ptr), value :: energies_d
          type(c_ptr), value :: forces_d
          type(c_ptr), value :: virial_d
-         type(c_ptr), value :: energies_d
          type(c_ptr) :: gpu_stream
-         integer(c_int), value :: i_beg
-         integer(c_int), value :: i_end
-         integer(c_int), value :: sp1
-         integer(c_int), value :: sp2
-         integer(c_int), value :: n_sparse
-         logical(c_bool), value :: do_forces
-         real(c_double), value :: yp1
-         real(c_double), value :: ypn
       end subroutine
 
       subroutine get_orthonormalization_matrix_poly3_gpu(alpha_max, S, W, handle, stream) bind(C,name="get_orthonormalization_matrix_poly3")

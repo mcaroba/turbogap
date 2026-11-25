@@ -100,14 +100,14 @@ void gpu_soap_dipole(int n_sites, double* Qss_d, int n_soap, int* beg_index_d, d
                      hipStream_t* stream);
 
 // ---- gap_2b.cu
-void gpu_get_2b_forces_energies(int i_beg, int i_end, int n_sparse, double* energies_d, double e0, int* n_neigh_d, bool do_forces,
-                                double* forces_d, double* virial_d, double* rjs_d, double rcut, int* species_d,
-                                int* neighbor_species_d, int sp1, int sp2, double buffer, double delta, double* cutoff_d,
-                                double* Qs_d, double sigma, double* alphas_d, double* xyz_d, hipStream_t* stream);
-void gpu_get_core_pot_energy_and_forces(int i_beg, int i_end, bool do_forces, int* species_d, int sp1, int sp2, int* n_neigh_d,
-                                        int* neighbor_species_d, double* rjs_d, int n_sparse, double* x_d, double* V_d,
-                                        double* dVdx2_d, double yp1, double ypn, double* xyz_d, double* forces_d, double* virial_d,
-                                        double* energies_d, hipStream_t* stream);
+void gpu_get_2b_all(int i_beg, int i_end, int n_pairs, int n_desc, int* desc_int_d, double* desc_real_d, double* alphas_d,
+                    double* cutoff_d, double* Qs_d, double buffer, int* n_neigh_d, int* species_d, int* neighbor_species_d,
+                    double* rjs_d, double* xyz_d, bool do_forces, double* energies_d, double* forces_d, double* virial_d,
+                    hipStream_t* stream);
+void gpu_get_core_pot_all(int i_beg, int i_end, int n_pairs, int n_desc, int* desc_int_d, double* desc_real_d, double* x_d,
+                          double* V_d, double* dVdx2_d, int* n_neigh_d, int* species_d, int* neighbor_species_d, double* rjs_d,
+                          double* xyz_d, bool do_forces, double* energies_d, double* forces_d, double* virial_d,
+                          hipStream_t* stream);
 
 // ---- gap_3b.cc
 void gpu_3b(const int n_sparse, const int n_sites, const int n_atom_pairs, const int n_sites0, const int sp0, const int sp1,

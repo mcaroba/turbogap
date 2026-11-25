@@ -192,13 +192,18 @@ contains
       type(c_ptr) :: energies_2b_d
       type(c_ptr) :: forces_2b_d
       type(c_ptr) :: virial_2b_d
+      type(c_ptr) :: desc_int_d
+      type(c_ptr) :: desc_real_d
+      integer(c_int), allocatable, target :: desc_int(:, :)
+      real(dp), allocatable, target :: desc_real(:, :)
+      real(dp), allocatable, target :: alphas_all(:)
+      real(dp), allocatable, target :: cutoff_all(:)
+      real(dp), allocatable, target :: qs_all(:)
       integer :: i
-      integer :: j
-      integer :: sp1
-      integer :: sp2
+      integer :: n
+      integer :: off
       integer :: n_sparse
       integer(c_size_t) :: st_n_sites_double
-      integer(c_size_t) :: st_n_sparse_double
       integer(c_size_t) :: st_virial
       logical(c_bool) :: c_do_forces
       integer :: n_sites
@@ -220,7 +225,7 @@ contains
 !   size(energies_2b), not the rank's site count. Same defect as the one fixed
 !   in gap_backend_begin, one layer along and on the OUTPUT side.
 !
-!   kernel_get_2b writes energies_d[i_site] and forces_d[3*i_site + l] with the
+!   The 2b kernels write energies_d[i_site] and forces_d[3*i_site + l] with the
 !   GLOBAL site index, and the host arrays it is copied to and from --
 !   energies_2b, forces_2b, this_energies, this_forces -- are allocated
 !   (1:n_sites) over the WHOLE system on every rank (turbogap.f90). Only the
@@ -240,56 +245,48 @@ contains
       call gpu_malloc_async(virial_2b_d, st_virial, gpu_stream)
       call cpy_htod(c_loc(virial_2b), virial_2b_d, st_virial, gpu_stream)
 
+      allocate (desc_int(1:4, 1:n_distance_2b))
+      allocate (desc_real(1:3, 1:n_distance_2b))
+      n_sparse = 0
       do i = 1, n_distance_2b
-         !                The kernel filters neighbours by species index, so sp1/sp2
-         !                must be the position of the descriptor's species within
-         !                params%species_types (j), not the descriptor index (i).
-!                A species the input does not list stays 0, which no
-!                site's species equals: the kernel then adds nothing. Unset,
-!                sp1/sp2 kept the previous descriptor's species, and that pair
-!                type was counted again with this descriptor's parameters.
-         sp1 = 0
-         sp2 = 0
-         do j = 1, size(params%species_types)
-         if (distance_2b_hypers(i)%species1 == params%species_types(j)) then
-            sp1 = j
-            exit
-         end if
-         end do
-         do j = 1, size(params%species_types)
-         if (distance_2b_hypers(i)%species2 == params%species_types(j)) then
-            sp2 = j
-            exit
-         end if
-         end do
-
-         n_sparse = distance_2b_hypers(i)%n_sparse
-         st_n_sparse_double = n_sparse*sizeof(distance_2b_hypers(i)%alphas(1))
-         call gpu_malloc_async(alphas_d, st_n_sparse_double, gpu_stream)
-         call cpy_htod(c_loc(distance_2b_hypers(i)%alphas), alphas_d, st_n_sparse_double, gpu_stream)
-         call gpu_malloc_async(cutoff_d, st_n_sparse_double, gpu_stream)
-         call cpy_htod(c_loc(distance_2b_hypers(i)%cutoff), cutoff_d, st_n_sparse_double, gpu_stream)
-         call gpu_malloc_async(qs_d, st_n_sparse_double, gpu_stream)
-         call cpy_htod(c_loc(distance_2b_hypers(i)%Qs(:, 1)), qs_d, st_n_sparse_double, gpu_stream)
-
-         call gpu_get_2b_forces_energies(i_beg, i_end,&
-         & n_sparse, energies_2b_d, 0.0d0, n_neigh_d,&
-         & c_do_forces, forces_2b_d, virial_2b_d,&
-         & rjs_d, distance_2b_hypers(i)%rcut,&
-         & species_d, neighbor_species_d, sp1, sp2,&
-         & 0.5d0, distance_2b_hypers(i)%delta,&
-         & cutoff_d, qs_d, distance_2b_hypers(i)&
-         &%sigma, alphas_d, xyz_d, gpu_stream)
-
-         call gpu_free_async(alphas_d, gpu_stream)
-         call gpu_free_async(cutoff_d, gpu_stream)
-         call gpu_free_async(qs_d, gpu_stream)
+         n_sparse = n_sparse + distance_2b_hypers(i)%n_sparse
       end do
+      allocate (alphas_all(1:n_sparse))
+      allocate (cutoff_all(1:n_sparse))
+      allocate (qs_all(1:n_sparse))
+      off = 0
+      do i = 1, n_distance_2b
+         n = distance_2b_hypers(i)%n_sparse
+         desc_int(1, i) = species_index(distance_2b_hypers(i)%species1, params%species_types)
+         desc_int(2, i) = species_index(distance_2b_hypers(i)%species2, params%species_types)
+         desc_int(3, i) = n
+         desc_int(4, i) = off
+         desc_real(1, i) = distance_2b_hypers(i)%rcut
+         desc_real(2, i) = distance_2b_hypers(i)%delta
+         desc_real(3, i) = distance_2b_hypers(i)%sigma
+         alphas_all(off + 1:off + n) = distance_2b_hypers(i)%alphas(1:n)
+         cutoff_all(off + 1:off + n) = distance_2b_hypers(i)%cutoff(1:n)
+         qs_all(off + 1:off + n) = distance_2b_hypers(i)%Qs(1:n, 1)
+         off = off + n
+      end do
+      desc_int_d = to_device(c_loc(desc_int), int(sizeof(desc_int), c_size_t))
+      desc_real_d = to_device(c_loc(desc_real), int(sizeof(desc_real), c_size_t))
+      alphas_d = to_device(c_loc(alphas_all), int(sizeof(alphas_all), c_size_t))
+      cutoff_d = to_device(c_loc(cutoff_all), int(sizeof(cutoff_all), c_size_t))
+      qs_d = to_device(c_loc(qs_all), int(sizeof(qs_all), c_size_t))
 
-      !              The kernels accumulate into the device buffers, so after the
-      !              loop these already hold the sum over every 2b descriptor.
-      !              Reading them back inside the loop and adding to the host arrays
-      !              counted each descriptor once more for every later iteration.
+      call gpu_get_2b_all(i_beg, i_end, sum(n_neigh(i_beg:i_end)), n_distance_2b, desc_int_d, desc_real_d, alphas_d, &
+                          cutoff_d, qs_d, 0.5d0, n_neigh_d, species_d, neighbor_species_d, rjs_d, xyz_d, c_do_forces, &
+                          energies_2b_d, forces_2b_d, virial_2b_d, gpu_stream)
+
+      call gpu_free_async(desc_int_d, gpu_stream)
+      call gpu_free_async(desc_real_d, gpu_stream)
+      call gpu_free_async(alphas_d, gpu_stream)
+      call gpu_free_async(cutoff_d, gpu_stream)
+      call gpu_free_async(qs_d, gpu_stream)
+
+!     The kernel accumulates into the device buffers, which held the host
+!     totals on entry.
       call cpy_dtoh(energies_2b_d, c_loc(this_energies), st_n_sites_double, gpu_stream)
       call cpy_dtoh(forces_2b_d, c_loc(this_forces), 3*st_n_sites_double, gpu_stream)
       call cpy_dtoh(virial_2b_d, c_loc(this_virial), st_virial, gpu_stream)
@@ -305,15 +302,7 @@ contains
       call gpu_free_async(forces_2b_d, gpu_stream)
       call gpu_free_async(virial_2b_d, gpu_stream)
 
-!   The bucket wraps the whole routine, not each descriptor.
-!
-!   It used to be started and ended inside the loop, which was only meaningful
-!   while gpu_get_2b_forces_energies ended in a stream synchronise: with that
-!   gone the launch returns immediately and a per-descriptor interval would
-!   measure launch overhead and call it 2b time. Here the interval encloses the
-!   gpu_stream_sync above, so it still measures the kernels -- and it is one
-!   interval per call rather than one per descriptor, which is also what the
-!   NVTX phase table wants.
+!   Encloses the gpu_stream_sync above, so it measures the kernels.
       call time_end(time%gap_2b, "2b")
 
    end subroutine add_2b_contribution
@@ -350,13 +339,18 @@ contains
       type(c_ptr) :: x_d
       type(c_ptr) :: V_d
       type(c_ptr) :: dVdx2_d
+      type(c_ptr) :: desc_int_d
+      type(c_ptr) :: desc_real_d
+      integer(c_int), allocatable, target :: desc_int(:, :)
+      real(dp), allocatable, target :: desc_real(:, :)
+      real(dp), allocatable, target :: x_all(:)
+      real(dp), allocatable, target :: V_all(:)
+      real(dp), allocatable, target :: dVdx2_all(:)
       integer :: i
-      integer :: j
-      integer :: sp1
-      integer :: sp2
+      integer :: n
+      integer :: off
       integer :: n_sparse
       integer(c_size_t) :: st_n_sites_double
-      integer(c_size_t) :: st_n_sparse_double
       integer(c_size_t) :: st_virial
       logical(c_bool) :: c_do_forces
       integer :: n_sites
@@ -385,54 +379,48 @@ contains
       call gpu_malloc_async(virial_core_pot_d, st_virial, gpu_stream)
       call cpy_htod(c_loc(virial_core_pot), virial_core_pot_d, st_virial, gpu_stream)
 
-      !       Loop through core_pot descriptors
+      call time_start(time%gap_core_pot, "core_pot")
+      allocate (desc_int(1:4, 1:n_core_pot))
+      allocate (desc_real(1:3, 1:n_core_pot))
+      n_sparse = 0
       do i = 1, n_core_pot
-
-         call time_start(time%gap_core_pot, "core_pot")
-
-         n_sparse = core_pot_hypers(i)%n
-         st_n_sparse_double = n_sparse*sizeof(core_pot_hypers(i)%x(1))
-         call gpu_malloc_async(x_d, st_n_sparse_double, gpu_stream)
-         call cpy_htod(c_loc(core_pot_hypers(i)%x), x_d, st_n_sparse_double, gpu_stream)
-         call gpu_malloc_async(V_d, st_n_sparse_double, gpu_stream)
-         call cpy_htod(c_loc(core_pot_hypers(i)%V), V_d, st_n_sparse_double, gpu_stream)
-         call gpu_malloc_async(dVdx2_d, st_n_sparse_double, gpu_stream)
-         call cpy_htod(c_loc(core_pot_hypers(i)%dVdx2), dVdx2_d, st_n_sparse_double, gpu_stream)
-
-!   The kernel filters neighbours by species index, so sp1/sp2 must be the
-!   position of this descriptor's species within params%species_types. They
-!   were never set here: the routine passed whatever add_2b_contribution had
-!   left in the enclosing scope, which is the same defect as bug 3 in section 4
-!   and was fixed there but not here.
-!   0 for a species the input does not list, as in the 2b loop.
-         sp1 = 0
-         sp2 = 0
-         do j = 1, size(params%species_types)
-            if (core_pot_hypers(i)%species1 == params%species_types(j)) then
-               sp1 = j
-               exit
-            end if
-         end do
-         do j = 1, size(params%species_types)
-            if (core_pot_hypers(i)%species2 == params%species_types(j)) then
-               sp2 = j
-               exit
-            end if
-         end do
-
-         call gpu_get_core_pot_energy_and_forces(i_beg, i_end, c_do_forces, species_d, sp1, sp2, n_neigh_d, neighbor_species_d, &
-                                               rjs_d, n_sparse, x_d, V_d, dVdx2_d, core_pot_hypers(i)%yp1, core_pot_hypers(i)%ypn, &
-                                                 xyz_d, forces_core_pot_d, virial_core_pot_d, energies_core_pot_d, gpu_stream)
-         call gpu_free_async(x_d, gpu_stream)
-         call gpu_free_async(V_d, gpu_stream)
-         call gpu_free_async(dVdx2_d, gpu_stream)
-
-         call time_end(time%gap_core_pot, "core_pot")
+         n_sparse = n_sparse + core_pot_hypers(i)%n
       end do
+      allocate (x_all(1:n_sparse))
+      allocate (V_all(1:n_sparse))
+      allocate (dVdx2_all(1:n_sparse))
+      off = 0
+      do i = 1, n_core_pot
+         n = core_pot_hypers(i)%n
+         desc_int(1, i) = species_index(core_pot_hypers(i)%species1, params%species_types)
+         desc_int(2, i) = species_index(core_pot_hypers(i)%species2, params%species_types)
+         desc_int(3, i) = n
+         desc_int(4, i) = off
+         desc_real(1, i) = core_pot_hypers(i)%yp1
+         desc_real(2, i) = core_pot_hypers(i)%ypn
+         desc_real(3, i) = maxval(core_pot_hypers(i)%x(1:n))
+         x_all(off + 1:off + n) = core_pot_hypers(i)%x(1:n)
+         V_all(off + 1:off + n) = core_pot_hypers(i)%V(1:n)
+         dVdx2_all(off + 1:off + n) = core_pot_hypers(i)%dVdx2(1:n)
+         off = off + n
+      end do
+      desc_int_d = to_device(c_loc(desc_int), int(sizeof(desc_int), c_size_t))
+      desc_real_d = to_device(c_loc(desc_real), int(sizeof(desc_real), c_size_t))
+      x_d = to_device(c_loc(x_all), int(sizeof(x_all), c_size_t))
+      V_d = to_device(c_loc(V_all), int(sizeof(V_all), c_size_t))
+      dVdx2_d = to_device(c_loc(dVdx2_all), int(sizeof(dVdx2_all), c_size_t))
 
-      !              As for the 2b and 3b terms, the kernel accumulates into the
-      !              device buffers, so the totals are read back only once the loop
-      !              over descriptors has finished.
+      call gpu_get_core_pot_all(i_beg, i_end, sum(n_neigh(i_beg:i_end)), n_core_pot, desc_int_d, desc_real_d, x_d, V_d, &
+                                dVdx2_d, n_neigh_d, species_d, neighbor_species_d, rjs_d, xyz_d, c_do_forces, &
+                                energies_core_pot_d, forces_core_pot_d, virial_core_pot_d, gpu_stream)
+
+      call gpu_free_async(desc_int_d, gpu_stream)
+      call gpu_free_async(desc_real_d, gpu_stream)
+      call gpu_free_async(x_d, gpu_stream)
+      call gpu_free_async(V_d, gpu_stream)
+      call gpu_free_async(dVdx2_d, gpu_stream)
+
+!     As for 2b, the kernel accumulates into the device buffers.
       call cpy_dtoh(energies_core_pot_d, c_loc(this_energies), st_n_sites_double, gpu_stream)
       call cpy_dtoh(forces_core_pot_d, c_loc(this_forces), 3*st_n_sites_double, gpu_stream)
       call cpy_dtoh(virial_core_pot_d, c_loc(this_virial), st_virial, gpu_stream)
@@ -448,6 +436,7 @@ contains
       call gpu_free_async(energies_core_pot_d, gpu_stream)
       call gpu_free_async(forces_core_pot_d, gpu_stream)
       call gpu_free_async(virial_core_pot_d, gpu_stream)
+      call time_end(time%gap_core_pot, "core_pot")
 
    end subroutine add_core_pot_contribution
 
@@ -661,5 +650,30 @@ contains
       call gpu_free_async(alphas_d, gpu_stream)
 
    end subroutine add_3b_contribution
+
+!  label's position in species_types; 0 when the input does not list it, which
+!  no site's species equals, so a term for it adds nothing.
+   integer function species_index(label, species_types)
+      implicit none
+      character(len=*), intent(in) :: label
+      character(len=*), intent(in) :: species_types(:)
+      integer :: j
+      species_index = 0
+      do j = 1, size(species_types)
+         if (label == species_types(j)) then
+            species_index = j
+            return
+         end if
+      end do
+   end function species_index
+
+!  A device copy of bytes from host, on the backend's stream.
+   type(c_ptr) function to_device(host, bytes)
+      implicit none
+      type(c_ptr), intent(in) :: host
+      integer(c_size_t), intent(in) :: bytes
+      call gpu_malloc_async(to_device, bytes, gpu_stream)
+      call cpy_htod(host, to_device, bytes, gpu_stream)
+   end function to_device
 
 end module gap_backend

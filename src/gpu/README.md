@@ -29,8 +29,10 @@ Everything TurboGAP runs on a GPU lives here. It used to live in three files in
 
 - `gap_predict.cu` — kernel power `k^zeta`, the `e0` offset, and the two
   mat-vec products over the sparse set.
-- `gap_2b.cu` — the two-body descriptor and the core repulsive potential; both
-  evaluate a cubic spline, so `gpu_spline`/`gpu_spline_der` live here.
+- `gap_2b.cu` — the two-body descriptor and the core repulsive potential, each
+  in one launch over every descriptor: a thread per pair, then a thread per
+  site sums its pairs in list order. The core potential's cubic spline,
+  `gpu_spline`/`gpu_spline_der`, lives here.
 - `gap_3b.cc` — the three-body descriptor. **Stays `.cc`** so the Makefile
   compiles it with `$(CC)`, which passes `-std=c++20`; it needs `<numbers>` and
   `<bit>`.

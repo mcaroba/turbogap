@@ -1,10 +1,8 @@
-// The two-body descriptor and the core (repulsive) potential, both of which
-// evaluate a cubic spline over pair distances.
+// The two-body descriptor and the core (repulsive) potential: every
+// descriptor of each in one pass over the pairs.
 //
-// Two flat maps over sites, written once through tg_parallel_for and dispatched
-// to CUDA or Kokkos by src/gpu/gpu_backend.h. The `if (i_site < i_end)` guard
-// each kernel carried is gone: it existed because a <<<>>> grid is rounded up
-// to whole blocks, and tg_parallel_for passes the exact extent instead.
+// Flat maps written once through tg_parallel_for and dispatched to CUDA or
+// Kokkos by src/gpu/gpu_backend.h.
 #include "gap_gpu.h"
 #include "gpu_backend.h"
 #include "gpu_common.h"
@@ -77,142 +75,178 @@ static int* site_first_pair(int i_beg, int i_end, int* n_neigh_d, hipStream_t* s
   return first_d;
 }
 
-extern "C" void gpu_get_2b_forces_energies(int i_beg, int i_end, int n_sparse, double* energies_d, double e0, int* n_neigh_d,
-                                           bool do_forces, double* forces_d, double* virial_d, double* rjs_d, double rcut,
-                                           int* species_d, int* neighbor_species_d, int sp1, int sp2, double buffer, double delta,
-                                           double* cutoff_d, double* Qs_d, double sigma, double* alphas_d, double* xyz_d,
-                                           hipStream_t* stream) {
-  if (i_end < i_beg)
-    return;
-  int* first_d = site_first_pair(i_beg, i_end, n_neigh_d, stream);
-  tg_parallel_for(
-      "turbogap_get_2b", i_end - i_beg + 1, stream,
-      TG_LAMBDA(const int tid) {
-        int i_site = i_beg - 1 + tid;
-        double forces_loc[3], virial_loc[9], energies_loc;
-        int i, j, k, s, k1, k2;
-        double rjs_k, fcut, dfcut, pi, sigma2, delta2, tmp;
+// The pair terms run a thread per pair: a site has tens of neighbours, so a
+// thread per site leaves most of a large device idle. Each pair kernel writes
+// the pair's energy and force on its site, ep and fp, and sum_to_sites adds
+// them up per site in list order, so the totals do not depend on the schedule.
 
-        energies_loc = e0;
-        if (do_forces) {
-          for (i = 0; i < 3; i++)
-            forces_loc[i] = 0.0;
-          for (i = 0; i < 9; i++)
-            virial_loc[i] = 0.0;
-        }
-        if (species_d[i_site] == sp1 || species_d[i_site] == sp2) {
-          pi = acos(-1.0);
-          k = first_d[tid];
-          for (j = 2; j <= n_neigh_d[i_site]; j++) {
-            k += 1;
-            if (!((species_d[i_site] == sp1 && neighbor_species_d[k] == sp2) ||
-                  (species_d[i_site] == sp2 && neighbor_species_d[k] == sp1)))
-              continue;
-            rjs_k = rjs_d[k];
-            if (rjs_k < rcut) {
-              fcut = (rjs_k < rcut - buffer) ? 1.0 : (cos(pi * (rjs_k - rcut + buffer) / buffer) + 1.0) / 2.0;
-              if (do_forces)
-                dfcut = (rjs_k < rcut - buffer) ? 0.0 : pi / 2.0 / buffer * sin(pi * (rjs_k - rcut + buffer) / buffer);
-              sigma2 = sigma * sigma;
-              delta2 = delta * delta;
-              for (s = 0; s < n_sparse; s++) {
-                // The innermost statement of the whole kernel, run n_neigh x
-                // n_sparse times per site. pow(dq, 2) here was a call to
-                // __internal_accurate_pow on every one of those iterations.
-                double dq = rjs_k - Qs_d[s];
-                tmp = delta2 * alphas_d[s] * cutoff_d[s] * exp(-0.5 * dq * dq / sigma2);
-                energies_loc += tmp * fcut;
-                if (do_forces) {
-                  for (i = 0; i < 3; i++) {
-                    forces_loc[i] = -2.0 * tmp * xyz_d[3 * k + i] / rjs_k * ((rjs_k - Qs_d[s]) / sigma2 * fcut + dfcut);
-                    forces_d[3 * i_site + i] += forces_loc[i];
-                  }
-                  for (k2 = 0; k2 < 3; k2++)
-                    for (k1 = 0; k1 < 3; k1++)
-                      virial_loc[3 * k2 + k1] += -0.5 * (forces_loc[k1] * xyz_d[3 * k + k2] + forces_loc[k2] * xyz_d[3 * k + k1]);
-                }
-              }
-            }
-          }
-        }
-        // Accumulate, like the force and virial writes above: the caller runs
-        // this kernel once per descriptor over the same buffers and reads the
-        // totals back after the last one. Assigning here kept only the
-        // contribution of the final descriptor.
-        energies_d[i_site] += energies_loc;
-        for (k1 = 0; k1 < 9; k1++)
-          TG_ATOMIC_ADD(&virial_d[k1], 0.5 * virial_loc[k1]);
+// Each pair's site, as an offset from i_beg.
+static int* pair_sites(int i_beg, int n_sites, int n_pairs, int* first_d, int* n_neigh_d, hipStream_t* stream) {
+  int* site_d;
+  gpuErrchk(hipMallocAsync((void**) &site_d, sizeof(int) * n_pairs, stream[0]));
+  tg_parallel_for(
+      "turbogap_pair_sites", n_sites, stream,
+      TG_LAMBDA(const int t) {
+        for (int j = 0; j < n_neigh_d[i_beg - 1 + t]; j++)
+          site_d[first_d[t] + j] = t;
       },
       tpb);
-  gpuErrchk(hipFreeAsync(first_d, stream[0]));
-  // There was a hipStreamSynchronize here, commented "temporary, to measure
-  // timings". It blocked the host on every launch, so the caller's loop over
-  // the 2b descriptors could not have overlapped even with a stream each. The
-  // results are read back with a stream sync after that loop
-  // (add_2b_contribution), which is where the ordering guarantee belongs.
+  return site_d;
 }
 
-extern "C" void gpu_get_core_pot_energy_and_forces(int i_beg, int i_end, bool do_forces, int* species_d, int sp1, int sp2,
-                                                   int* n_neigh_d, int* neighbor_species_d, double* rjs_d, int n_sparse,
-                                                   double* x_d, double* V_d, double* dVdx2_d, double yp1, double ypn, double* xyz_d,
-                                                   double* forces_d, double* virial_d, double* energies_d, hipStream_t* stream) {
-  if (i_end < i_beg)
-    return;
-  int* first_d = site_first_pair(i_beg, i_end, n_neigh_d, stream);
+// A site's energy, force and virial from its pairs; its first pair is itself.
+static void sum_to_sites(int i_beg, int n_sites, int* first_d, int* n_neigh_d, double* ep_d, double* fp_d, double* xyz_d,
+                         bool do_forces, double* energies_d, double* forces_d, double* virial_d, hipStream_t* stream) {
   tg_parallel_for(
-      "turbogap_get_core_pot", i_end - i_beg + 1, stream,
-      TG_LAMBDA(const int tid) {
-        int i_site = i_beg - 1 + tid;
-        double forces_loc[3], virial_loc[9], energies_loc;
-        int i, j, k, k1, k2;
-        double rjs_k, rcut, Vint, d_Vint;
-
-
-        energies_loc = 0.0;
-        if (do_forces) {
-          for (i = 0; i < 3; i++)
-            forces_loc[i] = 0.0;
-          for (i = 0; i < 9; i++)
-            virial_loc[i] = 0.0;
-        }
-        if (species_d[i_site] == sp1 || species_d[i_site] == sp2) {
-          k = first_d[tid];
-          for (j = 1; j < n_neigh_d[i_site]; j++) {
-            k += 1;
-            if (!((species_d[i_site] == sp1 && neighbor_species_d[k] == sp2) ||
-                  (species_d[i_site] == sp2 && neighbor_species_d[k] == sp1)))
-              continue;
-            rjs_k = rjs_d[k];
-            rcut = x_d[0];
-            for (i = 1; i < n_sparse; i++)
-              if (rcut <= x_d[i])
-                rcut = x_d[i];
-
-            //	printf("GPU_CORE_POT: rjs_k = %lf, k = %d, rcut = %lf, i_site = %d \n",rjs_k, k, rcut,  i_site);
-            if (rjs_k < rcut) {
-              energies_loc += 0.5 * gpu_spline(n_sparse, rjs_k, x_d, V_d, dVdx2_d, rcut, yp1, ypn);
-
-              if (do_forces) {
-                d_Vint = gpu_spline_der(n_sparse, rjs_k, x_d, V_d, dVdx2_d, rcut, yp1, ypn);
-                for (i = 0; i < 3; i++) {
-                  forces_loc[i] = d_Vint * xyz_d[3 * k + i] / rjs_k;
-                  forces_d[3 * i_site + i] += forces_loc[i];
-                }
-                for (k2 = 0; k2 < 3; k2++)
-                  for (k1 = 0; k1 < 3; k1++)
-                    virial_loc[3 * k2 + k1] += -0.5 * (forces_loc[k1] * xyz_d[3 * k + k2] + forces_loc[k2] * xyz_d[3 * k + k1]);
-              }
-            }
+      "turbogap_sum_to_sites", n_sites, stream,
+      TG_LAMBDA(const int t) {
+        int i_site = i_beg - 1 + t;
+        double e = 0.0;
+        double f[3] = {0.0, 0.0, 0.0};
+        double v[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        for (int j = 1; j < n_neigh_d[i_site]; j++) {
+          int k = first_d[t] + j;
+          e += ep_d[k];
+          if (do_forces) {
+            double fl[3] = {fp_d[3 * k], fp_d[3 * k + 1], fp_d[3 * k + 2]};
+            for (int i = 0; i < 3; i++)
+              f[i] += fl[i];
+            for (int k2 = 0; k2 < 3; k2++)
+              for (int k1 = 0; k1 < 3; k1++)
+                v[3 * k2 + k1] += -0.5 * (fl[k1] * xyz_d[3 * k + k2] + fl[k2] * xyz_d[3 * k + k1]);
           }
         }
-        // Accumulate, like the force and virial writes above: the caller runs
-        // this kernel once per descriptor over the same buffers and reads the
-        // totals back after the last one. Assigning here kept only the
-        // contribution of the final descriptor.
-        energies_d[i_site] += energies_loc;
-        for (k1 = 0; k1 < 9; k1++)
-          TG_ATOMIC_ADD(&virial_d[k1], 0.5 * virial_loc[k1]);
+        energies_d[i_site] += e;
+        if (do_forces) {
+          for (int i = 0; i < 3; i++)
+            forces_d[3 * i_site + i] += f[i];
+          for (int k1 = 0; k1 < 9; k1++)
+            TG_ATOMIC_ADD(&virial_d[k1], 0.5 * v[k1]);
+        }
       },
       tpb);
+}
+
+// Every 2b descriptor in one pass. desc_int holds, per descriptor, the two
+// species, n_sparse and the offset of its sparse points in alphas, cutoff and
+// Qs; desc_real holds rcut, delta and sigma.
+extern "C" void gpu_get_2b_all(int i_beg, int i_end, int n_pairs, int n_desc, int* desc_int_d, double* desc_real_d,
+                               double* alphas_d, double* cutoff_d, double* Qs_d, double buffer, int* n_neigh_d, int* species_d,
+                               int* neighbor_species_d, double* rjs_d, double* xyz_d, bool do_forces, double* energies_d,
+                               double* forces_d, double* virial_d, hipStream_t* stream) {
+  if (i_end < i_beg || n_pairs == 0 || n_desc == 0)
+    return;
+  int n_sites = i_end - i_beg + 1;
+  int* first_d = site_first_pair(i_beg, i_end, n_neigh_d, stream);
+  int* site_d = pair_sites(i_beg, n_sites, n_pairs, first_d, n_neigh_d, stream);
+  double* ep_d;
+  double* fp_d;
+  gpuErrchk(hipMallocAsync((void**) &ep_d, sizeof(double) * n_pairs, stream[0]));
+  gpuErrchk(hipMallocAsync((void**) &fp_d, sizeof(double) * 3 * n_pairs, stream[0]));
+  tg_parallel_for(
+      "turbogap_get_2b_pairs", n_pairs, stream,
+      TG_LAMBDA(const int k) {
+        int t = site_d[k];
+        double e = 0.0;
+        double c = 0.0;
+        if (k != first_d[t]) {
+          const double pi = acos(-1.0);
+          int si = species_d[i_beg - 1 + t];
+          int sj = neighbor_species_d[k];
+          double r = rjs_d[k];
+          for (int d = 0; d < n_desc; d++) {
+            const int* di = desc_int_d + 4 * d;
+            if (!((si == di[0] && sj == di[1]) || (si == di[1] && sj == di[0])))
+              continue;
+            double rcut = desc_real_d[3 * d];
+            if (r >= rcut)
+              continue;
+            double delta = desc_real_d[3 * d + 1];
+            double sigma = desc_real_d[3 * d + 2];
+            double fcut = 1.0;
+            double dfcut = 0.0;
+            if (r >= rcut - buffer) {
+              fcut = (cos(pi * (r - rcut + buffer) / buffer) + 1.0) / 2.0;
+              dfcut = pi / 2.0 / buffer * sin(pi * (r - rcut + buffer) / buffer);
+            }
+            double sigma2 = sigma * sigma;
+            double delta2 = delta * delta;
+            double es = 0.0;
+            double gs = 0.0;
+            for (int s = di[3]; s < di[3] + di[2]; s++) {
+              double dq = r - Qs_d[s];
+              double tmp = delta2 * alphas_d[s] * cutoff_d[s] * exp(-0.5 * dq * dq / sigma2);
+              es += tmp;
+              gs += tmp * (dq / sigma2 * fcut + dfcut);
+            }
+            e += es * fcut;
+            c += -2.0 * gs / r;
+          }
+        }
+        ep_d[k] = e;
+        if (do_forces)
+          for (int i = 0; i < 3; i++)
+            fp_d[3 * k + i] = c * xyz_d[3 * k + i];
+      },
+      tpb);
+  sum_to_sites(i_beg, n_sites, first_d, n_neigh_d, ep_d, fp_d, xyz_d, do_forces, energies_d, forces_d, virial_d, stream);
+  gpuErrchk(hipFreeAsync(fp_d, stream[0]));
+  gpuErrchk(hipFreeAsync(ep_d, stream[0]));
+  gpuErrchk(hipFreeAsync(site_d, stream[0]));
+  gpuErrchk(hipFreeAsync(first_d, stream[0]));
+}
+
+// Every core-potential table in one pass. desc_int holds, per table, the two
+// species, its length and its offset in x, V and dVdx2; desc_real holds yp1,
+// ypn and the table's last x, its cutoff.
+extern "C" void gpu_get_core_pot_all(int i_beg, int i_end, int n_pairs, int n_desc, int* desc_int_d, double* desc_real_d,
+                                     double* x_d, double* V_d, double* dVdx2_d, int* n_neigh_d, int* species_d,
+                                     int* neighbor_species_d, double* rjs_d, double* xyz_d, bool do_forces, double* energies_d,
+                                     double* forces_d, double* virial_d, hipStream_t* stream) {
+  if (i_end < i_beg || n_pairs == 0 || n_desc == 0)
+    return;
+  int n_sites = i_end - i_beg + 1;
+  int* first_d = site_first_pair(i_beg, i_end, n_neigh_d, stream);
+  int* site_d = pair_sites(i_beg, n_sites, n_pairs, first_d, n_neigh_d, stream);
+  double* ep_d;
+  double* fp_d;
+  gpuErrchk(hipMallocAsync((void**) &ep_d, sizeof(double) * n_pairs, stream[0]));
+  gpuErrchk(hipMallocAsync((void**) &fp_d, sizeof(double) * 3 * n_pairs, stream[0]));
+  tg_parallel_for(
+      "turbogap_get_core_pot_pairs", n_pairs, stream,
+      TG_LAMBDA(const int k) {
+        int t = site_d[k];
+        double e = 0.0;
+        double c = 0.0;
+        if (k != first_d[t]) {
+          int si = species_d[i_beg - 1 + t];
+          int sj = neighbor_species_d[k];
+          double r = rjs_d[k];
+          for (int d = 0; d < n_desc; d++) {
+            const int* di = desc_int_d + 4 * d;
+            if (!((si == di[0] && sj == di[1]) || (si == di[1] && sj == di[0])))
+              continue;
+            double yp1 = desc_real_d[3 * d];
+            double ypn = desc_real_d[3 * d + 1];
+            double rcut = desc_real_d[3 * d + 2];
+            if (r >= rcut)
+              continue;
+            int n = di[2];
+            int off = di[3];
+            e += 0.5 * gpu_spline(n, r, x_d + off, V_d + off, dVdx2_d + off, rcut, yp1, ypn);
+            if (do_forces)
+              c += gpu_spline_der(n, r, x_d + off, V_d + off, dVdx2_d + off, rcut, yp1, ypn) / r;
+          }
+        }
+        ep_d[k] = e;
+        if (do_forces)
+          for (int i = 0; i < 3; i++)
+            fp_d[3 * k + i] = c * xyz_d[3 * k + i];
+      },
+      tpb);
+  sum_to_sites(i_beg, n_sites, first_d, n_neigh_d, ep_d, fp_d, xyz_d, do_forces, energies_d, forces_d, virial_d, stream);
+  gpuErrchk(hipFreeAsync(fp_d, stream[0]));
+  gpuErrchk(hipFreeAsync(ep_d, stream[0]));
+  gpuErrchk(hipFreeAsync(site_d, stream[0]));
   gpuErrchk(hipFreeAsync(first_d, stream[0]));
 }
