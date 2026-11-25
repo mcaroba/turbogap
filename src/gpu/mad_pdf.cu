@@ -630,3 +630,188 @@ extern "C" void gpu_get_pair_distribution_only_falloc(double* pair_distribution_
   //----------------------------------------
   //  gpuErrchk( hipPeekAtLastError() );
 }
+
+
+// ------------------------------------------------------------------------- //
+// --- Windowed pdf: every species pair at once, no n_k x n_samples array --- //
+// ------------------------------------------------------------------------- //
+//
+// A pair's Gaussian is evaluated only where the host evaluates it, at the
+// samples lo..hi within kde_cut sigma (pdf_window_lo/hi copy the host's index
+// arithmetic in pair_kde_row), so the device sums the same terms as the host.
+// The pairs of all species pairs are tagged with their channel and compacted
+// once into one list, ordered by channel and, within a channel, by pair index;
+// the list stays on the device for the force pass.
+
+// chan_d(k) for every entry of the batch's neighbour list: the pair's channel,
+// or -1 for a site's own entry and for a pair outside [r_lo, r_hi].
+extern "C" void gpu_pdf_tag_pairs(int n_sites_b, int n_pairs_b, int* n_neigh_d, int* species_d, int* neighbor_species_d,
+                                  double* rjs_d, int n_species, double r_lo, double r_hi, int* chan_d, hipStream_t* stream) {
+  if (n_sites_b <= 0 || n_pairs_b <= 0)
+    return;
+  int* site_end;
+  gpuErrchk(hipMallocAsync(&site_end, (size_t) n_sites_b * sizeof(int), stream[0]));
+  gpuErrchk(hipMemcpyAsync(site_end, n_neigh_d, (size_t) n_sites_b * sizeof(int), hipMemcpyDeviceToDevice, stream[0]));
+  inclusiveScan(site_end, n_sites_b, stream);
+
+  tg_parallel_for(
+      "turbogap_pdf_tag_pairs", n_sites_b, stream,
+      TG_LAMBDA(const int i) {
+        const int end = site_end[i];
+        const int beg = end - n_neigh_d[i];
+        const int si = species_d[i];
+        chan_d[beg] = -1;
+        for (int k = beg + 1; k < end; k++) {
+          const double r = rjs_d[k];
+          chan_d[k] = (r >= r_lo && r <= r_hi) ? pdf_channel(si, neighbor_species_d[k], n_species) : -1;
+        }
+      },
+      tpb);
+
+  gpuErrchk(hipFreeAsync(site_end, stream[0]));
+}
+
+// Compacts the tagged pairs, channel by channel, into r_out, xyz_out (3 per
+// pair), j2_out (1-based atom) and chan_out, each of capacity n_pairs_b.
+// off_h(0:n_channels) receives each channel's first position on the host.
+extern "C" void gpu_pdf_compact_pairs(int n_pairs_b, int n_sites0, int n_channels, int* chan_d, int* neighbors_list_d,
+                                      double* rjs_d, double* xyz_d, double* r_out, double* xyz_out, int* j2_out, int* chan_out,
+                                      int* off_h, hipStream_t* stream) {
+  for (int c = 0; c <= n_channels; c++)
+    off_h[c] = 0;
+  if (n_pairs_b <= 0 || n_channels <= 0)
+    return;
+
+  const size_t n = (size_t) n_pairs_b;
+  int* rank;
+  int* off_d;
+  gpuErrchk(hipMallocAsync(&rank, n * n_channels * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&off_d, (size_t) (n_channels + 1) * sizeof(int), stream[0]));
+
+  for (int c = 0; c < n_channels; c++) {
+    int* rank_c = rank + c * n;
+    tg_parallel_for(
+        "turbogap_pdf_channel_flags", n_pairs_b, stream, TG_LAMBDA(const int k) { rank_c[k] = (chan_d[k] == c) ? 1 : 0; }, tpb);
+    inclusiveScan(rank_c, n_pairs_b, stream);
+  }
+
+  tg_parallel_for(
+      "turbogap_pdf_channel_offsets", 1, stream,
+      TG_LAMBDA(const int) {
+        off_d[0] = 0;
+        for (int c = 0; c < n_channels; c++)
+          off_d[c + 1] = off_d[c] + rank[c * n + n - 1];
+      },
+      1);
+
+  tg_parallel_for(
+      "turbogap_pdf_compact", n_pairs_b, stream,
+      TG_LAMBDA(const int k) {
+        const int c = chan_d[k];
+        if (c < 0)
+          return;
+        const int p = off_d[c] + rank[c * n + k] - 1;
+        r_out[p] = rjs_d[k];
+        xyz_out[3 * (size_t) p] = xyz_d[3 * (size_t) k];
+        xyz_out[3 * (size_t) p + 1] = xyz_d[3 * (size_t) k + 1];
+        xyz_out[3 * (size_t) p + 2] = xyz_d[3 * (size_t) k + 2];
+        j2_out[p] = ((neighbors_list_d[k] - 1) % n_sites0) + 1;
+        chan_out[p] = c;
+      },
+      tpb);
+
+  gpuErrchk(hipMemcpyAsync(off_h, off_d, (size_t) (n_channels + 1) * sizeof(int), hipMemcpyDeviceToHost, stream[0]));
+  gpuErrchk(hipStreamSynchronize(stream[0]));
+  gpuErrchk(hipFreeAsync(rank, stream[0]));
+  gpuErrchk(hipFreeAsync(off_d, stream[0]));
+}
+
+// Pairs per block of the gather. Their r and windows sit in shared memory.
+#define PDF_GATHER_CHUNK 1024
+
+// NOT converted to the backend layer, deliberately: it stages a chunk of pairs
+// in __shared__ memory for the whole block, which needs a TeamPolicy the layer
+// does not carry. One thread per sample sums the chunk's kernels at that
+// sample in pair order, so the result does not depend on the scheduler.
+__global__ void kernel_pdf_window_gather(const double* r_d, int n_k, int n_samples, double r_min, double dr, double kde_sigma,
+                                         double kde_cut, const double* x_d, double* partial_d) {
+  __shared__ double r_s[PDF_GATHER_CHUNK];
+  __shared__ int lo_s[PDF_GATHER_CHUNK];
+  __shared__ int hi_s[PDF_GATHER_CHUNK];
+
+  const int beg = blockIdx.x * PDF_GATHER_CHUNK;
+  const int n = (n_k - beg < PDF_GATHER_CHUNK) ? n_k - beg : PDF_GATHER_CHUNK;
+
+  for (int p = threadIdx.x; p < n; p += blockDim.x) {
+    const double r = r_d[beg + p];
+    r_s[p] = r;
+    lo_s[p] = pdf_window_lo(r, r_min, dr, kde_sigma, kde_cut);
+    hi_s[p] = pdf_window_hi(r, r_min, dr, kde_sigma, kde_cut, n_samples);
+  }
+  __syncthreads();
+
+  for (int l = threadIdx.x; l < n_samples; l += blockDim.x) {
+    const double x = x_d[l];
+    double acc = 0.0;
+    for (int p = 0; p < n; p++) {
+      if (l < lo_s[p] || l > hi_s[p])
+        continue;
+      const double g = (x - r_s[p]) / kde_sigma;
+      acc += exp(-0.5 * g * g);
+    }
+    partial_d[(size_t) blockIdx.x * n_samples + l] = acc;
+  }
+}
+
+// pdf_out(l, c) = pdf_factor / dV(l) * sum over channel c's pairs of
+// exp(-(x_l - r)^2 / 2 sigma^2), for the compacted list r_d with channel
+// offsets off_h(0:n_channels). Blocks of pairs are summed in block order.
+extern "C" void gpu_pdf_window_kde(int n_channels, int* off_h, int n_samples, double r_min, double dr, double kde_sigma,
+                                   double kde_cut, double* x_d, double* dV_d, double* r_d, double pdf_factor, double* pdf_out_d,
+                                   hipStream_t* stream) {
+  if (n_channels <= 0 || n_samples <= 0)
+    return;
+
+  int* blk_h = (int*) malloc((size_t) (n_channels + 1) * sizeof(int));
+  blk_h[0] = 0;
+  for (int c = 0; c < n_channels; c++) {
+    const int n_c = off_h[c + 1] - off_h[c];
+    blk_h[c + 1] = blk_h[c] + (n_c + PDF_GATHER_CHUNK - 1) / PDF_GATHER_CHUNK;
+  }
+  const int n_blk = blk_h[n_channels];
+
+  int* blk_d;
+  double* partial = nullptr;
+  gpuErrchk(hipMallocAsync(&blk_d, (size_t) (n_channels + 1) * sizeof(int), stream[0]));
+  gpuErrchk(hipMemcpyAsync(blk_d, blk_h, (size_t) (n_channels + 1) * sizeof(int), hipMemcpyHostToDevice, stream[0]));
+  if (n_blk > 0)
+    gpuErrchk(hipMallocAsync(&partial, (size_t) n_blk * n_samples * sizeof(double), stream[0]));
+
+  int threads = ((n_samples < 1024 ? n_samples : 1024) + 31) / 32 * 32;
+  for (int c = 0; c < n_channels; c++) {
+    const int n_c = off_h[c + 1] - off_h[c];
+    const int nb = blk_h[c + 1] - blk_h[c];
+    if (nb == 0)
+      continue;
+    kernel_pdf_window_gather<<<nb, threads, 0, stream[0]>>>(r_d + off_h[c], n_c, n_samples, r_min, dr, kde_sigma, kde_cut, x_d,
+                                                            partial + (size_t) blk_h[c] * n_samples);
+  }
+
+  tg_parallel_for(
+      "turbogap_pdf_window_sum_blocks", n_channels * n_samples, stream,
+      TG_LAMBDA(const int idx) {
+        const int c = idx / n_samples;
+        const int l = idx - c * n_samples;
+        double s = 0.0;
+        for (int b = blk_d[c]; b < blk_d[c + 1]; b++)
+          s += partial[(size_t) b * n_samples + l];
+        pdf_out_d[idx] = pdf_factor * s / dV_d[l];
+      },
+      tpb);
+
+  gpuErrchk(hipStreamSynchronize(stream[0]));
+  if (partial != nullptr)
+    gpuErrchk(hipFreeAsync(partial, stream[0]));
+  gpuErrchk(hipFreeAsync(blk_d, stream[0]));
+  free(blk_h);
+}

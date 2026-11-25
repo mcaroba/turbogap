@@ -1427,119 +1427,56 @@ contains
 
       subroutine estimate_max_exp_forces_device_memory_usage(n_sites, n_pairs, n_dim_partial, n_samples, n_samples_sf, total, &
                                                              be_verbose)
+!     Device memory of the batched pdf/xrd route for one batch of n_pairs
+!     neighbour-list entries, in GB. The route keeps no n_pairs x n_samples
+!     array: per pair it holds the neighbour data, a channel tag, the
+!     compaction's rank per species pair, the compacted pair, its force and the
+!     scatter's scratch, all counted as if alive at once.
          implicit none
          integer :: n_sites
-         integer :: nk
          integer :: n_samples
          integer :: n_samples_sf
          integer :: n_pairs
          integer :: n_dim_partial
          real(dp), intent(inout) :: total
-!     Not initialised here: an initialiser in a declaration is an implicit SAVE,
-!     and these are running sums. They are zeroed on entry instead.
-         real(dp) :: total_exp
-         real(dp) :: total_standard
-         real(dp) :: nk_int
-         real(dp) :: nk_float
-         real(dp) :: Gk
-         real(dp) :: dermat
-         real(dp) :: sf
-         real(dp) :: fi
-         real(dp) :: pref
-         real(dp) :: xyz
-         real(dp) :: forces
-         real(dp) :: neigh_list
-         real(dp) :: to_gb
-!     Off unless asked. This is called once per snapshot on the batched path and
-!     prints twenty lines; useful the first time, noise for the rest of an MD
-!     run, and multiplied by every MPI rank.
          logical, intent(in), optional :: be_verbose
+         real(dp) :: to_gb
+         real(dp) :: pairs
+         real(dp) :: neigh
+         real(dp) :: tags
+         real(dp) :: compacted
+         real(dp) :: forces
+         real(dp) :: grids
          logical :: verbose
 
          verbose = .false.
          if (present(be_verbose)) verbose = be_verbose
 
-         total_exp = 0.d0
-         total_standard = 0.d0
+         to_gb = 1.d0/dfloat(1024**3)
+         pairs = dfloat(n_pairs)
 
-         total = 0.d0
+!        neighbors_list, neighbor_species, rjs, xyz; n_neigh and species
+         neigh = (pairs*(4.d0 + 4.d0 + 8.d0 + 24.d0) + dfloat(n_sites)*8.d0)*to_gb
+!        channel tag, and one compaction rank per species pair
+         tags = pairs*4.d0*(1.d0 + dfloat(n_dim_partial))*to_gb
+!        r, xyz, j2, channel
+         compacted = pairs*(8.d0 + 24.d0 + 4.d0 + 4.d0)*to_gb
+!        pair force, the scatter's three ints per pair, the atoms' forces
+         forces = (pairs*(24.d0 + 12.d0) + dfloat(n_sites)*24.d0)*to_gb
+!        the gather's partial sums per block of 1024 pairs, W, S, the pdf
+         grids = (pairs/1024.d0 + 2.d0*dfloat(n_dim_partial) + dfloat(n_samples_sf))*dfloat(n_samples)*8.d0*to_gb
 
-         nk = n_pairs
+         total = neigh + tags + compacted + forces + grids
 
-         total = 0.d0
-
-         to_gb = 1/dfloat(1024**3)
-
-         neigh_list = dfloat(n_pairs)*4.d0*to_gb
-
-         forces = dfloat(n_sites)*8.d0*to_gb
-         nk_int = dfloat(nk)*4.d0*to_gb
-         nk_float = dfloat(nk)*8.d0*to_gb
-         sf = dfloat(n_samples*n_samples_sf)*8.d0*to_gb
-
-         pref = dfloat(n_samples_sf)*8.d0*to_gb
-         Gk = n_samples*nk_float
-         dermat = n_samples_sf*nk_float
-         fi = 3*nk_float
-         xyz = 3*nk_float
-
-         if (verbose) write (*, '(A)') "> Estimating memory for normal allocations "
-         total_standard = total_standard + neigh_list
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device neigh_list_d  ", neigh_list, " Gb"
-
-         total_standard = total_standard + neigh_list
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device neigh_spec_d  ", neigh_list, " Gb"
-
-         total_standard = total_standard + neigh_list*2.d0*3.d0
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device xyz_d         ", neigh_list*2.d0*3.d0, " Gb"
-
-         total_standard = total_standard + neigh_list*2.d0
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device rjs_d         ", neigh_list*2.d0, " Gb"
-
-         total_standard = total_standard + neigh_list*2.d0
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device rjs_d         ", neigh_list*2.d0, " Gb"
-
-         total_standard = total_standard + forces/3.d0
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device species_d     ", forces/3.d0, " Gb"
-
-         if (verbose) write (*, '(A)') "> Estimating memory xrd and pdf calculation"
-         total_exp = total_exp + nk_int*n_dim_partial
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device k_index_d     ", nk_int, " Gb"
-
-         total_exp = total_exp + nk_int*n_dim_partial
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device j_index_d     ", nk_int, " Gb"
-
-         total_exp = total_exp + 3.d0*Gk
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device      Gk_d     ", Gk, " Gb"
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device     Gka_d     ", Gk, " Gb"
-
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device par_pdf_d     ", Gk, " Gb"
-
-         total_exp = total_exp + dermat
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device  dermat_d     ", dermat, " Gb"
-
-         total_exp = total_exp + fi
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device      fi_d     ", fi, " Gb"
-
-         total_exp = total_exp + xyz*n_dim_partial
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device     xyz_d     ", xyz, " Gb"
-
-         total_exp = total_exp + forces
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device   forces_d    ", forces, " Gb"
-
-         total_exp = total_exp + pref
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device    pref_d     ", pref, " Gb"
-
-         total_exp = total_exp + pref
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device  scat_f_d     ", pref, " Gb"
-
-         total_exp = total_exp + sf
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') ">> Gb/core: device  sinc_f_d     ", sf, " Gb"
-
-         total = total + total_exp + total_standard
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') "--- Total from standard neigh:  ", total_standard, " Gb"
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') "--- Total from exp forces imp:  ", total_exp, " Gb"
-         if (verbose) write (*, '(A,1X,F10.6,1X,A)') "--- Total device memory usage:  ", total, " Gb"
+         if (verbose) then
+            write (*, '(A)') "> Device memory of the batched pdf/xrd route"
+            write (*, '(A,1X,F10.6,1X,A)') ">> neighbour data        ", neigh, " Gb"
+            write (*, '(A,1X,F10.6,1X,A)') ">> pair tags and ranks   ", tags, " Gb"
+            write (*, '(A,1X,F10.6,1X,A)') ">> compacted pairs       ", compacted, " Gb"
+            write (*, '(A,1X,F10.6,1X,A)') ">> forces and scatter    ", forces, " Gb"
+            write (*, '(A,1X,F10.6,1X,A)') ">> grids and partials    ", grids, " Gb"
+            write (*, '(A,1X,F10.6,1X,A)') "--- Total device memory usage:  ", total, " Gb"
+         end if
 
       end subroutine estimate_max_exp_forces_device_memory_usage
 #endif

@@ -35,6 +35,7 @@ module exp_interface
    use mpi
 #endif
    use exp_utils
+   use error, only: turbogap_abort
    use soap_turbo_functions
 #ifdef _GPU
    use F_B_C
@@ -3443,6 +3444,8 @@ contains
       do i = 1, n_batches
          do j = 1, n_dim_partial
 
+!           The windowed route sums every species pair of a batch into host(1).
+            if (.not. allocated(gpu_host(i)%host(j)%forces_h)) cycle
             forces_out = forces_out + gpu_host(i)%host(j)%forces_h
             virial_out = virial_out + gpu_host(i)%host(j)%virial_h
 
@@ -3555,505 +3558,210 @@ contains
 #endif
 
 #ifdef _GPU
-   subroutine calculate_batched_pair_distribution( &
-      gpu_exp, &
-      gpu_host, &
-      gpu_neigh, &
-      x, &
-      dV, &
-      n_atoms_of_species, &
-      n_species, &
-      n_sites, &
-      i_beg, &
-      i_end, &
-      j_beg, &
-      j_end, &
-      n_samples, &
-      r_min, &
-      r_max, &
-      r_cut, &
-      kde_sigma, &
-      gpu_stream, &
-      x_d, &
-      dV_d, &
-      v_uc, &
-      rank)
+!  The batch's partial pdfs on the windowed route. Every pair is tagged with its
+!  species pair and all are compacted into gpu_exp's pair_* buffers at once,
+!  which stay on the device for window_batched_xrd_forces. Each partial is left,
+!  before its v_uc / n_a / n_b normalisation, in
+!  gpu_host%host(c)%pair_distribution_partial_h, where
+!  collect_batched_pair_distribution expects it. No n_pairs x n_samples array.
+   subroutine window_batched_pair_distribution(gpu_exp, gpu_host, gpu_neigh, n_species, n_sites, n_sites_b, n_pairs_b, &
+                                               n_samples, r_min, r_max, r_cut, kde_sigma, x_d, dV_d, gpu_stream)
       implicit none
+      type(gpu_storage_type), intent(inout) :: gpu_exp
+      type(gpu_host_batch_storage_type), intent(inout) :: gpu_host
+      type(gpu_neigh_storage_type), intent(in) :: gpu_neigh
       integer, intent(in) :: n_species
-      integer, intent(in) :: i_beg
-      integer, intent(in) :: i_end
-      integer, intent(in) :: j_beg
-      integer, intent(in) :: j_end
       integer, intent(in) :: n_sites
+      integer, intent(in) :: n_sites_b
+      integer, intent(in) :: n_pairs_b
       integer, intent(in) :: n_samples
-      integer, intent(in) :: rank
-      real(dp), allocatable, intent(in) :: n_atoms_of_species(:)
-      real(dp), allocatable, intent(in) :: x(:)
-      real(dp), allocatable, intent(in) :: dV(:)
       real(dp), intent(in) :: r_min
       real(dp), intent(in) :: r_max
       real(dp), intent(in) :: r_cut
       real(dp), intent(in) :: kde_sigma
-      real(dp), intent(in) :: v_uc
-      type(gpu_storage_type), intent(inout) :: gpu_exp
-      type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
-      type(gpu_neigh_storage_type), intent(in) :: gpu_neigh
-
-      real(dp), parameter :: pi = acos(-1.0)
-      integer :: n_dim_partial
-      integer :: n_dim_idx
       type(c_ptr), intent(in) :: x_d
       type(c_ptr), intent(in) :: dV_d
-      integer(c_size_t) :: st_x_d
-      integer, target :: nk_temp(1)
-      type(c_ptr) :: nk_flags_d
-      type(c_ptr) :: nk_flags_sum_d
-      integer(c_size_t) :: st_nk_flags
-      integer(c_size_t) :: st_nk_temp
-      type(c_ptr) :: rjs_index_d
-      type(c_ptr) :: pdf_to_reduce_d
-      integer(c_size_t) :: st_rjs_index_d
-      integer(c_size_t) :: st_k_index_d
-      integer(c_size_t) :: st_pdf_to_reduce_d
-
+      type(c_ptr) :: gpu_stream
+      real(dp), parameter :: pi = acos(-1.0)
+      real(dp), allocatable, target :: pdf_h(:, :)
+      type(c_ptr) :: chan_d
+      type(c_ptr) :: pdf_d
+      integer(c_size_t) :: st_int
+      integer(c_size_t) :: st_dbl
+      integer(c_size_t) :: st_pdf
+      real(dp) :: dr
       real(dp) :: pdf_factor
-      real(dp) :: der_factor = 0.d0
+      integer :: n_dim_partial
+      integer :: c
+
+!     The kernel is divided by sigma; a histogram is not a kernel estimate.
+      if (kde_sigma <= 0.d0) then
+         write (0, *) "ERROR: the batched device pdf needs pair_distribution_kde_sigma > 0"
+         call turbogap_abort()
+      end if
+
+      n_dim_partial = n_species*(n_species + 1)/2
+      allocate (gpu_host%host(1:n_dim_partial))
+      if (allocated(gpu_exp%pair_off)) deallocate (gpu_exp%pair_off)
+      allocate (gpu_exp%pair_off(0:n_dim_partial))
+
+!     Capacity n_pairs_b, the most the compaction can keep; at least one so an
+!     empty batch still gets valid pointers.
+      st_int = int(max(n_pairs_b, 1), c_size_t)*c_int
+      st_dbl = int(max(n_pairs_b, 1), c_size_t)*c_double
+      call gpu_malloc_async(chan_d, st_int, gpu_stream)
+      call gpu_malloc_async(gpu_exp%pair_r_d, st_dbl, gpu_stream)
+      call gpu_malloc_async(gpu_exp%pair_xyz_d, 3*st_dbl, gpu_stream)
+      call gpu_malloc_async(gpu_exp%pair_j2_d, st_int, gpu_stream)
+      call gpu_malloc_async(gpu_exp%pair_chan_d, st_int, gpu_stream)
+
+!     The pairs the host bins: r in [r_min, r_max + 6 sigma], inside r_cut, and
+!     not a site's own entry.
+      call gpu_pdf_tag_pairs(n_sites_b, n_pairs_b, gpu_neigh%n_neigh_d, gpu_neigh%species_d, gpu_neigh%neighbor_species_d, &
+                             gpu_neigh%rjs_d, n_species, max(1.d-3, r_min), min(r_cut, r_max + 6.d0*kde_sigma), chan_d, &
+                             gpu_stream)
+      call gpu_pdf_compact_pairs(n_pairs_b, n_sites, n_dim_partial, chan_d, gpu_neigh%neighbors_list_d, gpu_neigh%rjs_d, &
+                                 gpu_neigh%xyz_d, gpu_exp%pair_r_d, gpu_exp%pair_xyz_d, gpu_exp%pair_j2_d, gpu_exp%pair_chan_d, &
+                                 gpu_exp%pair_off, gpu_stream)
+      call gpu_free_async(chan_d, gpu_stream)
+
+      dr = (r_max - r_min)/dfloat(n_samples)
+      pdf_factor = dr/(sqrt(2.d0*pi)*kde_sigma)
+      st_pdf = int(n_samples, c_size_t)*n_dim_partial*c_double
+      call gpu_malloc_async(pdf_d, st_pdf, gpu_stream)
+      call gpu_pdf_window_kde(n_dim_partial, gpu_exp%pair_off, n_samples, r_min, dr, kde_sigma, PDF_KDE_CUT, x_d, dV_d, &
+                              gpu_exp%pair_r_d, pdf_factor, pdf_d, gpu_stream)
+
+      allocate (pdf_h(1:n_samples, 1:n_dim_partial))
+      call cpy_dtoh(pdf_d, c_loc(pdf_h), st_pdf, gpu_stream)
+      call gpu_stream_sync(gpu_stream)
+      call gpu_free_async(pdf_d, gpu_stream)
+
+      do c = 1, n_dim_partial
+         allocate (gpu_host%host(c)%pair_distribution_partial_h(1:n_samples))
+         gpu_host%host(c)%pair_distribution_partial_h = pdf_h(1:n_samples, c)
+      end do
+      deallocate (pdf_h)
+
+   end subroutine window_batched_pair_distribution
+#endif
+
+#ifdef _GPU
+!  The batch's forces and pair virial for one diffraction pattern on the windowed
+!  route, from the pairs window_batched_pair_distribution compacted. Every
+!  species pair's weights W = fac S^T (residual x scattering factor) / dV are
+!  formed on the device, then one pass over the pairs rebuilds each pair's
+!  kernel over its window and contracts it with its channel's W, and
+!  gpu_pair_scatter_reduce sums them onto atoms. Written into forces_h and
+!  virial_h on the host.
+   subroutine window_batched_xrd_forces(gpu_exp, n_species, n_sites, n_samples, n_samples_sf, r_min, r_max, &
+                                        kde_sigma, energy_scale, n_atoms_of_species, v_uc, x_d, dV_d, &
+                                        sinc_factor_matrix_d, prefactor_d, all_scattering_factors_d, forces_h, &
+                                        virial_h, gpu_stream)
+      implicit none
+      type(gpu_storage_type), intent(in) :: gpu_exp
+      integer, intent(in) :: n_species
+      integer, intent(in) :: n_sites
+      integer, intent(in) :: n_samples
+      integer, intent(in) :: n_samples_sf
+      real(dp), intent(in) :: r_min
+      real(dp), intent(in) :: r_max
+      real(dp), intent(in) :: kde_sigma
+      real(dp), intent(in) :: energy_scale
+      real(dp), intent(in) :: n_atoms_of_species(:)
+      real(dp), intent(in) :: v_uc
+      type(c_ptr), intent(in) :: x_d
+      type(c_ptr), intent(in) :: dV_d
+      type(c_ptr), intent(in) :: sinc_factor_matrix_d
+      type(c_ptr), intent(in) :: prefactor_d
+      type(c_ptr), intent(in) :: all_scattering_factors_d(:)
+      real(dp), intent(out), target :: forces_h(1:3, 1:n_sites)
+      real(dp), intent(out), target :: virial_h(1:3, 1:3)
+      type(c_ptr) :: gpu_stream
+      real(dp), parameter :: pi = acos(-1.0)
+      type(c_ptr) :: w_d
+      type(c_ptr) :: forces_d
+      type(c_ptr) :: virial_d
+      integer(c_size_t) :: st_w
+      integer(c_size_t) :: st_forces
+      integer(c_size_t) :: st_virial
+      real(dp) :: dr
+      real(dp) :: pdf_factor
       real(dp) :: f
-      integer :: i
+      real(dp) :: c_factor
+      real(dp) :: der_factor
+      integer :: n_dim_partial
+      integer :: c
       integer :: j
       integer :: k
-      integer :: l
-
-      type(c_ptr) :: gpu_stream
-
-      real(dp), allocatable, target :: x_check(:)
 
       n_dim_partial = n_species*(n_species + 1)/2
+      dr = (r_max - r_min)/dfloat(n_samples)
+      pdf_factor = dr/(sqrt(2.d0*pi)*kde_sigma)
 
-      allocate (gpu_host%host(1:n_dim_partial))
+      st_w = int(n_samples, c_size_t)*n_dim_partial*c_double
+      call gpu_malloc_async(w_d, st_w, gpu_stream)
 
-      allocate (gpu_exp%nk(1:n_dim_partial))
-      allocate (gpu_exp%nk_d(1:n_dim_partial))
-      allocate (gpu_exp%k_index_d(1:n_dim_partial))
-      allocate (gpu_exp%j2_index_d(1:n_dim_partial))
-      allocate (gpu_exp%xyz_k_d(1:n_dim_partial))
-      allocate (gpu_exp%pair_distribution_partial_d(1:n_dim_partial))
-      allocate (gpu_exp%nk_flags_sum_d(1:n_dim_partial))
-      allocate (gpu_exp%nk_flags_d(1:n_dim_partial))
-      allocate (gpu_exp%rjs_index_d(1:n_dim_partial))
-
-      allocate (gpu_exp%st_nk_d(1:n_dim_partial))
-      allocate (gpu_exp%st_k_index_d(1:n_dim_partial))
-      allocate (gpu_exp%st_j2_index_d(1:n_dim_partial))
-      allocate (gpu_exp%st_pair_distribution_partial_d(1:n_dim_partial))
-
-      n_dim_idx = 1
-      outer1: do j = 1, n_species
-         do k = 1, n_species
-
-            if (j > k) cycle ! We have already calculated the pair correlation function!
-
-            st_nk_temp = int(1, c_size_t)*c_int
-            call gpu_malloc_async(gpu_exp%nk_d(n_dim_idx), st_nk_temp, gpu_stream)
-            st_nk_flags = int((j_end - j_beg + 1), c_size_t)*c_int
-            call gpu_malloc_async(gpu_exp%nk_flags_d(n_dim_idx), st_nk_flags, gpu_stream)
-            call gpu_memset_async(gpu_exp%nk_flags_d(n_dim_idx), 0, st_nk_flags, gpu_stream)
-            call gpu_malloc_async(gpu_exp%nk_flags_sum_d(n_dim_idx), st_nk_flags, gpu_stream)
-
-            call total_gpu_memory(dfloat(int((j_end - j_beg + 1), c_size_t)*2*4))
-
-            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_d(n_dim_idx))"
-            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_exp%nk_d(n_dim_idx))
-            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_flags_d(n_dim_idx))"
-            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_exp%nk_flags_d(n_dim_idx))
-            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_exp % nk_flags_sum_d(n_dim_idx))"
-            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_exp%nk_flags_sum_d(n_dim_idx))
-            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_neigh % neighbors_list_d  )"
-            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_neigh%neighbors_list_d)
-            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_neigh % n_neigh_d         )"
-            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_neigh%n_neigh_d)
-            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_neigh % neighbor_species_d)"
-            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_neigh%neighbor_species_d)
-            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "int(gpu_neigh % species_d         )"
-            if (debug_gpu_batches) call gpu_print_pointer_int(gpu_neigh%species_d)
-            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "double(gpu_neigh % rjs_d             )"
-            if (debug_gpu_batches) call gpu_print_pointer_double(gpu_neigh%rjs_d)
-            if (debug_gpu_batches) print *, "-- Rank ", rank, " ", "double(gpu_neigh % xyz_d             )"
-            if (debug_gpu_batches) call gpu_print_pointer_double(gpu_neigh%xyz_d)
-            call flush (101)
-
-            call gpu_get_pair_distribution_nk( &
-               1, &
-               i_end - i_beg + 1, &
-               j_end - j_beg + 1, &
-               n_sites, &
-               gpu_neigh%neighbors_list_d, &
-               gpu_neigh%n_neigh_d, &
-               gpu_neigh%neighbor_species_d, &
-               gpu_neigh%species_d, &
-               gpu_neigh%rjs_d, &
-               gpu_neigh%xyz_d, &
-               r_min, &
-               r_max, &
-               r_cut, &
-               6.d0*kde_sigma, &
-               gpu_exp%nk_d(n_dim_idx), &
-               gpu_exp%nk_flags_d(n_dim_idx), &
-               gpu_exp%nk_flags_sum_d(n_dim_idx), &
-               j, &
-               k, &
-               gpu_stream)
-
-            call gpu_stream_sync(gpu_stream)
-
-            call gpu_free_async(gpu_exp%nk_flags_d(n_dim_idx), gpu_stream)
-
-            call gpu_stream_sync(gpu_stream)
-            if (debug_gpu_batches) call gpu_check_error()
-            call total_gpu_memory(dfloat(-int((j_end - j_beg + 1), c_size_t)*4))
-
-            ! Now copy the value of nk from the gpu
-!          print *, "out of pdf nk kernel "
-            st_nk_temp = int(1, c_size_t)*c_int
-            call cpy_dtoh(gpu_exp%nk_d(n_dim_idx), c_loc(nk_temp), st_nk_temp, gpu_stream)
-            call gpu_stream_sync(gpu_stream)
-
-            gpu_exp%nk(n_dim_idx) = nk_temp(1)
-            call gpu_free_async(gpu_exp%nk_d(n_dim_idx), gpu_stream)
-
-            ! Now we create temporary arrays for the k indices
-
-            st_rjs_index_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_double
-            if (debug_gpu_batches) print *, " allocating rjs "
-            call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*8))
-            call gpu_malloc_async(gpu_exp%rjs_index_d(n_dim_idx), st_rjs_index_d, gpu_stream)
-            call gpu_memset_async(gpu_exp%rjs_index_d(n_dim_idx), 0, st_rjs_index_d, gpu_stream)
-
-            call gpu_stream_sync(gpu_stream)
-            if (debug_gpu_batches) call gpu_check_error()
-            gpu_exp%st_k_index_d(n_dim_idx) = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_int
-            if (debug_gpu_batches) print *, " allocating k index "
-            call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
-            call gpu_malloc_async(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
-            call gpu_memset_async(gpu_exp%k_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
-
-            call gpu_stream_sync(gpu_stream)
-            if (debug_gpu_batches) call gpu_check_error()
-            if (debug_gpu_batches) print *, " allocating j2 index "
-            call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
-            call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
-            call gpu_memset_async(gpu_exp%j2_index_d(n_dim_idx), 0, gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
-
-            if (debug_gpu_batches) print *, " allocating j2 index "
-            call gpu_stream_sync(gpu_stream)
-            if (debug_gpu_batches) call gpu_check_error()
-            call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*8*3))
-            call gpu_malloc_async(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
-            call gpu_memset_async(gpu_exp%xyz_k_d(n_dim_idx), 0, 3*st_rjs_index_d, gpu_stream)
-
-            call gpu_set_pair_distribution_k_index(1, i_end - i_beg + 1, j_end - j_beg + 1, n_sites, & ! i_beg, i_end, j_end, n_sites,&
-                                                   gpu_neigh%neighbors_list_d, &
-                                                   gpu_neigh%rjs_d, &
-                                                   gpu_neigh%xyz_d, &
-                                                   gpu_exp%k_index_d(n_dim_idx), &
-                                                   gpu_exp%j2_index_d(n_dim_idx), &
-                                                   gpu_exp%rjs_index_d(n_dim_idx), &
-                                                   gpu_exp%xyz_k_d(n_dim_idx), &
-                                                   gpu_exp%nk_flags_d(n_dim_idx), gpu_exp%nk_flags_sum_d(n_dim_idx), &
-                                                   gpu_stream)
-
-            call gpu_free_async(gpu_exp%nk_flags_sum_d(n_dim_idx), gpu_stream)
-            if (debug_gpu_batches) print *, "deallocing flags sum"
-            call total_gpu_memory(dfloat(-int((j_end - j_beg + 1), c_size_t)*4))
-            call gpu_stream_sync(gpu_stream)
-            if (debug_gpu_batches) call gpu_check_error()
-            allocate (gpu_host%host(n_dim_idx)%k_index_h(1:gpu_exp%nk(n_dim_idx)))
-
-            if (debug_gpu_batches) print *, "deallocing k index"
-            call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
-
-            call gpu_stream_sync(gpu_stream)
-            if (debug_gpu_batches) call gpu_check_error()
-            call cpy_dtoh( &
-               gpu_exp%k_index_d(n_dim_idx), &
-               c_loc(gpu_host%host(n_dim_idx)%k_index_h), &
-               gpu_exp%st_k_index_d(n_dim_idx), &
-               gpu_stream)
-            call gpu_free_async(gpu_exp%k_index_d(n_dim_idx), gpu_stream)
-
-            allocate (gpu_host%host(n_dim_idx)%j2_index_h(1:gpu_exp%nk(n_dim_idx)))
-
-            if (debug_gpu_batches) print *, "deallocing j2 index"
-            call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*4))
-            call cpy_dtoh( &
-               gpu_exp%j2_index_d(n_dim_idx), &
-               c_loc(gpu_host%host(n_dim_idx)%j2_index_h), &
-               gpu_exp%st_k_index_d(n_dim_idx), &
-               gpu_stream)
-            call gpu_free_async(gpu_exp%j2_index_d(n_dim_idx), gpu_stream)
-            call gpu_stream_sync(gpu_stream)
-            if (debug_gpu_batches) call gpu_check_error()
-            allocate (gpu_host%host(n_dim_idx)%rjs_index_h(1:gpu_exp%nk(n_dim_idx)))
-
-            call cpy_dtoh( &
-               gpu_exp%rjs_index_d(n_dim_idx), &
-               c_loc(gpu_host%host(n_dim_idx)%rjs_index_h), &
-               st_rjs_index_d, &
-               gpu_stream)
-
-            allocate (gpu_host%host(n_dim_idx)%xyz_k_h(1:3, 1:gpu_exp%nk(n_dim_idx)))
-            if (debug_gpu_batches) print *, "deallocing xyz_k"
-            call total_gpu_memory(dfloat(-int(gpu_exp%nk(n_dim_idx), c_size_t)*3*8))
-            call gpu_stream_sync(gpu_stream)
-            if (debug_gpu_batches) call gpu_check_error()
-            call cpy_dtoh( &
-               gpu_exp%xyz_k_d(n_dim_idx), &
-               c_loc(gpu_host%host(n_dim_idx)%xyz_k_h), &
-               3*st_rjs_index_d, &
-               gpu_stream)
-            call gpu_free_async(gpu_exp%xyz_k_d(n_dim_idx), gpu_stream)
-
-            if (debug_gpu_batches) print *, "allocing pdf"
-            call total_gpu_memory(dfloat(int(n_samples, c_size_t)*8))
-            call gpu_stream_sync(gpu_stream)
-            if (debug_gpu_batches) call gpu_check_error()
-            gpu_exp%st_pair_distribution_partial_d(n_dim_idx) = int(n_samples, c_size_t)*c_double
-            call gpu_malloc_async(gpu_exp%pair_distribution_partial_d(n_dim_idx), &
-                                  gpu_exp%st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
-            call gpu_memset_async(gpu_exp%pair_distribution_partial_d(n_dim_idx), 0, &
-                                  gpu_exp%st_pair_distribution_partial_d(n_dim_idx), gpu_stream)
-
-            if (debug_gpu_batches) print *, "allocing pdf to reduce "
-            call total_gpu_memory(dfloat(int(gpu_exp%nk(n_dim_idx), c_size_t)*n_samples*8))
-
-            st_pdf_to_reduce_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*n_samples*c_double
-            call gpu_malloc_async(pdf_to_reduce_d, st_pdf_to_reduce_d, gpu_stream)
-            call gpu_memset_async(pdf_to_reduce_d, 0, st_pdf_to_reduce_d, gpu_stream)
-
-            pdf_factor = ((r_max - r_min)/dfloat(n_samples))/(sqrt(2.d0*pi)*kde_sigma)
-
-            !        if ( j == k ) f = 1.d0
-!           if ( j /= k ) f = 2.d0
-
-!            pdf_factor = pdf_factor * der_factor
-! ! !
-!          call gpu_stream_sync(gpu_stream)
-            !          print *, " >> Getting pdf batch"
-
-            if (debug_gpu_batches) print *, "gpu_exp%pair_distribution_partial_d(n_dim_idx)"
-            if (debug_gpu_batches) call gpu_print_pointer_double(gpu_exp%pair_distribution_partial_d(n_dim_idx))
-            if (debug_gpu_batches) print *, "pdf_to_reduce_d "
-            if (debug_gpu_batches) call gpu_print_pointer_double(pdf_to_reduce_d)
-            if (debug_gpu_batches) print *, "x_d "
-            if (debug_gpu_batches) call gpu_print_pointer_double(x_d)
-            if (debug_gpu_batches) print *, "dV_d "
-            if (debug_gpu_batches) call gpu_print_pointer_double(dV_d)
-            if (debug_gpu_batches) print *, "gpu_exp%rjs_index_d(n_dim_idx) "
-            if (debug_gpu_batches) call gpu_print_pointer_double(gpu_exp%rjs_index_d(n_dim_idx))
-            call flush (101)
-
-            der_factor = 0.0d0
-            call gpu_get_pair_distribution_only_falloc( &
-               gpu_exp%pair_distribution_partial_d(n_dim_idx), &
-               pdf_to_reduce_d, &
-               gpu_exp%nk(n_dim_idx), &
-               n_samples, &
-               kde_sigma, &
-               x_d, &
-               dV_d, &
-               gpu_exp%rjs_index_d(n_dim_idx), &
-               pdf_factor, &
-               der_factor, &
-               gpu_stream)
-
-            !--- check x ---!
-            ! allocate( x_check(1:n_samples) )
-            ! st_x_d = n_samples * c_double
-            !          ! call cpy_dtoh_event(&
-!          call cpy_dtoh(&
-            !      x_d, &
-            !      c_loc(x_check), &
-            !      st_x_d, &
-            !      gpu_stream)
-
-            ! call cpy_dtoh_event(&
-            !      dV_d, &
-            !      c_loc(x_check), &
-            !      st_x_d, &
-            !      gpu_stream)
-
-            call gpu_free_async(pdf_to_reduce_d, gpu_stream)
-            call gpu_free_async(gpu_exp%rjs_index_d(n_dim_idx), gpu_stream)
-
-            allocate (gpu_host%host(n_dim_idx)%pair_distribution_partial_h(1:n_samples))
-            call cpy_dtoh( &
-               gpu_exp%pair_distribution_partial_d(n_dim_idx), &
-               c_loc(gpu_host%host(n_dim_idx)%pair_distribution_partial_h), &
-               gpu_exp%st_pair_distribution_partial_d(n_dim_idx), &
-               gpu_stream)
-
-            call gpu_free_async(gpu_exp%pair_distribution_partial_d(n_dim_idx), gpu_stream)
-
-!          call gpu_stream_sync( gpu_stream )
-            ! call gpu_copy_pdf( n_samples, gpu_exp % pair_distribution_partial_d(n_dim_idx), &
-            !      gpu_host % pair_distribution_partial_h(n_dim)pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx), &
-            !      gpu_stream )
-
-            n_dim_idx = n_dim_idx + 1
-
-            if (n_dim_idx > n_dim_partial) then
-               exit outer1
-            end if
-
+!     fac per channel: the energy scale, -2 c_factor of the partial structure
+!     factor, and the kde normalisation and partial scale of d g / d r.
+      c = 0
+      do j = 1, n_species
+         do k = j, n_species
+            if (j == k) f = 1.d0
+            if (j /= k) f = 2.d0
+            c_factor = 4.d0*pi*f*((n_atoms_of_species(j)*n_atoms_of_species(k))/dfloat(n_sites)/dfloat(n_sites)) &
+                       *(dfloat(n_sites)/v_uc)
+            der_factor = v_uc/n_atoms_of_species(j)/n_atoms_of_species(k)/f
+            call gpu_xrd_window_weights(n_samples_sf, n_samples, c, sinc_factor_matrix_d, prefactor_d, &
+                                        all_scattering_factors_d(c + 1), dV_d, &
+                                        energy_scale*(-2.d0*c_factor)*pdf_factor*der_factor, w_d, gpu_stream)
+            c = c + 1
          end do
-      end do outer1
+      end do
 
-   end subroutine calculate_batched_pair_distribution
+      st_forces = int(n_sites, c_size_t)*3*c_double
+      st_virial = int(9, c_size_t)*c_double
+      call gpu_malloc_async(forces_d, st_forces, gpu_stream)
+      call gpu_memset_async(forces_d, 0, st_forces, gpu_stream)
+      call gpu_malloc_async(virial_d, st_virial, gpu_stream)
+      call gpu_memset_async(virial_d, 0, st_virial, gpu_stream)
+
+      call gpu_xrd_window_forces(gpu_exp%pair_off(n_dim_partial), n_sites, n_samples, r_min, dr, kde_sigma, PDF_KDE_CUT, &
+                                 x_d, w_d, gpu_exp%pair_r_d, gpu_exp%pair_xyz_d, gpu_exp%pair_j2_d, gpu_exp%pair_chan_d, &
+                                 forces_d, virial_d, gpu_stream)
+
+      call cpy_dtoh(forces_d, c_loc(forces_h), st_forces, gpu_stream)
+      call cpy_dtoh(virial_d, c_loc(virial_h), st_virial, gpu_stream)
+      call gpu_stream_sync(gpu_stream)
+
+      call gpu_free_async(w_d, gpu_stream)
+      call gpu_free_async(forces_d, gpu_stream)
+      call gpu_free_async(virial_d, gpu_stream)
+
+   end subroutine window_batched_xrd_forces
 #endif
 
 #ifdef _GPU
-   subroutine calculate_batched_pair_distribution_der(gpu_exp, gpu_host,&
-        &  x, dV, n_atoms_of_species, n_species, n_sites,&
-        & i_beg, i_end, j_beg, j_end, n_samples, r_min, r_max, r_cut, kde_sigma, &
-        & gpu_stream, x_d, dV_d, j, k, n_dim_idx, v_uc)
+!  Releases the pairs window_batched_pair_distribution kept on the device.
+   subroutine free_window_pairs(gpu_exp, gpu_stream)
       implicit none
-      integer, intent(in) :: n_species
-      integer, intent(in) :: i_beg
-      integer, intent(in) :: i_end
-      integer, intent(in) :: j_beg
-      integer, intent(in) :: j_end
-      integer, intent(in) :: n_sites
-      integer, intent(in) :: n_samples
-      integer, intent(in) :: j
-      integer, intent(in) :: k
-      integer, intent(in) :: n_dim_idx
-      real(dp), allocatable, intent(in) :: n_atoms_of_species(:)
-      real(dp), allocatable, intent(in) :: x(:)
-      real(dp), allocatable, intent(in) :: dV(:)
-      real(dp), intent(in) :: r_min
-      real(dp), intent(in) :: r_max
-      real(dp), intent(in) :: r_cut
-      real(dp), intent(in) :: kde_sigma
-      real(dp), intent(in) :: v_uc
       type(gpu_storage_type), intent(inout) :: gpu_exp
-      type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
-
-      real(dp), parameter :: pi = acos(-1.0)
-      integer :: n_dim_partial
-      type(c_ptr), intent(in) :: x_d
-      type(c_ptr), intent(in) :: dV_d
-      integer(c_size_t) :: st_x_d
-      integer, target :: nk_temp(1)
-      type(c_ptr) :: nk_flags_d
-      type(c_ptr) :: nk_sum_flags_d
-      integer(c_size_t) :: st_nk_flags
-      integer(c_size_t) :: st_nk_temp
-      type(c_ptr) :: rjs_index_d
-      integer(c_size_t) :: st_rjs_index_d
-
-      real(dp) :: pdf_factor
-      real(dp) :: der_factor = 0.d0
-      real(dp) :: f
-      integer :: i
-
       type(c_ptr) :: gpu_stream
 
-      n_dim_partial = n_species*(n_species + 1)/2
+      if (c_associated(gpu_exp%pair_r_d)) call gpu_free_async(gpu_exp%pair_r_d, gpu_stream)
+      if (c_associated(gpu_exp%pair_xyz_d)) call gpu_free_async(gpu_exp%pair_xyz_d, gpu_stream)
+      if (c_associated(gpu_exp%pair_j2_d)) call gpu_free_async(gpu_exp%pair_j2_d, gpu_stream)
+      if (c_associated(gpu_exp%pair_chan_d)) call gpu_free_async(gpu_exp%pair_chan_d, gpu_stream)
+      gpu_exp%pair_r_d = c_null_ptr
+      gpu_exp%pair_xyz_d = c_null_ptr
+      gpu_exp%pair_j2_d = c_null_ptr
+      gpu_exp%pair_chan_d = c_null_ptr
+      if (allocated(gpu_exp%pair_off)) deallocate (gpu_exp%pair_off)
 
-    if( .not. allocated( gpu_exp % st_pair_distribution_partial_der_d ) ) allocate( gpu_exp % st_pair_distribution_partial_der_d(1:n_dim_partial) )
-   if (.not. allocated(gpu_exp%pair_distribution_partial_der_d)) allocate (gpu_exp%pair_distribution_partial_der_d(1:n_dim_partial))
-
-      st_rjs_index_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_double
-      call gpu_malloc_async(rjs_index_d, st_rjs_index_d, gpu_stream)
-      call gpu_memset_async(rjs_index_d, 0, st_rjs_index_d, gpu_stream)
-
-      call cpy_htod( &
-         c_loc(gpu_host%host(n_dim_idx)%rjs_index_h), &
-         rjs_index_d, &
-         st_rjs_index_d, &
-         gpu_stream)
-
-      gpu_exp%st_pair_distribution_partial_der_d(n_dim_idx) = int(n_samples, c_size_t)*gpu_exp%nk(n_dim_idx)*c_double
-    call gpu_malloc_async(gpu_exp %pair_distribution_partial_der_d(n_dim_idx), gpu_exp %st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
-    call gpu_memset_async(gpu_exp %pair_distribution_partial_der_d(n_dim_idx), 0, gpu_exp %st_pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
-
-      pdf_factor = ((r_max - r_min)/ &
-                    dfloat(n_samples))/(sqrt(2.d0*pi)*kde_sigma)
-
-      if (j == k) f = 1.d0
-      if (j /= k) f = 2.d0
-
-      der_factor = v_uc/n_atoms_of_species(j)/ &
-           & n_atoms_of_species(k)/f
-
-      call gpu_get_pair_distribution_der_only( &
-         gpu_exp%pair_distribution_partial_der_d(n_dim_idx), &
-         gpu_exp%nk(n_dim_idx), &
-         n_samples, &
-         kde_sigma, &
-         x_d, dV_d, &
-         rjs_index_d, pdf_factor, der_factor, gpu_stream)
-
-      call gpu_free_async(rjs_index_d, gpu_stream)
-
-   end subroutine calculate_batched_pair_distribution_der
+   end subroutine free_window_pairs
 #endif
 
 #ifdef _GPU
-   subroutine setup_gpu_xrd_forces(gpu_exp, gpu_host, n_dim_idx, gpu_stream)
-      implicit none
-      integer, intent(in) :: n_dim_idx
-      type(gpu_storage_type), intent(inout) :: gpu_exp
-      type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
-      integer(c_size_t) :: st_rjs_index_d
-      type(c_ptr) :: gpu_stream
-      ! copy the xyz, j2 and k_index_d arrays
-
-      if (debug_gpu_batches) print *, "> nk = ", gpu_exp%nk(n_dim_idx)
-      st_rjs_index_d = int(gpu_exp%nk(n_dim_idx), c_size_t)*c_double
-      call gpu_malloc_async(gpu_exp%k_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
-      call gpu_malloc_async(gpu_exp%j2_index_d(n_dim_idx), gpu_exp%st_k_index_d(n_dim_idx), gpu_stream)
-      call gpu_malloc_async(gpu_exp%xyz_k_d(n_dim_idx), 3*st_rjs_index_d, gpu_stream)
-
-      call cpy_htod( &
-         c_loc(gpu_host%host(n_dim_idx)%k_index_h), &
-         gpu_exp%k_index_d(n_dim_idx), &
-         gpu_exp%st_k_index_d(n_dim_idx), &
-         gpu_stream)
-
-      call cpy_htod( &
-         c_loc(gpu_host%host(n_dim_idx)%j2_index_h), &
-         gpu_exp%j2_index_d(n_dim_idx), &
-         gpu_exp%st_k_index_d(n_dim_idx), &
-         gpu_stream)
-
-!    st_rjs_index_d = gpu_exp % nk( n_dim_idx ) * c_double
-
-      call cpy_htod( &
-         c_loc(gpu_host%host(n_dim_idx)%xyz_k_h), &
-         gpu_exp%xyz_k_d(n_dim_idx), &
-         3*st_rjs_index_d, &
-         gpu_stream)
-
-   end subroutine setup_gpu_xrd_forces
-#endif
-
-#ifdef _GPU
-   subroutine free_gpu_xrd_forces(gpu_exp, gpu_host, n_dim_idx, gpu_stream)
-      implicit none
-      integer, intent(in) :: n_dim_idx
-      type(gpu_storage_type), intent(inout) :: gpu_exp
-      type(gpu_host_batch_storage_type), intent(inout), target :: gpu_host
-      integer(c_size_t) :: st_rjs_index_d
-      type(c_ptr) :: gpu_stream
-      ! copy the xyz, j2 and k_index_d arrays
-
-      call gpu_free_async(gpu_exp%k_index_d(n_dim_idx), gpu_stream)
-      call gpu_free_async(gpu_exp%j2_index_d(n_dim_idx), gpu_stream)
-      call gpu_free_async(gpu_exp%xyz_k_d(n_dim_idx), gpu_stream)
-      call gpu_free_async(gpu_exp%pair_distribution_partial_der_d(n_dim_idx), gpu_stream)
-
-   end subroutine free_gpu_xrd_forces
 
    !--- GPU PAIR DISTRIBUTION FUNCTIONS ---!
 #endif

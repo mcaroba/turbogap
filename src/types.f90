@@ -64,6 +64,16 @@ module types
       integer(c_size_t), allocatable :: st_j2_index_d(:)
       integer(c_size_t), allocatable :: st_pair_distribution_partial_d(:)
       integer(c_size_t), allocatable :: st_pair_distribution_partial_der_d(:)
+!     The windowed route's pairs of the batch, every species pair compacted into
+!     one list by gpu_pdf_compact_pairs and kept on the device from the pdf to
+!     the forces: distance, separation (3 per pair), 1-based atom j2, channel.
+!     pair_off(c) is channel c's first position, pair_off(n_dim_partial) the
+!     number of pairs.
+      type(c_ptr) :: pair_r_d = c_null_ptr
+      type(c_ptr) :: pair_xyz_d = c_null_ptr
+      type(c_ptr) :: pair_j2_d = c_null_ptr
+      type(c_ptr) :: pair_chan_d = c_null_ptr
+      integer, allocatable :: pair_off(:)
    end type gpu_storage_type
 
    ! type gpu_batch_storage_type

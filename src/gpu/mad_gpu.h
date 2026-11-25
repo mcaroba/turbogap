@@ -5,7 +5,34 @@
 #ifndef TURBOGAP_MAD_GPU_H
 #define TURBOGAP_MAD_GPU_H
 
+#include "gpu_backend.h"
 #include "gpu_common.h"
+
+// The windowed pdf and its forces (mad_pdf.cu, mad_xrd.cu) evaluate a pair's
+// Gaussian at the samples the host evaluates it at -- the index arithmetic of
+// pair_kde_row, 0-based -- so the device sums the same terms as the host.
+
+// The channel of the unordered species pair (a, b), species 1-based, in the
+// order the Fortran visits them: (1,1), (1,2), ..., (1,n), (2,2), ...
+TG_INLINE_FUNCTION int pdf_channel(int a, int b, int n_species) {
+  if (a > b) {
+    const int t = a;
+    a = b;
+    b = t;
+  }
+  return (a - 1) * n_species - ((a - 1) * (a - 2)) / 2 + (b - a);
+}
+
+// First and last sample of a pair's window, 0-based.
+TG_INLINE_FUNCTION int pdf_window_lo(double r, double r_min, double dr, double kde_sigma, double kde_cut) {
+  const int lo = (int) ((r - kde_cut * kde_sigma - r_min) / dr) - 1;
+  return lo > 0 ? lo : 0;
+}
+
+TG_INLINE_FUNCTION int pdf_window_hi(double r, double r_min, double dr, double kde_sigma, double kde_cut, int n_samples) {
+  const int hi = (int) ((r + kde_cut * kde_sigma - r_min) / dr) + 1;
+  return hi < n_samples - 1 ? hi : n_samples - 1;
+}
 
 extern "C" {
 
@@ -32,6 +59,13 @@ void gpu_get_pair_distribution_only(double* pair_distribution_d, int n_k, int n_
 void gpu_get_pair_distribution_only_falloc(double* pair_distribution_d, double* pdf_to_reduce, int n_k, int n_samples,
                                            double kde_sigma, double* x_d, double* dV_d, double* rjs_d, double pdf_factor,
                                            double der_factor, hipStream_t* stream);
+void gpu_pdf_tag_pairs(int n_sites_b, int n_pairs_b, int* n_neigh_d, int* species_d, int* neighbor_species_d, double* rjs_d,
+                       int n_species, double r_lo, double r_hi, int* chan_d, hipStream_t* stream);
+void gpu_pdf_compact_pairs(int n_pairs_b, int n_sites0, int n_channels, int* chan_d, int* neighbors_list_d, double* rjs_d,
+                           double* xyz_d, double* r_out, double* xyz_out, int* j2_out, int* chan_out, int* off_h,
+                           hipStream_t* stream);
+void gpu_pdf_window_kde(int n_channels, int* off_h, int n_samples, double r_min, double dr, double kde_sigma, double kde_cut,
+                        double* x_d, double* dV_d, double* r_d, double pdf_factor, double* pdf_out_d, hipStream_t* stream);
 
 // ---- mad_xrd.cu
 void gpu_xrd_pair_forces(int nk, int n_samples, double* w_d, double* pdf_der_d, double c_factor, double* xyz_k_d, double* fi_d,
@@ -40,6 +74,11 @@ void gpu_xrd_weights(int n_samples_sf, int n_samples, double* S_d, double* resid
                      hipStream_t* stream);
 void gpu_exp_force_virial_collection(int n_k, int n_sites, double3* forces0, double energy_scale, double* fi, int* j2_list,
                                      double* virial, double3* xyz, hipStream_t* stream);
+void gpu_xrd_window_weights(int n_samples_sf, int n_samples, int channel, double* S_d, double* residual_d, double* f_d,
+                            double* dV_d, double fac, double* w_d, hipStream_t* stream);
+void gpu_xrd_window_forces(int n_k, int n_sites, int n_samples, double r_min, double dr, double kde_sigma, double kde_cut,
+                           double* x_d, double* w_d, double* r_d, double* xyz_d, int* j2_d, int* chan_d, double* forces_d,
+                           double* virial_d, hipStream_t* stream);
 
 // ---- mad_electrostatics.cu
 void gpu_get_electrostatics_nk(int i_beg, int i_end, int n_pairs, int* n_neigh, int* n_neigh_index_d, double* rjs, double* xyz,

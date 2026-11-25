@@ -1123,6 +1123,100 @@ MODULE F_B_C
          type(c_ptr) :: stream
       end subroutine gpu_exp_force_virial_collection
 
+!     The windowed pdf and its forces: src/gpu/mad_pdf.cu, src/gpu/mad_xrd.cu.
+      subroutine gpu_pdf_tag_pairs(n_sites_b, n_pairs_b, n_neigh_d, species_d, neighbor_species_d, rjs_d, &
+                                   n_species, r_lo, r_hi, chan_d, stream) bind(C, name="gpu_pdf_tag_pairs")
+         use iso_c_binding
+         implicit none
+         integer(c_int), value :: n_sites_b
+         integer(c_int), value :: n_pairs_b
+         type(c_ptr), value :: n_neigh_d
+         type(c_ptr), value :: species_d
+         type(c_ptr), value :: neighbor_species_d
+         type(c_ptr), value :: rjs_d
+         integer(c_int), value :: n_species
+         real(c_double), value :: r_lo
+         real(c_double), value :: r_hi
+         type(c_ptr), value :: chan_d
+         type(c_ptr) :: stream
+      end subroutine gpu_pdf_tag_pairs
+
+      subroutine gpu_pdf_compact_pairs(n_pairs_b, n_sites0, n_channels, chan_d, neighbors_list_d, rjs_d, xyz_d, &
+                                       r_out, xyz_out, j2_out, chan_out, off_h, stream) bind(C, name="gpu_pdf_compact_pairs")
+         use iso_c_binding
+         implicit none
+         integer(c_int), value :: n_pairs_b
+         integer(c_int), value :: n_sites0
+         integer(c_int), value :: n_channels
+         type(c_ptr), value :: chan_d
+         type(c_ptr), value :: neighbors_list_d
+         type(c_ptr), value :: rjs_d
+         type(c_ptr), value :: xyz_d
+         type(c_ptr), value :: r_out
+         type(c_ptr), value :: xyz_out
+         type(c_ptr), value :: j2_out
+         type(c_ptr), value :: chan_out
+         integer(c_int) :: off_h(*)
+         type(c_ptr) :: stream
+      end subroutine gpu_pdf_compact_pairs
+
+      subroutine gpu_pdf_window_kde(n_channels, off_h, n_samples, r_min, dr, kde_sigma, kde_cut, x_d, dV_d, r_d, &
+                                    pdf_factor, pdf_out_d, stream) bind(C, name="gpu_pdf_window_kde")
+         use iso_c_binding
+         implicit none
+         integer(c_int), value :: n_channels
+         integer(c_int) :: off_h(*)
+         integer(c_int), value :: n_samples
+         real(c_double), value :: r_min
+         real(c_double), value :: dr
+         real(c_double), value :: kde_sigma
+         real(c_double), value :: kde_cut
+         type(c_ptr), value :: x_d
+         type(c_ptr), value :: dV_d
+         type(c_ptr), value :: r_d
+         real(c_double), value :: pdf_factor
+         type(c_ptr), value :: pdf_out_d
+         type(c_ptr) :: stream
+      end subroutine gpu_pdf_window_kde
+
+      subroutine gpu_xrd_window_weights(n_samples_sf, n_samples, channel, S_d, residual_d, f_d, dV_d, fac, w_d, stream) &
+         bind(C, name="gpu_xrd_window_weights")
+         use iso_c_binding
+         implicit none
+         integer(c_int), value :: n_samples_sf
+         integer(c_int), value :: n_samples
+         integer(c_int), value :: channel
+         type(c_ptr), value :: S_d
+         type(c_ptr), value :: residual_d
+         type(c_ptr), value :: f_d
+         type(c_ptr), value :: dV_d
+         real(c_double), value :: fac
+         type(c_ptr), value :: w_d
+         type(c_ptr) :: stream
+      end subroutine gpu_xrd_window_weights
+
+      subroutine gpu_xrd_window_forces(n_k, n_sites, n_samples, r_min, dr, kde_sigma, kde_cut, x_d, w_d, r_d, xyz_d, &
+                                       j2_d, chan_d, forces_d, virial_d, stream) bind(C, name="gpu_xrd_window_forces")
+         use iso_c_binding
+         implicit none
+         integer(c_int), value :: n_k
+         integer(c_int), value :: n_sites
+         integer(c_int), value :: n_samples
+         real(c_double), value :: r_min
+         real(c_double), value :: dr
+         real(c_double), value :: kde_sigma
+         real(c_double), value :: kde_cut
+         type(c_ptr), value :: x_d
+         type(c_ptr), value :: w_d
+         type(c_ptr), value :: r_d
+         type(c_ptr), value :: xyz_d
+         type(c_ptr), value :: j2_d
+         type(c_ptr), value :: chan_d
+         type(c_ptr), value :: forces_d
+         type(c_ptr), value :: virial_d
+         type(c_ptr) :: stream
+      end subroutine gpu_xrd_window_forces
+
       subroutine gpu_print_pointer_int(p) bind(C&
            &, name="gpu_print_pointer_int")
          use iso_c_binding

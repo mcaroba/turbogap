@@ -630,9 +630,8 @@ contains
 !        The estimator was written for exactly this and its call site has been
 !        commented out ever since -- so gpu_n_batches has always been whatever
 !        the input said, with nothing anywhere comparing it to the card. It
-!        enumerates the pdf/xrd device buffers one by one; the dominant term is
-!        Gk = n_samples x n_pairs x 8 bytes, which is why a large cutoff blows
-!        up so much faster than a large cell.
+!        counts the pdf/xrd device buffers per pair, ~150 bytes for three
+!        species: the route holds no n_samples x n_pairs array.
 !
 !        gpu_batches_for_gb only ever raises the count, and does nothing at all
 !        when gpu_mem_fraction = 0. The breakdown is printed on the first step
@@ -675,6 +674,9 @@ contains
 
          call gpu_malloc_async(dV_d, st_x_d, gpu_stream)
          call cpy_htod(c_loc(dV), dV_d, st_x_d, gpu_stream)
+!        The batches run on gpu_streams, a different stream: these copies have to
+!        have landed before the first batch reads them.
+         call gpu_stream_sync(gpu_stream)
 
          ! > We have n_omp streams created. In general the number
          !   of batches will likely be greater than the number of
@@ -722,29 +724,10 @@ contains
             ! calculate the electrostatics of this batch directly,
             ! with the forces too
 
-            call calculate_batched_pair_distribution( &
-               gpu_exp(i), &
-               gpu_batch_storage(i), &
-               gpu_neigh(i), &
-               x_pair_distribution, &
-               dV, &
-               n_atoms_of_species, &
-               n_species_actual, &
-               n_sites, &
-               this_i_beg, &
-               this_i_end, &
-               this_j_beg, &
-               this_j_end, &
-               params%pair_distribution_n_samples, &
-               params%r_range_min, &
-               params%r_range_max, &
-               params%pair_distribution_rcut, &
-               params%pair_distribution_kde_sigma, &
-               gpu_streams(omp_task), &
-               xpdf_d, &
-               dV_d, &
-               v_uc, &
-               rank)
+            call window_batched_pair_distribution(gpu_exp(i), gpu_batch_storage(i), gpu_neigh(i), n_species_actual, &
+                                                  n_sites, n_sites_temp, n_pairs_temp, params%pair_distribution_n_samples, &
+                                                  params%r_range_min, params%r_range_max, params%pair_distribution_rcut, &
+                                                  params%pair_distribution_kde_sigma, xpdf_d, dV_d, gpu_streams(omp_task))
 
             call gpu_free_neighbors(gpu_neigh(i), gpu_streams(omp_task))
 
@@ -853,6 +836,9 @@ contains
 !           the two halves ran together; with the pdf on the device and no
 !           forces wanted, the next step found gpu_exp still allocated and died
 !           on it.
+            do i = 1, size(gpu_exp)
+               call free_window_pairs(gpu_exp(i), gpu_stream)
+            end do
             call free_host_batches(gpu_batch_storage, params%gpu_n_batches, n_dim_partial)
             call free_exp_batches(gpu_exp, params%gpu_n_batches)
             if (allocated(i_beg_list)) deallocate (i_beg_list, i_end_list, j_beg_list, j_end_list)
@@ -1112,12 +1098,16 @@ contains
            &%exp_energy_scales_final(obs_idx), params&
            &%exp_energy_scales(obs_idx))
 
+!        The residual, S and the scattering factors went up on gpu_stream; the
+!        batches read them on gpu_streams.
+         call gpu_stream_sync(gpu_stream)
+
          ! ! $OMP SHARED(cublas_handles, gpu_streams, n_neigh, species, neighbor_species, neighbors_list, rjs, xyz, &
          ! ! $OMP xpdf_d, dV_d, dV, n_atoms_of_species, n_species_actual, n_sites, v_uc, gpu_batch_storage, gpu_exp, x_pair_distribution)
 
          !$OMP PARALLEL DO num_threads(n_omp) DEFAULT(SHARED) &
          !$OMP PRIVATE(i, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end) &
-         !$OMP PRIVATE(n_sites_temp, n_pairs_temp, n_dim_idx, j, k, f)
+         !$OMP PRIVATE(n_sites_temp, n_pairs_temp)
 
          do i = 1, size(i_beg_list)
 
@@ -1143,53 +1133,16 @@ contains
                " this_j_beg = ", this_j_beg, &
                " this_j_end = ", this_j_end
 
-            n_dim_idx = 1
-            outer: do j = 1, n_species_actual
-               do k = 1, n_species_actual
-                  if (j > k) cycle
-
-                  ! Now calculate the pair_distribution_partial_der_d
-                  ! we have the rjs stored
-
-                  call calculate_batched_pair_distribution_der(gpu_exp(i), gpu_batch_storage(i), &
-                                                           x_pair_distribution, dV, n_atoms_of_species, n_species_actual, n_sites, &
-                                                               this_i_beg, this_i_end, this_j_beg, this_j_end, &
-                                                       params%pair_distribution_n_samples, params%r_range_min, params%r_range_max, &
-                                                               params%pair_distribution_rcut, params%pair_distribution_kde_sigma, &
-                                                               gpu_streams(omp_task), xpdf_d, dV_d, j, k, n_dim_idx, v_uc)
-
-                  call setup_gpu_xrd_forces(gpu_exp(i), gpu_batch_storage(i), n_dim_idx, gpu_streams(omp_task))
-
-                  if (j == k) f = 1.d0
-                  if (j /= k) f = 2.d0
-
-                  f = 4.d0*pi*f*((n_atoms_of_species(j)*n_atoms_of_species(k))/dfloat(n_sites)/&
-                    & dfloat(n_sites))*(dfloat(n_sites)/v_uc)
-
-                  allocate (gpu_batch_storage(i)%host(n_dim_idx)%forces_h(1:3, 1:n_sites))
-                  gpu_batch_storage(i)%host(n_dim_idx)%forces_h = 0.d0
-                  gpu_batch_storage(i)%host(n_dim_idx)%virial_h = 0.d0
-
-                  call get_structure_factor_forces_matrix_original(.true., params%exp_energy_scales(obs_idx), &
-                                                                   gpu_batch_storage(i)%host(n_dim_idx)%forces_h, &
-                                                                   gpu_batch_storage(i)%host(n_dim_idx)%virial_h, &
-                                                            params%pair_distribution_n_samples, params%structure_factor_n_samples, &
-                                                                   f, &
-                                                                   gpu_exp(i)%nk(n_dim_idx), &
-                                                                   gpu_exp(i)%k_index_d(n_dim_idx), &
-                                                                   gpu_exp(i)%j2_index_d(n_dim_idx), &
-                                                                   gpu_exp(i)%xyz_k_d(n_dim_idx), &
-                                                                   gpu_exp(i)%pair_distribution_partial_der_d(n_dim_idx), &
-                                                                   sinc_factor_matrix_d, &
-                                  all_scattering_factors_d(n_dim_idx), prefactor_d, gpu_streams(omp_task), cublas_handles(omp_task))
-
-                  call free_gpu_xrd_forces(gpu_exp(i), gpu_batch_storage(i), n_dim_idx, gpu_streams(omp_task))
-
-                  n_dim_idx = n_dim_idx + 1
-                  if (n_dim_idx > n_dim_partial) exit outer
-
-               end do
-            end do outer
+!           Every species pair of the batch in one pass, from the pairs the
+!           pdf compacted; the batch's total lands in host(1).
+            allocate (gpu_batch_storage(i)%host(1)%forces_h(1:3, 1:n_sites))
+            call window_batched_xrd_forces(gpu_exp(i), n_species_actual, n_sites, params%pair_distribution_n_samples, &
+                                           params%structure_factor_n_samples, params%r_range_min, params%r_range_max, &
+                                           params%pair_distribution_kde_sigma, params%exp_energy_scales(obs_idx), &
+                                           n_atoms_of_species, v_uc, xpdf_d, dV_d, sinc_factor_matrix_d, prefactor_d, &
+                                           all_scattering_factors_d, gpu_batch_storage(i)%host(1)%forces_h, &
+                                           gpu_batch_storage(i)%host(1)%virial_h, gpu_streams(omp_task))
+            call free_window_pairs(gpu_exp(i), gpu_streams(omp_task))
          end do
          !$OMP END PARALLEL DO
 
@@ -1198,7 +1151,7 @@ contains
 
 !        ---   The cell half of the virial   --- !
 !
-!        get_structure_factor_forces_matrix_original differentiates the
+!        window_batched_xrd_forces differentiates the
 !        interatomic distances, batch by batch, on the device. The pattern also
 !        depends on the cell directly: every partial is normalised by the
 !        number density N/V, and in
