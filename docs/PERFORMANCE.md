@@ -88,22 +88,24 @@ rank per core -- except for MBD (below).
 
 Time per atom-step, with the factor over plain MD run in the same job and
 layout, then seconds per step and the wall time per picosecond and per
-nanosecond at the run's time step. Steps as above, from runs of 2 and 42 steps
-on the CPU node and 2 and 12 on the GPUs (CO), and of 20 and 220 (GST).
+nanosecond at the run's time step. Measured at `74d636b`. Steps as above, from
+runs of 2 and 42 steps on the CPU node and 2 and 12 on the GPUs (CO), and of
+20 and 220 (GST), with each run's Setup time taken off first: it varies by
+~0.4 s between runs, which is 2 ms a step over 200 GST steps.
 
 **CO**, the 307,671-atom cell, `dd_type = rcb`, NVE at 1 fs. XRD (`q*F(q)`) from
 partial pdfs to 6 A (201 samples, sigma 0.1 A), fitted with `exp_forces`:
 
 | | us / atom-step | s / step | per ps | per ns |
 | --- | --- | --- | --- | --- |
-| 1 GH200, plain MD | 2.48 | 0.763 | 13 min | 212 h |
-| 1 GH200, XRD | 4.33 (1.75x) | 1.33 | 22 min | 370 h |
-| 4 GH200, plain MD | 0.78 | 0.240 | 4.0 min | 67 h |
-| 4 GH200, XRD | 2.12 (2.7x) | 0.653 | 11 min | 181 h |
-| 1 CPU node, 384 x 1, plain MD | 1.48 | 0.456 | 7.6 min | 127 h |
-| 1 CPU node, 384 x 1, XRD | 4.52 (3.1x) | 1.39 | 23 min | 387 h |
-| 1 CPU node, 48 x 8, plain MD | 1.60 | 0.492 | 8.2 min | 137 h |
-| 1 CPU node, 48 x 8, XRD | 3.54 (2.2x) | 1.09 | 18 min | 302 h |
+| 1 GH200, plain MD | 2.41 | 0.741 | 12 min | 206 h |
+| 1 GH200, XRD | 3.83 (1.6x) | 1.18 | 20 min | 328 h |
+| 4 GH200, plain MD | 0.83 | 0.255 | 4.2 min | 71 h |
+| 4 GH200, XRD | 2.02 (2.4x) | 0.623 | 10 min | 173 h |
+| 1 CPU node, 384 x 1, plain MD | 1.56 | 0.481 | 8.0 min | 134 h |
+| 1 CPU node, 384 x 1, XRD | 4.52 (2.9x) | 1.39 | 23 min | 386 h |
+| 1 CPU node, 48 x 8, plain MD | 1.59 | 0.490 | 8.2 min | 136 h |
+| 1 CPU node, 48 x 8, XRD | 3.19 (2.0x) | 0.981 | 16 min | 272 h |
 
 **GST**, 7,200 atoms of Ge2Sb2Te5 from a 1507 K liquid with a three-species
 `soap_turbo` potential (2b, core_pot), NPT at 1507 K and 2 fs. ND (`q*F(q)`, 61
@@ -112,32 +114,37 @@ fitted with `exp_forces`:
 
 | | us / atom-step | s / step | per ps | per ns |
 | --- | --- | --- | --- | --- |
-| 1 GH200, plain MD | 1.68 | 0.0121 | 6.1 s | 1.7 h |
-| 1 GH200, ND | 4.67 (2.8x) | 0.0336 | 17 s | 4.7 h |
-| 1 CPU node, 96 x 4, plain MD | 1.22 | 0.0088 | 4.4 s | 1.2 h |
-| 1 CPU node, 96 x 4, ND | 2.00 (1.6x) | 0.0144 | 7.2 s | 2.0 h |
+| 1 GH200, plain MD | 1.24 | 0.0089 | 4.5 s | 1.2 h |
+| 1 GH200, ND | 2.60 (2.1x) | 0.0187 | 9.4 s | 2.6 h |
+| 1 CPU node, 96 x 4, plain MD | 1.74 | 0.0125 | 6.2 s | 1.7 h |
+| 1 CPU node, 96 x 4, ND | 2.38 (1.4x) | 0.0171 | 8.6 s | 2.4 h |
 | 1 CPU node, 48 x 8, plain MD | 1.99 | 0.0143 | 7.2 s | 2.0 h |
-| 1 CPU node, 48 x 8, ND | 3.35 (1.7x) | 0.0241 | 12 s | 3.4 h |
+| 1 CPU node, 48 x 8, ND | 3.14 (1.6x) | 0.0226 | 11 s | 3.1 h |
 
 Over the same GST cell a 140,000-step production stage at 96 x 4 and 0.5 fs
 ran at 0.0177 s/step, with a frame and the patterns written every 1 ps.
 
 The pattern and its forces themselves (the Exp. pred timer) are now a small
 part of a step: 0.09 s on one GH200, 0.03 on four and 0.08-0.11 on a CPU node
-for CO, and 4-6 ms for GST. Most of the remaining factor is the potential
-working on the longer neighbour list that the pdf cutoff needs; for GST on the
-GPU, most of that is the host-side preparation of the SOAP batches over it.
+for CO, and 4-6 ms for GST. The potential no longer walks the longer list the
+pdf cutoff needs (below). Against `e28f1d1` in the same jobs that took 46%
+off a GST nd MAD step on one GH200 (0.0344 to 0.0187 s), 29% off its plain MD,
+12% off CO XRD on one GH200 and 8% on a CPU node at 48 x 8; GST on a CPU node
+moved by less than its run-to-run spread.
 
 What changed for this: on the host the pdf kernel and the forces are threaded,
 and each pair's d g / d r is rebuilt in the force pass instead of being stored
 as an n_samples x n_pairs array, which every rank allocated and cleared every
 step. On the device each pair's kernel is evaluated only where the host
 evaluates it, within 9 sigma, for every species pair in one pass and with no
-n_samples x n_pairs array, about 150 bytes per pair. With no 3b term the 2b
-and core-pot kernels get only the neighbours within their own cutoff.
+n_samples x n_pairs array, about 150 bytes per pair. The GAP terms walk only
+the pairs within their own cutoffs: the list is cut once a step to the largest
+GAP cutoff for SOAP, and that again to the 2b, core-potential and 3b cutoffs
+for each of those. On the device the 2b and core-pot terms run a thread per
+pair, every descriptor in one launch.
 
 **Layout.** Threads now pay on the CPU when a pattern is fitted from a pdf
-with a long list: 48 x 8 beats one rank per core for CO XRD by 22%, while
+with a long list: 48 x 8 beats one rank per core for CO XRD by 29%, while
 plain MD is fastest at one rank per core. For 7,200-atom GST, 96 x 4 is
 fastest. The GH200 is under-filled at 7,200 atoms.
 
@@ -268,6 +275,9 @@ What the measured code was tested with, and where:
 | `tests/exp_omp` | pdf, sf, xrd and nd outputs at 1 and 4 threads and 2 ranks x 2, and the xrd and pdf MAD forces | alt |
 | the windowed device route (`299685b`, `e28f1d1`) against the host build | forces at step 0 to 1e-8, patterns and thermo to the printed digits: nd and xrd MAD, three batches, two ranks, 7,200-atom GST; the Kokkos build too | alt: RTX 5070 |
 | `tests/regression --gpu`, all cases | the same 23 fail on this card with and without the windowed route; the pdf-route cases pass | alt: RTX 5070 |
+| the GAP terms on cut lists (`fe81322`, `74d636b`): `tests/regression --cpu`, all 44 cases | every output against a master (`8a7df2b`) build, each run as the binary under test: 107 files identical | alt |
+| `tests/gap_neighbors` | the CO cell with the GAP alone, with a pdf to 9 A at 1 and 3 ranks, and with its 3b descriptors alone, against master's output to 1e-6; a GAP list 0.05 A short or a 3b list 5% short fails it | alt |
+| the device 2b and core-pot a thread per pair (`74d636b`) against the host build | CO MD and CO and GST nd MAD at 1 and 2 ranks, as close as master's device build is to its host (forces 4e-8); `tests/regression --gpu` fails 22 cases against master's 23; the Kokkos build too | alt: RTX 5070 |
 | `tests/xrd_species_order`, absent-species leg | a species listed and absent from the cell: totals, partials and every energy term as when it is not listed, no NaN | alt, host and device |
 | `tests/regression --cpu`, all 44 cases | outputs against the previous binary, bit for bit; only the XPS and Debye cases differ, as intended | alt: x86, 12 cores |
 | `tests/regression --gpu`, all 41 cases with data | device against host within tolerance; the same 36 agree as before | Roihu GH200 |
