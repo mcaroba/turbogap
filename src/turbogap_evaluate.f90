@@ -98,6 +98,9 @@ contains
       integer :: ierr
       integer :: i
       integer :: j
+!     The pair terms' largest cutoff: gap_backend_begin hands them only the
+!     neighbours within it. -1 keeps the whole list (3b reads it as it is).
+      real(dp) :: rcut_short
       character*1024 :: filename
       character*1024 :: temp_string
       real(dp), allocatable :: be_all(:)
@@ -297,8 +300,18 @@ contains
          !       names from src/gap_backend_gpu.f90 and the Makefile picks one.
          call time_start(time%gap)
 
+         rcut_short = -1.d0
+         if (model%n_angle_3b == 0) then
+            rcut_short = 0.d0
+            do i = 1, model%n_distance_2b
+               rcut_short = max(rcut_short, model%distance_2b_hypers(i)%rcut)
+            end do
+            do i = 1, model%n_core_pot
+               rcut_short = max(rcut_short, maxval(model%core_pot_hypers(i)%x))
+            end do
+         end if
          call gap_backend_begin(params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
-                                nl%neighbors_list, dom%i_beg, dom%i_end, dom%j_beg, dom%j_end)
+                                nl%neighbors_list, dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rcut_short)
 
          call add_2b_contribution(model%n_distance_2b, model%distance_2b_hypers, &
                                   params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &

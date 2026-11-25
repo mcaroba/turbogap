@@ -52,7 +52,7 @@ contains
    end subroutine gap_backend_init
 
    subroutine gap_backend_begin(params, rjs, xyz, n_neigh, species, neighbor_species, &
-                                neighbors_list, i_beg, i_end, j_beg, j_end)
+                                neighbors_list, i_beg, i_end, j_beg, j_end, rcut_short)
       implicit none
       type(input_parameters), intent(inout) :: params
       real(dp), intent(in), allocatable :: rjs(:)
@@ -65,6 +65,7 @@ contains
       integer, intent(in) :: i_end
       integer, intent(in) :: j_beg
       integer, intent(in) :: j_end
+      real(dp), intent(in) :: rcut_short
    end subroutine gap_backend_begin
 
    subroutine gap_backend_end()

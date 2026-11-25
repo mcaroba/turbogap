@@ -56,6 +56,16 @@ module gap_backend
    type(c_ptr) :: qs_d
    type(c_ptr) :: gpu_stream
 
+!   The neighbours within the pair terms' cutoff, site by site in list order,
+!   when gap_backend_begin is given one: what is uploaded instead of the whole
+!   list. With a pdf in the run the list reaches pair_distribution_rcut, and
+!   the 2b and core-pot kernels, a thread per site, walked all of it.
+   integer, allocatable, target :: n_neigh_s(:)
+   integer, allocatable, target :: neighbor_species_s(:)
+   integer, allocatable, target :: neighbors_list_s(:)
+   real(dp), allocatable, target :: rjs_s(:)
+   real(dp), allocatable, target :: xyz_s(:, :)
+
 contains
 
 ! Take the stream the backend launches on from gpu_context, so the call itself
@@ -69,7 +79,7 @@ contains
 
 ! Upload the neighbour data once for all three contribution calls.
    subroutine gap_backend_begin(params, rjs, xyz, n_neigh, species, neighbor_species, &
-                                neighbors_list, i_beg, i_end, j_beg, j_end)
+                                neighbors_list, i_beg, i_end, j_beg, j_end, rcut_short)
 
       implicit none
       type(input_parameters), intent(inout) :: params
@@ -83,14 +93,119 @@ contains
       integer, intent(in) :: i_end
       integer, intent(in) :: j_beg
       integer, intent(in) :: j_end
+!     Upload only the neighbours within it; negative uploads the whole list.
+      real(dp), intent(in) :: rcut_short
+
+      if (rcut_short >= 0.d0) then
+         call build_short_list(rcut_short, i_beg, i_end, n_neigh, rjs, xyz, neighbor_species, neighbors_list)
+         call upload_neighbours(n_neigh_s, species, neighbor_species_s, rjs_s, xyz_s, neighbors_list_s, &
+                                i_end, size(rjs_s))
+      else
+         call upload_neighbours(n_neigh, species, neighbor_species, rjs, xyz, neighbors_list, i_end, j_end)
+      end if
+
+   end subroutine gap_backend_begin
+
+!  The neighbours of sites i_beg..i_end within rcut_short into the module's
+!  *_s arrays, each site's in list order and starting with the site itself, so
+!  a kernel walking them sums the same pairs in the same order it would have
+!  over the whole list. n_neigh_s below i_beg is copied as it was.
+   subroutine build_short_list(rcut_short, i_beg, i_end, n_neigh, rjs, xyz, neighbor_species, neighbors_list)
+      implicit none
+      real(dp), intent(in) :: rcut_short
+      integer, intent(in) :: i_beg
+      integer, intent(in) :: i_end
+      integer, intent(in) :: n_neigh(:)
+      real(dp), intent(in) :: rjs(:)
+      real(dp), intent(in) :: xyz(:, :)
+      integer, intent(in) :: neighbor_species(:)
+      integer, intent(in) :: neighbors_list(:)
+      integer, allocatable :: first(:)
+      integer, allocatable :: first_s(:)
+      integer :: i
+      integer :: j
+      integer :: k
+      integer :: c
+      integer :: m
+
+      call free_short_list()
+      allocate (n_neigh_s(1:max(i_end, 1)))
+      n_neigh_s = 0
+      if (i_beg > 1) n_neigh_s(1:i_beg - 1) = n_neigh(1:i_beg - 1)
+      allocate (first(i_beg:i_end))
+      allocate (first_s(i_beg:i_end))
+
+      k = 0
+      do i = i_beg, i_end
+         first(i) = k
+         k = k + n_neigh(i)
+      end do
+
+!$omp parallel do schedule(static) private(j, c)
+      do i = i_beg, i_end
+         c = 0
+         do j = 1, n_neigh(i)
+            if (rjs(first(i) + j) <= rcut_short) c = c + 1
+         end do
+         n_neigh_s(i) = c
+      end do
+!$omp end parallel do
+
+      m = 0
+      do i = i_beg, i_end
+         first_s(i) = m
+         m = m + n_neigh_s(i)
+      end do
+
+      allocate (rjs_s(1:max(m, 1)))
+      allocate (xyz_s(1:3, 1:max(m, 1)))
+      allocate (neighbor_species_s(1:max(m, 1)))
+      allocate (neighbors_list_s(1:max(m, 1)))
+
+!$omp parallel do schedule(static) private(j, k, c)
+      do i = i_beg, i_end
+         c = first_s(i)
+         do j = 1, n_neigh(i)
+            k = first(i) + j
+            if (rjs(k) > rcut_short) cycle
+            c = c + 1
+            rjs_s(c) = rjs(k)
+            xyz_s(1:3, c) = xyz(1:3, k)
+            neighbor_species_s(c) = neighbor_species(k)
+            neighbors_list_s(c) = neighbors_list(k)
+         end do
+      end do
+!$omp end parallel do
+
+      deallocate (first_s)
+      deallocate (first)
+   end subroutine build_short_list
+
+   subroutine free_short_list()
+      implicit none
+      if (allocated(n_neigh_s)) deallocate (n_neigh_s)
+      if (allocated(neighbor_species_s)) deallocate (neighbor_species_s)
+      if (allocated(neighbors_list_s)) deallocate (neighbors_list_s)
+      if (allocated(rjs_s)) deallocate (rjs_s)
+      if (allocated(xyz_s)) deallocate (xyz_s)
+   end subroutine free_short_list
+
+!  n_neigh and species up to site i_end, the pair arrays up to pair j_end.
+   subroutine upload_neighbours(n_neigh, species, neighbor_species, rjs, xyz, neighbors_list, i_end, j_end)
+      implicit none
+      integer, intent(in), target :: n_neigh(:)
+      integer, intent(in), target :: species(:)
+      integer, intent(in), target :: neighbor_species(:)
+      real(dp), intent(in), target :: rjs(:)
+      real(dp), intent(in), target :: xyz(:, :)
+      integer, intent(in), target :: neighbors_list(:)
+      integer, intent(in) :: i_end
+      integer, intent(in) :: j_end
 
       integer(c_size_t) :: st_n_sites_int
       integer(c_size_t) :: st_n_atom_pairs_int
       integer(c_size_t) :: st_n_atom_pairs_double
       integer(c_size_t) :: size_maxnp_bytes
-      integer :: n_sites
-
-      n_sites = i_end - i_beg + 1
 
 !   i_end, not (i_end - i_beg + 1). This is the fix for the multi-rank crash.
 !
@@ -136,7 +251,7 @@ contains
       call gpu_malloc_async(neighbors_list_d, size_maxnp_bytes, gpu_stream)
       call cpy_htod(c_loc(neighbors_list), neighbors_list_d, size_maxnp_bytes, gpu_stream)
 
-   end subroutine gap_backend_begin
+   end subroutine upload_neighbours
 
    subroutine gap_backend_end()
       implicit none
@@ -147,6 +262,7 @@ contains
       call gpu_free_async(rjs_d, gpu_stream)
       call gpu_free_async(xyz_d, gpu_stream)
       call gpu_free_async(neighbors_list_d, gpu_stream)
+      call free_short_list()
 
    end subroutine gap_backend_end
 
