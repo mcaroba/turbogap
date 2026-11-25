@@ -19,7 +19,9 @@
 # when hybrid MC removes it. Its partials have no atoms to normalise by; 0/0
 # there used to make every total NaN. The cell with its O removed, run as
 # `species = O C` (O absent and first) and as `species = C`, must give the
-# same totals and C_C partials, with no NaN anywhere.
+# same totals and C_C partials, with no NaN anywhere -- and the same energy,
+# term by term: with `species = C` the potential's O descriptors match no
+# listed species, and the device build used to count them as another pair's.
 #
 # Environment:
 #   TURBOGAP_BIN        binary under test (default: <repo>/bin/turbogap)
@@ -176,12 +178,32 @@ no_nan() {
   fi
 }
 
+# energy_terms <dir>: "name value" for each energy term in the run's log
+energy_terms() {
+  awk '/ (SOAP|2b|3b|core_pot|Total) energy:/ { print $1, $(NF - 2) }' "$1/run.log"
+}
+
+# same_energies <reference dir> <dir>
+same_energies() {
+  energy_terms "$1" >"$1/energy_terms.txt"
+  energy_terms "$2" >"$2/energy_terms.txt"
+  if [ ! -s "$1/energy_terms.txt" ]; then
+    printf '    FAIL: no energies in %s\n' "$1/run.log"
+    return 1
+  fi
+  awk -v t="$TOL" 'FNR == NR { e[$1] = $2; next }
+       { d = $2 - e[$1]; if (d < 0) d = -d
+         if (d > t) { printf "    FAIL: %s energy %s, %s with species = C\n", $1, $2, e[$1]; bad = 1 } }
+       END { exit bad }' "$1/energy_terms.txt" "$2/energy_terms.txt"
+}
+
 # absent_leg <dir> <reference dir>: O listed, none in the cell
 absent_leg() {
   local ok=0
   run "$1" 1 || return 1
   no_nan "$1" || ok=1
   compare "$2" "$1" "$OUTPUTS_C_ONLY" || ok=1
+  same_energies "$2" "$1" || ok=1
   return $ok
 }
 

@@ -1374,7 +1374,11 @@ contains
       n_atom_pairs = size(rjs)
       n_sites0 = size(forces, 2)
 
-!   Map species to index
+!   Map species to index. A species of the potential that the input does not
+!   list matches no atom: 0, which no species id equals, so the term adds
+!   nothing. Left unset, it took whatever the stack held.
+      sp1 = 0
+      sp2 = 0
       do i = 1, size(species_types)
          if (species1 == species_types(i)) then
             sp1 = i
@@ -1639,7 +1643,11 @@ contains
 !      allocate( dV_int(1:n_atom_pairs) )
 !    end if
 
-!   Map species to index
+!   Map species to index. A species of the potential that the input does not
+!   list matches no atom: 0, which no species id equals, so the term adds
+!   nothing. Left unset, it took whatever the stack held.
+      sp1 = 0
+      sp2 = 0
       do i = 1, size(species_types)
          if (species1 == species_types(i)) then
             sp1 = i
@@ -1739,7 +1747,10 @@ contains
       integer :: i
 
       c_name = trim(kernel_type)//c_null_char
-      !Map species to index
+!   Map species to index; 0 for a species the input does not list, as in 2b.
+      sp0 = 0
+      sp1 = 0
+      sp2 = 0
       do i = 1, size(species_types)
          if (species_center == species_types(i)) then
             sp0 = i
@@ -1834,7 +1845,10 @@ contains
       n_atom_pairs = size(rjs)
       n_sites0 = size(forces, 2)
 
-!   Map species to index
+!   Map species to index; 0 for a species the input does not list, as in 2b.
+      sp0 = 0
+      sp1 = 0
+      sp2 = 0
       do i = 1, size(species_types)
          if (species_center == species_types(i)) then
             sp0 = i

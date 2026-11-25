@@ -347,6 +347,12 @@ contains
          !                The kernel filters neighbours by species index, so sp1/sp2
          !                must be the position of the descriptor's species within
          !                params%species_types (j), not the descriptor index (i).
+!                A species the input does not list stays 0, which no
+!                site's species equals: the kernel then adds nothing. Unset,
+!                sp1/sp2 kept the previous descriptor's species, and that pair
+!                type was counted again with this descriptor's parameters.
+         sp1 = 0
+         sp2 = 0
          do j = 1, size(params%species_types)
          if (distance_2b_hypers(i)%species1 == params%species_types(j)) then
             sp1 = j
@@ -501,6 +507,9 @@ contains
 !   were never set here: the routine passed whatever add_2b_contribution had
 !   left in the enclosing scope, which is the same defect as bug 3 in section 4
 !   and was fixed there but not here.
+!   0 for a species the input does not list, as in the 2b loop.
+         sp1 = 0
+         sp2 = 0
          do j = 1, size(params%species_types)
             if (core_pot_hypers(i)%species1 == params%species_types(j)) then
                sp1 = j

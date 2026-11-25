@@ -17,8 +17,11 @@ A species can be listed and absent from the structure, as when hybrid MC
 removes it. Its partials have no atoms to be normalised by, and 0/0 there made
 every total NaN. The last leg runs the cell with its O removed as
 `species = O C` (O absent and first) against `species = C`: the totals and the
-C_C partials must agree, with no NaN in any output. On e28f1d1, before that
-fix, it fails.
+C_C partials must agree, with no NaN in any output, and so must every energy
+term: with `species = C` the potential's O descriptors match no listed species,
+and the device build counted them as another species pair's (GST without Sb,
+`species = Ge Te`: 2b -10840 eV against -4450). On e28f1d1, before these
+fixes, the leg fails on the host build (NaN) and on the device build (3b).
 
 ```sh
 make DEBUG=0 all
