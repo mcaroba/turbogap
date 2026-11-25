@@ -1481,4 +1481,105 @@ contains
       end subroutine estimate_max_exp_forces_device_memory_usage
 #endif
 
+!  The neighbours of sites i_beg..i_end within rcut, for terms that reach less
+!  far than the list. Each site keeps its neighbours in list order, itself
+!  first, so a term summing over them sums the same pairs in the same order.
+!  The input pairs of site i_beg start at index 1, as a rank's own list does;
+!  so do the output ones. n_neigh_s is n_neigh with i_beg..i_end replaced, and
+!  full_pair(k) is the index in the input list of output pair k.
+      subroutine cut_neighbors_list(rcut, i_beg, i_end, n_neigh, rjs, thetas, phis, xyz, neighbor_species, &
+                                    neighbors_list, n_neigh_s, rjs_s, thetas_s, phis_s, xyz_s, neighbor_species_s, &
+                                    neighbors_list_s, full_pair)
+         implicit none
+         real(dp), intent(in) :: rcut
+         integer, intent(in) :: i_beg
+         integer, intent(in) :: i_end
+         integer, intent(in) :: n_neigh(:)
+         real(dp), intent(in) :: rjs(:)
+         real(dp), intent(in) :: thetas(:)
+         real(dp), intent(in) :: phis(:)
+         real(dp), intent(in) :: xyz(:, :)
+         integer, intent(in) :: neighbor_species(:)
+         integer, intent(in) :: neighbors_list(:)
+         integer, allocatable, intent(inout) :: n_neigh_s(:)
+         real(dp), allocatable, intent(inout) :: rjs_s(:)
+         real(dp), allocatable, intent(inout) :: thetas_s(:)
+         real(dp), allocatable, intent(inout) :: phis_s(:)
+         real(dp), allocatable, intent(inout) :: xyz_s(:, :)
+         integer, allocatable, intent(inout) :: neighbor_species_s(:)
+         integer, allocatable, intent(inout) :: neighbors_list_s(:)
+         integer, allocatable, intent(inout) :: full_pair(:)
+         integer, allocatable :: first(:)
+         integer, allocatable :: first_s(:)
+         integer :: i
+         integer :: j
+         integer :: k
+         integer :: c
+         integer :: m
+
+         if (allocated(n_neigh_s)) deallocate (n_neigh_s)
+         if (allocated(rjs_s)) deallocate (rjs_s)
+         if (allocated(thetas_s)) deallocate (thetas_s)
+         if (allocated(phis_s)) deallocate (phis_s)
+         if (allocated(xyz_s)) deallocate (xyz_s)
+         if (allocated(neighbor_species_s)) deallocate (neighbor_species_s)
+         if (allocated(neighbors_list_s)) deallocate (neighbors_list_s)
+         if (allocated(full_pair)) deallocate (full_pair)
+         allocate (n_neigh_s(1:size(n_neigh)))
+         n_neigh_s = n_neigh
+         allocate (first(i_beg:i_end))
+         allocate (first_s(i_beg:i_end))
+
+         k = 0
+         do i = i_beg, i_end
+            first(i) = k
+            k = k + n_neigh(i)
+         end do
+
+!$omp parallel do schedule(static) private(j, c)
+         do i = i_beg, i_end
+            c = 0
+            do j = 1, n_neigh(i)
+               if (rjs(first(i) + j) <= rcut) c = c + 1
+            end do
+            n_neigh_s(i) = c
+         end do
+!$omp end parallel do
+
+         m = 0
+         do i = i_beg, i_end
+            first_s(i) = m
+            m = m + n_neigh_s(i)
+         end do
+
+         allocate (rjs_s(1:max(m, 1)))
+         allocate (thetas_s(1:max(m, 1)))
+         allocate (phis_s(1:max(m, 1)))
+         allocate (xyz_s(1:3, 1:max(m, 1)))
+         allocate (neighbor_species_s(1:max(m, 1)))
+         allocate (neighbors_list_s(1:max(m, 1)))
+         allocate (full_pair(1:max(m, 1)))
+
+!$omp parallel do schedule(static) private(j, k, c)
+         do i = i_beg, i_end
+            c = first_s(i)
+            do j = 1, n_neigh(i)
+               k = first(i) + j
+               if (rjs(k) > rcut) cycle
+               c = c + 1
+               rjs_s(c) = rjs(k)
+               thetas_s(c) = thetas(k)
+               phis_s(c) = phis(k)
+               xyz_s(1:3, c) = xyz(1:3, k)
+               neighbor_species_s(c) = neighbor_species(k)
+               neighbors_list_s(c) = neighbors_list(k)
+               full_pair(c) = k
+            end do
+         end do
+!$omp end parallel do
+
+         deallocate (first_s)
+         deallocate (first)
+      end subroutine cut_neighbors_list
+
       end module neighbors

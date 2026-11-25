@@ -55,11 +55,15 @@ module turbogap_evaluate
    use exp_interface, only: get_write_condition, get_overwrite_condition, preprocess_exp_data
    use read_files, only: write_exp_data
    use soap_turbo_functions, only: cross_product
+   use neighbors, only: cut_neighbors_list
 
    implicit none
 
    private
    public :: evaluate
+
+!  Round-off of adding neighbors_buffer to the cutoff and taking it off again.
+   real(dp), parameter :: RCUT_ROUNDOFF = 1.d-8
 
 contains
 
@@ -67,7 +71,7 @@ contains
                        do_electrostatics, n_omp, time3, time)
       type(results_t), target, intent(inout) :: res
       type(state_t), intent(inout) :: state
-      type(neighbors_t), intent(inout) :: nl
+      type(neighbors_t), intent(inout), target :: nl
       type(domain_t), intent(inout) :: dom
       type(model_t), target, intent(inout) :: model
       type(input_parameters), intent(inout) :: params
@@ -98,9 +102,19 @@ contains
       integer :: ierr
       integer :: i
       integer :: j
-!     The pair terms' largest cutoff: gap_backend_begin hands them only the
-!     neighbours within it. -1 keeps the whole list (3b reads it as it is).
-      real(dp) :: rcut_short
+!     The list the GAP terms walk: nl, or the pairs of it within their
+!     cutoff when a pdf, XRD, ND or vdW term made it reach further. gap_pair is
+!     then each pair's index in nl, and gj_end the last pair. A pair term with
+!     a shorter cutoff walks tnl, cut from it the same way.
+      type(neighbors_t), target :: gap_nl
+      type(neighbors_t), pointer :: gnl
+      integer, allocatable :: gap_pair(:)
+      integer :: gj_end
+      real(dp) :: rcut_gap
+      type(neighbors_t), target :: term_nl
+      type(neighbors_t), pointer :: tnl
+      integer, allocatable :: term_pair(:)
+      integer :: tj_end
       character*1024 :: filename
       character*1024 :: temp_string
       real(dp), allocatable :: be_all(:)
@@ -130,7 +144,21 @@ contains
       !     Collect all energies
       call domain_complete_e0(dom, comm, res, state, time)
 
-      call compute_soap(res, state, nl, dom, model, params, loop, comm, time)
+      rcut_gap = gap_cutoff()
+      if (model%rcut_max > rcut_gap + params%neighbors_buffer + RCUT_ROUNDOFF .and. &
+          .not. params%write_derivatives) then
+         call cut_neighbors_list(rcut_gap, dom%i_beg, dom%i_end, nl%n_neigh, nl%rjs, nl%thetas, nl%phis, nl%xyz, &
+                                 nl%neighbor_species, nl%neighbors_list, gap_nl%n_neigh, gap_nl%rjs, gap_nl%thetas, &
+                                 gap_nl%phis, gap_nl%xyz, gap_nl%neighbor_species, gap_nl%neighbors_list, gap_pair)
+         gnl => gap_nl
+         gj_end = sum(gap_nl%n_neigh(dom%i_beg:dom%i_end))
+      else
+         gnl => nl
+         gj_end = dom%j_end
+         allocate (gap_pair(0))
+      end if
+
+      call compute_soap(res, state, gnl, gj_end, gap_pair, dom, model, params, loop, comm, time)
 
       call domain_complete_sites(dom, comm, res, state, params, model, time)
 
@@ -300,38 +328,41 @@ contains
          !       names from src/gap_backend_gpu.f90 and the Makefile picks one.
          call time_start(time%gap)
 
-         rcut_short = -1.d0
-         if (model%n_angle_3b == 0) then
-            rcut_short = 0.d0
-            do i = 1, model%n_distance_2b
-               rcut_short = max(rcut_short, model%distance_2b_hypers(i)%rcut)
-            end do
-            do i = 1, model%n_core_pot
-               rcut_short = max(rcut_short, maxval(model%core_pot_hypers(i)%x))
-            end do
+         if (model%n_distance_2b > 0) then
+            call term_list(twob_cutoff())
+            call gap_backend_begin(params, tnl%rjs, tnl%xyz, tnl%n_neigh, state%species, tnl%neighbor_species, &
+                                   tnl%neighbors_list, dom%i_beg, dom%i_end, dom%j_beg, tj_end)
+            call add_2b_contribution(model%n_distance_2b, model%distance_2b_hypers, &
+                                     params, tnl%rjs, tnl%xyz, tnl%n_neigh, state%species, tnl%neighbor_species, &
+                                     dom%i_beg, dom%i_end, dom%j_beg, tj_end, res%this_energies, res%this_forces, &
+                                     res%this_virial, &
+                                     res%energies_2b, res%forces_2b, res%virial_2b, time)
+            call gap_backend_end()
          end if
-         call gap_backend_begin(params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
-                                nl%neighbors_list, dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, rcut_short)
 
-         call add_2b_contribution(model%n_distance_2b, model%distance_2b_hypers, &
-                                  params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
-                                  dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, res%this_energies, res%this_forces, &
-                                  res%this_virial, &
-                                  res%energies_2b, res%forces_2b, res%virial_2b, time)
+         if (model%n_core_pot > 0) then
+            call term_list(core_pot_cutoff())
+            call gap_backend_begin(params, tnl%rjs, tnl%xyz, tnl%n_neigh, state%species, tnl%neighbor_species, &
+                                   tnl%neighbors_list, dom%i_beg, dom%i_end, dom%j_beg, tj_end)
+            call add_core_pot_contribution(model%n_core_pot, model%core_pot_hypers, &
+                                           params, tnl%rjs, tnl%xyz, tnl%n_neigh, state%species, tnl%neighbor_species, &
+                                           dom%i_beg, dom%i_end, dom%j_beg, tj_end, res%this_energies, res%this_forces, &
+                                           res%this_virial, &
+                                           res%energies_core_pot, res%forces_core_pot, res%virial_core_pot, time)
+            call gap_backend_end()
+         end if
 
-         call add_core_pot_contribution(model%n_core_pot, model%core_pot_hypers, &
-                                        params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
-                                        dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, res%this_energies, res%this_forces, &
-                                        res%this_virial, &
-                                        res%energies_core_pot, res%forces_core_pot, res%virial_core_pot, time)
-
-         call add_3b_contribution(model%n_angle_3b, model%angle_3b_hypers, nl%neighbors_list, &
-                                  params, nl%rjs, nl%xyz, nl%n_neigh, state%species, nl%neighbor_species, &
-                                  dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, res%this_energies, res%this_forces, &
-                                  res%this_virial, &
-                                  res%forces, res%energies_3b, res%forces_3b, res%virial_3b, time)
-
-         call gap_backend_end()
+         if (model%n_angle_3b > 0) then
+            call term_list(angle_cutoff())
+            call gap_backend_begin(params, tnl%rjs, tnl%xyz, tnl%n_neigh, state%species, tnl%neighbor_species, &
+                                   tnl%neighbors_list, dom%i_beg, dom%i_end, dom%j_beg, tj_end)
+            call add_3b_contribution(model%n_angle_3b, model%angle_3b_hypers, tnl%neighbors_list, &
+                                     params, tnl%rjs, tnl%xyz, tnl%n_neigh, state%species, tnl%neighbor_species, &
+                                     dom%i_beg, dom%i_end, dom%j_beg, tj_end, res%this_energies, res%this_forces, &
+                                     res%this_virial, &
+                                     res%forces, res%energies_3b, res%forces_3b, res%virial_3b, time)
+            call gap_backend_end()
+         end if
 
          call time_end(time%gap)
          !       Communicate all energies and forces here for all
@@ -405,6 +436,65 @@ contains
 
 !     The pair distribution, structure factor, XRD and ND, on the structure and
 !     neighbour list given: this rank's own, or the whole-structure view.
+!     tnl: gnl, or gnl cut at rcut when that is shorter than the GAP terms'
+!     reach. tj_end is its last pair.
+      subroutine term_list(rcut)
+         real(dp), intent(in) :: rcut
+         if (rcut < rcut_gap - RCUT_ROUNDOFF) then
+            call cut_neighbors_list(rcut, dom%i_beg, dom%i_end, gnl%n_neigh, gnl%rjs, gnl%thetas, gnl%phis, gnl%xyz, &
+                                    gnl%neighbor_species, gnl%neighbors_list, term_nl%n_neigh, term_nl%rjs, &
+                                    term_nl%thetas, term_nl%phis, term_nl%xyz, term_nl%neighbor_species, &
+                                    term_nl%neighbors_list, term_pair)
+            tnl => term_nl
+            tj_end = sum(term_nl%n_neigh(dom%i_beg:dom%i_end))
+         else
+            tnl => gnl
+            tj_end = gj_end
+         end if
+      end subroutine term_list
+
+      real(dp) function twob_cutoff()
+         integer :: k
+         twob_cutoff = 0.d0
+         do k = 1, model%n_distance_2b
+            twob_cutoff = max(twob_cutoff, model%distance_2b_hypers(k)%rcut)
+         end do
+      end function twob_cutoff
+
+      real(dp) function core_pot_cutoff()
+         integer :: k
+         core_pot_cutoff = 0.d0
+         do k = 1, model%n_core_pot
+            core_pot_cutoff = max(core_pot_cutoff, maxval(model%core_pot_hypers(k)%x))
+         end do
+      end function core_pot_cutoff
+
+      real(dp) function angle_cutoff()
+         integer :: k
+         angle_cutoff = 0.d0
+         do k = 1, model%n_angle_3b
+            angle_cutoff = max(angle_cutoff, model%angle_3b_hypers(k)%rcut)
+         end do
+      end function angle_cutoff
+
+!     The furthest any GAP term reaches: SOAP, 2b, 3b, core potential.
+      real(dp) function gap_cutoff()
+         integer :: k
+         gap_cutoff = 0.d0
+         do k = 1, model%n_soap_turbo
+            gap_cutoff = max(gap_cutoff, model%soap_turbo_hypers(k)%rcut_max)
+         end do
+         do k = 1, model%n_distance_2b
+            gap_cutoff = max(gap_cutoff, model%distance_2b_hypers(k)%rcut)
+         end do
+         do k = 1, model%n_angle_3b
+            gap_cutoff = max(gap_cutoff, model%angle_3b_hypers(k)%rcut)
+         end do
+         do k = 1, model%n_core_pot
+            gap_cutoff = max(gap_cutoff, maxval(model%core_pot_hypers(k)%x))
+         end do
+      end function gap_cutoff
+
       subroutine exp_spectra(es, enl, ib, ie, jb, je)
          type(state_t), intent(inout) :: es
          type(neighbors_t), intent(in) :: enl

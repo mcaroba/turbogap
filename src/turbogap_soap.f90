@@ -65,10 +65,15 @@ module turbogap_soap
 
 contains
 
-   subroutine compute_soap(res, state, nl, dom, model, params, loop, comm, time)
+   subroutine compute_soap(res, state, nl, j_end, full_pair, dom, model, params, loop, comm, time)
       type(results_t), target, intent(inout) :: res
       type(state_t), intent(in) :: state
       type(neighbors_t), intent(inout) :: nl
+!     nl's last pair. When nl is cut from the whole list, full_pair(k) is pair
+!     k's index in that list, which the local properties' derivatives keep;
+!     otherwise it is empty.
+      integer, intent(in) :: j_end
+      integer, intent(in) :: full_pair(:)
       type(domain_t), intent(in) :: dom
       type(model_t), target, intent(inout) :: model
       type(input_parameters), intent(inout) :: params
@@ -88,6 +93,7 @@ contains
       integer :: k
       integer :: i2
       integer :: k2
+      integer :: kp
       integer :: n_lp_count
       integer :: n_sites_this
       integer :: n_soap
@@ -134,7 +140,7 @@ contains
 #ifdef _GPU
          if (params%n_batches > 0) then
             call get_number_of_atom_pairs_batches(params%n_batches, nl%n_neigh(dom%i_beg:dom%i_end), &
-                                                  nl%rjs(dom%j_beg:dom%j_end), model%soap_turbo_hypers(i)%rcut_max, &
+                                                  nl%rjs(dom%j_beg:j_end), model%soap_turbo_hypers(i)%rcut_max, &
                                                   model%soap_turbo_hypers(i)%l_max, &
                                                   model%soap_turbo_hypers(i)%n_max, &
                                                   model%soap_turbo_hypers(i)%dim, &
@@ -142,7 +148,7 @@ contains
                                                   params%max_Gbytes_per_process, i_beg_list, &
                                                   i_end_list, j_beg_list, j_end_list)
          else
-            call get_number_of_atom_pairs(nl%n_neigh(dom%i_beg:dom%i_end), nl%rjs(dom%j_beg:dom%j_end), &
+            call get_number_of_atom_pairs(nl%n_neigh(dom%i_beg:dom%i_end), nl%rjs(dom%j_beg:j_end), &
                                           model%soap_turbo_hypers(i)%rcut_max, &
                                           model%soap_turbo_hypers(i)%l_max, &
                                           model%soap_turbo_hypers(i)%n_max, &
@@ -213,7 +219,7 @@ contains
 
          end if
 #else
-         call get_number_of_atom_pairs(nl%n_neigh(dom%i_beg:dom%i_end), nl%rjs(dom%j_beg:dom%j_end), &
+         call get_number_of_atom_pairs(nl%n_neigh(dom%i_beg:dom%i_end), nl%rjs(dom%j_beg:j_end), &
                                        model%soap_turbo_hypers(i)%rcut_max, &
                                        model%soap_turbo_hypers(i)%l_max, model%soap_turbo_hypers(i)%n_max, &
                                        model%soap_turbo_hypers(i)%dim, model%soap_turbo_hypers(i)%n_species, &
@@ -377,9 +383,17 @@ contains
                if (any(model%soap_turbo_hypers(i)&
                     &%local_property_models(:)%do_derivatives) &
                     & .and. params%do_derivatives) then
-                  res%local_properties_cart_der(:, this_j_beg:this_j_end, :) =&
-                       & res%local_properties_cart_der(:, this_j_beg:this_j_end, :) +&
-                       & res%this_local_properties_cart_der(:, this_j_beg:this_j_end, :)
+                  if (size(full_pair) > 0) then
+                     do kp = this_j_beg, this_j_end
+                        res%local_properties_cart_der(:, full_pair(kp), :) = &
+                           res%local_properties_cart_der(:, full_pair(kp), :) + &
+                           res%this_local_properties_cart_der(:, kp, :)
+                     end do
+                  else
+                     res%local_properties_cart_der(:, this_j_beg:this_j_end, :) =&
+                          & res%local_properties_cart_der(:, this_j_beg:this_j_end, :) +&
+                          & res%this_local_properties_cart_der(:, this_j_beg:this_j_end, :)
+                  end if
                end if
 
             end if

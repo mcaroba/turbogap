@@ -98,6 +98,12 @@ with init/step/finish hooks, called from the driver in the phase it belongs to.
   `neighbors_list` is global (fold with `modulo(j - 1, n_sites) + 1`); arrays
   passed as a slice take the local index. Mixing the two is correct on rank 0
   and wrong everywhere else, so test at three ranks.
+- The neighbour list reaches the furthest cutoff of any term: pdf, XRD, ND,
+  vdW. `evaluate` cuts it for the GAP terms with `cut_neighbors_list`
+  (`src/neighbors.f90`): SOAP gets the pairs within the largest GAP cutoff,
+  and the 2b, core-potential and 3b terms each the pairs within their own. A
+  cut keeps list order, so the sums do not move. A new short-range term takes
+  a cut list the same way.
 - A refactor is bit-exact at every rank count. A change in results is its own
   commit, with a test that shows the new result is right.
 - Fatal errors go through `turbogap_abort()`. A bare `stop` exits 0, and has
