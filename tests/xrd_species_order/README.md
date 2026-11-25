@@ -13,6 +13,13 @@ one rank and at several. Every pdf, sf, xrd and nd output must agree to 1e-6,
 and the partials must be written as C_C, C_O and O_O. On 9ffd623, before the
 fix, every O-first leg fails.
 
+A species can be listed and absent from the structure, as when hybrid MC
+removes it. Its partials have no atoms to be normalised by, and 0/0 there made
+every total NaN. The last leg runs the cell with its O removed as
+`species = O C` (O absent and first) against `species = C`: the totals and the
+C_C partials must agree, with no NaN in any output. On e28f1d1, before that
+fix, it fails.
+
 ```sh
 make DEBUG=0 all
 tests/xrd_species_order/run.sh

@@ -314,6 +314,9 @@ contains
            & /(sqrt(2.d0*pi)*kde_sigma)
 
       do i = 1, n_dim_partial
+!        A species the structure lacks has no pairs: its partials stay zero.
+         if (n_atoms_of_species(species1_partial(i)) == 0.d0 .or. &
+             n_atoms_of_species(species2_partial(i)) == 0.d0) cycle
          pair_distribution(1:n_samples, i) = pair_distribution(&
               & 1:n_samples, i)*v_uc/n_atoms_of_species(&
               & species1_partial(i))/n_atoms_of_species(&
@@ -794,10 +797,16 @@ contains
 
                if (j > k) cycle
 
-               pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) =&
-                    & pair_distribution_partial(1:params&
-                    &%pair_distribution_n_samples, n_dim_idx)*v_uc &
-                    &  /n_atoms_of_species(j)/n_atoms_of_species(k)/factors(n_dim_idx) !real(n_sites)
+!              A species the input lists but the structure lacks -- hybrid MC
+!              can remove one -- has no atoms and no pairs. Its partials stay
+!              zero instead of 0/0, which made every total NaN; their weight
+!              in the totals, n_j n_k, is zero either way.
+               if (n_atoms_of_species(j) > 0.d0 .and. n_atoms_of_species(k) > 0.d0) then
+                  pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) =&
+                       & pair_distribution_partial(1:params&
+                       &%pair_distribution_n_samples, n_dim_idx)*v_uc &
+                       &  /n_atoms_of_species(j)/n_atoms_of_species(k)/factors(n_dim_idx) !real(n_sites)
+               end if
 
                y_pair_distribution(1:params%pair_distribution_n_samples) = &
                     & y_pair_distribution(1:params%pair_distribution_n_samples) +  &
@@ -3384,6 +3393,8 @@ contains
 
             if (j == k) f = v_uc/n_atoms_of_species(j)/n_atoms_of_species(k)
             if (j /= k) f = v_uc/n_atoms_of_species(j)/n_atoms_of_species(k)/2.d0
+!           A species the structure lacks: no pairs, a zero partial, not 0/0.
+            if (n_atoms_of_species(j) == 0.d0 .or. n_atoms_of_species(k) == 0.d0) f = 0.d0
 
             factors(n_dim_idx) = f
 
@@ -3712,6 +3723,8 @@ contains
             c_factor = 4.d0*pi*f*((n_atoms_of_species(j)*n_atoms_of_species(k))/dfloat(n_sites)/dfloat(n_sites)) &
                        *(dfloat(n_sites)/v_uc)
             der_factor = v_uc/n_atoms_of_species(j)/n_atoms_of_species(k)/f
+!           A species the structure lacks has no pairs to weight; W stays finite.
+            if (n_atoms_of_species(j) == 0.d0 .or. n_atoms_of_species(k) == 0.d0) der_factor = 0.d0
             call gpu_xrd_window_weights(n_samples_sf, n_samples, c, sinc_factor_matrix_d, prefactor_d, &
                                         all_scattering_factors_d(c + 1), dV_d, &
                                         energy_scale*(-2.d0*c_factor)*pdf_factor*der_factor, w_d, gpu_stream)
@@ -4181,6 +4194,7 @@ contains
 
                   der_factor = v_uc/n_atoms_of_species(j)/ &
                        & n_atoms_of_species(k)/factors(n_dim_idx)
+                  if (n_atoms_of_species(j) == 0.d0 .or. n_atoms_of_species(k) == 0.d0) der_factor = 0.d0
 
                   call gpu_stream_sync(gpu_stream)
 
@@ -4324,6 +4338,7 @@ contains
 
                   der_factor = v_uc/n_atoms_of_species(j)/ &
                        & n_atoms_of_species(k)/factors(n_dim_idx)
+                  if (n_atoms_of_species(j) == 0.d0 .or. n_atoms_of_species(k) == 0.d0) der_factor = 0.d0
 
                   call gpu_get_pair_distribution_and_ders( &
                      pair_distribution_partial_d(n_dim_idx), &
@@ -4460,19 +4475,21 @@ contains
 
                if (j > k) cycle
 
-               pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) =&
-                    & pair_distribution_partial(1:params&
-                    &%pair_distribution_n_samples, n_dim_idx)*v_uc &
-                    &  /n_atoms_of_species(j)/n_atoms_of_species(k)/factors(n_dim_idx) !real(n_sites)
+!              A species the structure lacks: zero partials, not 0/0.
+               if (n_atoms_of_species(j) > 0.d0 .and. n_atoms_of_species(k) > 0.d0) then
+                  pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) =&
+                       & pair_distribution_partial(1:params&
+                       &%pair_distribution_n_samples, n_dim_idx)*v_uc &
+                       &  /n_atoms_of_species(j)/n_atoms_of_species(k)/factors(n_dim_idx) !real(n_sites)
 
-               if (params%do_forces .and. params%exp_forces) then
-                  pair_distribution_partial_der(1:params&
-                       &%pair_distribution_n_samples, n_dim_idx, &
-                       & j_beg:j_end) = pair_distribution_partial_der(1:params&
-                       & %pair_distribution_n_samples, n_dim_idx, &
-                       & j_beg:j_end)*v_uc/n_atoms_of_species(j)/ &
-                       & n_atoms_of_species(k)/factors(n_dim_idx)!real(n_sites)
-
+                  if (params%do_forces .and. params%exp_forces) then
+                     pair_distribution_partial_der(1:params&
+                          &%pair_distribution_n_samples, n_dim_idx, &
+                          & j_beg:j_end) = pair_distribution_partial_der(1:params&
+                          & %pair_distribution_n_samples, n_dim_idx, &
+                          & j_beg:j_end)*v_uc/n_atoms_of_species(j)/ &
+                          & n_atoms_of_species(k)/factors(n_dim_idx)!real(n_sites)
+                  end if
                end if
 
                y_pair_distribution(1:params%pair_distribution_n_samples) = &
