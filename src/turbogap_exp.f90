@@ -1414,7 +1414,9 @@ contains
       real(dp), allocatable :: pair_distribution_partial_der(:, :, :)
       real(dp), allocatable :: pair_distribution_partial_temp_der(:, :, :)
       real(dp), allocatable :: n_atoms_of_species(:)
-      real(dp), allocatable :: sinc_factor_matrix(:, :)
+!   Depends only on the q and r grids and the window, so it is kept between
+!   steps: building it takes a reduce and a broadcast over every rank.
+      real(dp), allocatable, save :: sinc_factor_matrix(:, :)
       real(dp), allocatable :: x_structure_factor(:)
       real(dp), allocatable :: x_structure_factor_temp(:)
       real(dp), allocatable :: y_structure_factor(:)
@@ -1501,6 +1503,11 @@ contains
 
       ! Partials and n_atoms_of_species are indexed by species id, so slot k
       ! must name species k whatever order the atoms come in.
+      if (allocated(sinc_factor_matrix)) then
+         if (size(sinc_factor_matrix, 1) /= params%structure_factor_n_samples .or. &
+             size(sinc_factor_matrix, 2) /= params%pair_distribution_n_samples) deallocate (sinc_factor_matrix)
+      end if
+
       n_species_actual = maxval(species(i_beg:i_end))
 #ifdef _MPIF90
       call mpi_allreduce(MPI_IN_PLACE, n_species_actual, 1, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
