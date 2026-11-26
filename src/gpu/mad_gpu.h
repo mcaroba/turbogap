@@ -62,8 +62,8 @@ void gpu_get_pair_distribution_only_falloc(double* pair_distribution_d, double* 
 void gpu_pdf_tag_pairs(int n_sites_b, int n_pairs_b, int* n_neigh_d, int* species_d, int* neighbor_species_d, double* rjs_d,
                        int n_species, double r_lo, double r_hi, int* chan_d, hipStream_t* stream);
 void gpu_pdf_compact_pairs(int n_pairs_b, int n_sites0, int n_channels, int* chan_d, int* neighbors_list_d, double* rjs_d,
-                           double* xyz_d, double* r_out, double* xyz_out, int* j2_out, int* chan_out, int* off_h,
-                           hipStream_t* stream);
+                           double* xyz_d, double* r_out, double* xyz_out, int* j2_out, int* chan_out, int* off_h, int n_sites_b,
+                           int* n_neigh_d, int* seg_out, hipStream_t* stream);
 void gpu_pdf_window_kde(int n_channels, int* off_h, int n_samples, double r_min, double dr, double kde_sigma, double kde_cut,
                         double* x_d, double* dV_d, double* r_d, double pdf_factor, double* pdf_out_d, hipStream_t* stream);
 
@@ -77,8 +77,8 @@ void gpu_exp_force_virial_collection(int n_k, int n_sites, double3* forces0, dou
 void gpu_xrd_window_weights(int n_samples_sf, int n_samples, int channel, double* S_d, double* residual_d, double* f_d,
                             double* dV_d, double fac, double* w_d, hipStream_t* stream);
 void gpu_xrd_window_forces(int n_k, int n_sites, int n_samples, double r_min, double dr, double kde_sigma, double kde_cut,
-                           double* x_d, double* w_d, double* r_d, double* xyz_d, int* j2_d, int* chan_d, double* forces_d,
-                           double* virial_d, hipStream_t* stream);
+                           double* x_d, double* w_d, double* r_d, double* xyz_d, int* chan_d, int n_channels, int n_sites_b,
+                           int i_off, int* seg_d, double* forces_d, double* virial_d, hipStream_t* stream);
 
 // ---- mad_electrostatics.cu
 void gpu_get_electrostatics_nk(int i_beg, int i_end, int n_pairs, int* n_neigh, int* n_neigh_index_d, double* rjs, double* xyz,

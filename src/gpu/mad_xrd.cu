@@ -102,11 +102,23 @@ extern "C" void gpu_xrd_window_weights(int n_samples_sf, int n_samples, int chan
 //
 //   F_p = xyz_p / (sigma r_p) sum_l W(l, c_p) exp(-g^2 / 2) g,  g = (x_l - r_p) / sigma
 //
-// then gpu_pair_scatter_reduce sums them onto atoms in neighbour-list order.
-// forces_d (3 x n_sites) and virial_d (9) are accumulated into.
+// The kernel is built from the sample c nearest r outwards: on the pdf's evenly
+// spaced grid the ratio of two neighbouring values changes by exp(-h^2) from
+// one sample to the next (h = dr / sigma), so one exp at c and two for the
+// ratios start it and each further sample is two multiplications. Above
+// h = 2 (a kernel narrower than half a sample) each sample takes its exp.
+//
+// F_p acts on the pair's neighbour. The list is full and the reversed pair has
+// the same r and channel and the opposite xyz, so its force is -F_p: a site's
+// force is minus the sum of its own pairs' F, which are one run per channel
+// (seg_d, from gpu_pdf_compact_pairs) summed in order -- no scatter. Site i of
+// the batch is atom i_off + i. The same loop sums its pairs' virial, and the
+// sites' are then summed in site order. forces_d (3 x n_sites) and virial_d (9)
+// are accumulated into.
 extern "C" void gpu_xrd_window_forces(int n_k, int n_sites, int n_samples, double r_min, double dr, double kde_sigma,
-                                      double kde_cut, double* x_d, double* w_d, double* r_d, double* xyz_d, int* j2_d, int* chan_d,
-                                      double* forces_d, double* virial_d, hipStream_t* stream) {
+                                      double kde_cut, double* x_d, double* w_d, double* r_d, double* xyz_d, int* chan_d,
+                                      int n_channels, int n_sites_b, int i_off, int* seg_d, double* forces_d, double* virial_d,
+                                      hipStream_t* stream) {
   if (n_k <= 0)
     return;
 
@@ -120,10 +132,34 @@ extern "C" void gpu_xrd_window_forces(int n_k, int n_sites, int n_samples, doubl
         const double* w_c = w_d + (size_t) chan_d[p] * n_samples;
         const int lo = pdf_window_lo(r, r_min, dr, kde_sigma, kde_cut);
         const int hi = pdf_window_hi(r, r_min, dr, kde_sigma, kde_cut, n_samples);
+        const double h = dr / kde_sigma;
         double a = 0.0;
-        for (int l = lo; l <= hi; l++) {
-          const double g = (x_d[l] - r) / kde_sigma;
-          a += w_c[l] * exp(-0.5 * g * g) * g;
+        if (lo <= hi && h <= 2.0) {
+          int c = lo + (int) rint((r - x_d[lo]) / dr);
+          c = (c < lo) ? lo : ((c > hi) ? hi : c);
+          const double u = (x_d[c] - r) / kde_sigma;
+          const double q = exp(-h * h);
+          const double g0 = exp(-0.5 * u * u);
+          a = w_c[c] * g0 * u;
+          double g = g0;
+          double t = exp(-u * h - 0.5 * h * h);
+          for (int l = c + 1; l <= hi; l++) {
+            g *= t;
+            t *= q;
+            a += w_c[l] * g * (u + (l - c) * h);
+          }
+          g = g0;
+          t = exp(u * h - 0.5 * h * h);
+          for (int l = c - 1; l >= lo; l--) {
+            g *= t;
+            t *= q;
+            a += w_c[l] * g * (u - (c - l) * h);
+          }
+        } else {
+          for (int l = lo; l <= hi; l++) {
+            const double g = (x_d[l] - r) / kde_sigma;
+            a += w_c[l] * exp(-0.5 * g * g) * g;
+          }
         }
         a /= kde_sigma * r;
         pair_force[3 * (size_t) p] = a * xyz_d[3 * (size_t) p];
@@ -132,8 +168,47 @@ extern "C" void gpu_xrd_window_forces(int n_k, int n_sites, int n_samples, doubl
       },
       tpb);
 
+  double* site_virial;
+  gpuErrchk(hipMallocAsync(&site_virial, (size_t) 9 * (n_sites_b > 0 ? n_sites_b : 1) * sizeof(double), stream[0]));
+
   // 0.25: see gpu_exp_force_virial_collection.
-  gpu_pair_scatter_reduce(n_k, n_sites, j2_d, pair_force, xyz_d, forces_d, virial_d, 0.25, stream);
+  const int n_seg = n_sites_b + 1;
+  tg_parallel_for(
+      "turbogap_xrd_window_site_forces", n_sites_b, stream,
+      TG_LAMBDA(const int i) {
+        double f[3] = {0.0, 0.0, 0.0};
+        double v[9] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        for (int c = 0; c < n_channels; c++) {
+          for (int p = seg_d[c * n_seg + i]; p < seg_d[c * n_seg + i + 1]; p++) {
+            const double* fp = pair_force + 3 * (size_t) p;
+            const double* xp = xyz_d + 3 * (size_t) p;
+            for (int k1 = 0; k1 < 3; k1++) {
+              f[k1] += fp[k1];
+              for (int k2 = 0; k2 < 3; k2++)
+                v[3 * k1 + k2] += 0.25 * (fp[k1] * xp[k2] + fp[k2] * xp[k1]);
+            }
+          }
+        }
+        const size_t a = 3 * (size_t) (i_off + i);
+        forces_d[a] -= f[0];
+        forces_d[a + 1] -= f[1];
+        forces_d[a + 2] -= f[2];
+        for (int k = 0; k < 9; k++)
+          site_virial[9 * (size_t) i + k] = v[k];
+      },
+      tpb);
+
+  tg_parallel_for(
+      "turbogap_xrd_window_virial", 9, stream,
+      TG_LAMBDA(const int k) {
+        double s = 0.0;
+        for (int i = 0; i < n_sites_b; i++)
+          s += site_virial[9 * (size_t) i + k];
+        virial_d[k] += s;
+      },
+      9);
+
+  gpuErrchk(hipFreeAsync(site_virial, stream[0]));
 
   gpuErrchk(hipFreeAsync(pair_force, stream[0]));
 }

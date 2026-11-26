@@ -725,7 +725,8 @@ contains
             ! with the forces too
 
             call window_batched_pair_distribution(gpu_exp(i), gpu_batch_storage(i), gpu_neigh(i), n_species_actual, &
-                                                  n_sites, n_sites_temp, n_pairs_temp, params%pair_distribution_n_samples, &
+                                                  n_sites, n_sites_temp, n_pairs_temp, this_i_beg - 1, &
+                                                  params%pair_distribution_n_samples, &
                                                   params%r_range_min, params%r_range_max, params%pair_distribution_rcut, &
                                                   params%pair_distribution_kde_sigma, xpdf_d, dV_d, gpu_streams(omp_task))
 

@@ -1138,7 +1138,8 @@ MODULE F_B_C
       end subroutine gpu_pdf_tag_pairs
 
       subroutine gpu_pdf_compact_pairs(n_pairs_b, n_sites0, n_channels, chan_d, neighbors_list_d, rjs_d, xyz_d, &
-                                       r_out, xyz_out, j2_out, chan_out, off_h, stream) bind(C, name="gpu_pdf_compact_pairs")
+                                       r_out, xyz_out, j2_out, chan_out, off_h, n_sites_b, n_neigh_d, seg_out, stream) &
+         bind(C, name="gpu_pdf_compact_pairs")
          use iso_c_binding
          implicit none
          integer(c_int), value :: n_pairs_b
@@ -1153,6 +1154,9 @@ MODULE F_B_C
          type(c_ptr), value :: j2_out
          type(c_ptr), value :: chan_out
          integer(c_int) :: off_h(*)
+         integer(c_int), value :: n_sites_b
+         type(c_ptr), value :: n_neigh_d
+         type(c_ptr), value :: seg_out
          type(c_ptr) :: stream
       end subroutine gpu_pdf_compact_pairs
 
@@ -1192,7 +1196,8 @@ MODULE F_B_C
       end subroutine gpu_xrd_window_weights
 
       subroutine gpu_xrd_window_forces(n_k, n_sites, n_samples, r_min, dr, kde_sigma, kde_cut, x_d, w_d, r_d, xyz_d, &
-                                       j2_d, chan_d, forces_d, virial_d, stream) bind(C, name="gpu_xrd_window_forces")
+                                       chan_d, n_channels, n_sites_b, i_off, seg_d, forces_d, virial_d, stream) &
+         bind(C, name="gpu_xrd_window_forces")
          use iso_c_binding
          implicit none
          integer(c_int), value :: n_k
@@ -1206,8 +1211,11 @@ MODULE F_B_C
          type(c_ptr), value :: w_d
          type(c_ptr), value :: r_d
          type(c_ptr), value :: xyz_d
-         type(c_ptr), value :: j2_d
          type(c_ptr), value :: chan_d
+         integer(c_int), value :: n_channels
+         integer(c_int), value :: n_sites_b
+         integer(c_int), value :: i_off
+         type(c_ptr), value :: seg_d
          type(c_ptr), value :: forces_d
          type(c_ptr), value :: virial_d
          type(c_ptr) :: stream

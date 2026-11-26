@@ -3589,7 +3589,7 @@ contains
 !  gpu_host%host(c)%pair_distribution_partial_h, where
 !  collect_batched_pair_distribution expects it. No n_pairs x n_samples array.
    subroutine window_batched_pair_distribution(gpu_exp, gpu_host, gpu_neigh, n_species, n_sites, n_sites_b, n_pairs_b, &
-                                               n_samples, r_min, r_max, r_cut, kde_sigma, x_d, dV_d, gpu_stream)
+                                               i_off, n_samples, r_min, r_max, r_cut, kde_sigma, x_d, dV_d, gpu_stream)
       implicit none
       type(gpu_storage_type), intent(inout) :: gpu_exp
       type(gpu_host_batch_storage_type), intent(inout) :: gpu_host
@@ -3598,6 +3598,8 @@ contains
       integer, intent(in) :: n_sites
       integer, intent(in) :: n_sites_b
       integer, intent(in) :: n_pairs_b
+!     The batch's first site is atom i_off + 1.
+      integer, intent(in) :: i_off
       integer, intent(in) :: n_samples
       real(dp), intent(in) :: r_min
       real(dp), intent(in) :: r_max
@@ -3638,6 +3640,9 @@ contains
       call gpu_malloc_async(gpu_exp%pair_xyz_d, 3*st_dbl, gpu_stream)
       call gpu_malloc_async(gpu_exp%pair_j2_d, st_int, gpu_stream)
       call gpu_malloc_async(gpu_exp%pair_chan_d, st_int, gpu_stream)
+      gpu_exp%n_sites_b = n_sites_b
+      gpu_exp%i_off = i_off
+      call gpu_malloc_async(gpu_exp%pair_seg_d, int(n_dim_partial, c_size_t)*(n_sites_b + 1)*c_int, gpu_stream)
 
 !     The pairs the host bins: r in [r_min, r_max + 6 sigma], inside r_cut, and
 !     not a site's own entry.
@@ -3646,7 +3651,7 @@ contains
                              gpu_stream)
       call gpu_pdf_compact_pairs(n_pairs_b, n_sites, n_dim_partial, chan_d, gpu_neigh%neighbors_list_d, gpu_neigh%rjs_d, &
                                  gpu_neigh%xyz_d, gpu_exp%pair_r_d, gpu_exp%pair_xyz_d, gpu_exp%pair_j2_d, gpu_exp%pair_chan_d, &
-                                 gpu_exp%pair_off, gpu_stream)
+                                 gpu_exp%pair_off, n_sites_b, gpu_neigh%n_neigh_d, gpu_exp%pair_seg_d, gpu_stream)
       call gpu_free_async(chan_d, gpu_stream)
 
       dr = (r_max - r_min)/dfloat(n_samples)
@@ -3675,9 +3680,9 @@ contains
 !  route, from the pairs window_batched_pair_distribution compacted. Every
 !  species pair's weights W = fac S^T (residual x scattering factor) / dV are
 !  formed on the device, then one pass over the pairs rebuilds each pair's
-!  kernel over its window and contracts it with its channel's W, and
-!  gpu_pair_scatter_reduce sums them onto atoms. Written into forces_h and
-!  virial_h on the host.
+!  kernel over its window and contracts it with its channel's W, and each site
+!  of the batch sums its own pairs' (gpu_xrd_window_forces). Written into
+!  forces_h and virial_h on the host.
    subroutine window_batched_xrd_forces(gpu_exp, n_species, n_sites, n_samples, n_samples_sf, r_min, r_max, &
                                         kde_sigma, energy_scale, n_atoms_of_species, v_uc, x_d, dV_d, &
                                         sinc_factor_matrix_d, prefactor_d, all_scattering_factors_d, forces_h, &
@@ -3753,8 +3758,8 @@ contains
       call gpu_memset_async(virial_d, 0, st_virial, gpu_stream)
 
       call gpu_xrd_window_forces(gpu_exp%pair_off(n_dim_partial), n_sites, n_samples, r_min, dr, kde_sigma, PDF_KDE_CUT, &
-                                 x_d, w_d, gpu_exp%pair_r_d, gpu_exp%pair_xyz_d, gpu_exp%pair_j2_d, gpu_exp%pair_chan_d, &
-                                 forces_d, virial_d, gpu_stream)
+                                 x_d, w_d, gpu_exp%pair_r_d, gpu_exp%pair_xyz_d, gpu_exp%pair_chan_d, n_dim_partial, &
+                                 gpu_exp%n_sites_b, gpu_exp%i_off, gpu_exp%pair_seg_d, forces_d, virial_d, gpu_stream)
 
       call cpy_dtoh(forces_d, c_loc(forces_h), st_forces, gpu_stream)
       call cpy_dtoh(virial_d, c_loc(virial_h), st_virial, gpu_stream)
@@ -3778,6 +3783,8 @@ contains
       if (c_associated(gpu_exp%pair_xyz_d)) call gpu_free_async(gpu_exp%pair_xyz_d, gpu_stream)
       if (c_associated(gpu_exp%pair_j2_d)) call gpu_free_async(gpu_exp%pair_j2_d, gpu_stream)
       if (c_associated(gpu_exp%pair_chan_d)) call gpu_free_async(gpu_exp%pair_chan_d, gpu_stream)
+      if (c_associated(gpu_exp%pair_seg_d)) call gpu_free_async(gpu_exp%pair_seg_d, gpu_stream)
+      gpu_exp%pair_seg_d = c_null_ptr
       gpu_exp%pair_r_d = c_null_ptr
       gpu_exp%pair_xyz_d = c_null_ptr
       gpu_exp%pair_j2_d = c_null_ptr

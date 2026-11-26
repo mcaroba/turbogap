@@ -68,14 +68,17 @@ Everything TurboGAP runs on a GPU lives here. It used to live in three files in
   `g(r)` and its derivative, and the reduction over pairs. The batched route
   uses the windowed kernels at the end of the file: every pair tagged with its
   species pair and compacted once, then each sample summed over the pairs whose
-  9 sigma window holds it (the samples the host evaluates), in a fixed order.
-  No `n_pairs x n_samples` array.
+  9 sigma window holds it (the samples the host evaluates), in a fixed order:
+  a block's pairs are bucketed by their window's first sample, so a sample
+  visits only the pairs that can reach it. No `n_pairs x n_samples` array.
 - `mad_xrd.cu` — the structure factor forces: each pair's force as one sum of
   the pdf derivative against w = S^T (residual x scattering factor), and their
   collection into forces and the virial. On the batched route each pair
-  rebuilds its kernel over its window and contracts it with its channel's w
-  (`gpu_xrd_window_forces`), with nothing stored between the pdf and the
-  forces but the compacted pairs.
+  rebuilds its kernel over its window, by recurrence from its nearest sample,
+  and contracts it with its channel's w (`gpu_xrd_window_forces`), with nothing
+  stored between the pdf and the forces but the compacted pairs. A pair's
+  reverse has the opposite force, so each site sums its own pairs' (and their
+  virial) in list order rather than scattering them onto neighbours.
 - `mad_electrostatics.cu` — shifted-force Coulomb (GSF). Grouped here rather
   than with GAP because it is reached from the same experimental-prediction
   driver and shares the pair compaction, but it is a separate physical model

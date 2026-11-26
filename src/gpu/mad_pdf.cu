@@ -674,9 +674,12 @@ extern "C" void gpu_pdf_tag_pairs(int n_sites_b, int n_pairs_b, int* n_neigh_d, 
 // Compacts the tagged pairs, channel by channel, into r_out, xyz_out (3 per
 // pair), j2_out (1-based atom) and chan_out, each of capacity n_pairs_b.
 // off_h(0:n_channels) receives each channel's first position on the host.
+// seg_out(c * (n_sites_b + 1) + i) is where site i's pairs of channel c begin,
+// and (c, n_sites_b) is the channel's end: within a channel the pairs keep
+// neighbour-list order, so each site's are one run.
 extern "C" void gpu_pdf_compact_pairs(int n_pairs_b, int n_sites0, int n_channels, int* chan_d, int* neighbors_list_d,
                                       double* rjs_d, double* xyz_d, double* r_out, double* xyz_out, int* j2_out, int* chan_out,
-                                      int* off_h, hipStream_t* stream) {
+                                      int* off_h, int n_sites_b, int* n_neigh_d, int* seg_out, hipStream_t* stream) {
   for (int c = 0; c <= n_channels; c++)
     off_h[c] = 0;
   if (n_pairs_b <= 0 || n_channels <= 0)
@@ -720,8 +723,31 @@ extern "C" void gpu_pdf_compact_pairs(int n_pairs_b, int n_sites0, int n_channel
       },
       tpb);
 
+  // A site's run in channel c starts after the channel's pairs that come
+  // before the site's own entry in the list: rank, an inclusive count, at the
+  // entry before it.
+  int* site_end;
+  gpuErrchk(hipMallocAsync(&site_end, (size_t) n_sites_b * sizeof(int), stream[0]));
+  gpuErrchk(hipMemcpyAsync(site_end, n_neigh_d, (size_t) n_sites_b * sizeof(int), hipMemcpyDeviceToDevice, stream[0]));
+  inclusiveScan(site_end, n_sites_b, stream);
+  const int n_seg = n_sites_b + 1;
+  tg_parallel_for(
+      "turbogap_pdf_site_segments", n_channels * n_seg, stream,
+      TG_LAMBDA(const int idx) {
+        const int c = idx / n_seg;
+        const int i = idx - c * n_seg;
+        if (i == n_sites_b) {
+          seg_out[idx] = off_d[c + 1];
+          return;
+        }
+        const int beg = site_end[i] - n_neigh_d[i];
+        seg_out[idx] = off_d[c] + ((beg > 0) ? rank[c * n + beg - 1] : 0);
+      },
+      tpb);
+
   gpuErrchk(hipMemcpyAsync(off_h, off_d, (size_t) (n_channels + 1) * sizeof(int), hipMemcpyDeviceToHost, stream[0]));
   gpuErrchk(hipStreamSynchronize(stream[0]));
+  gpuErrchk(hipFreeAsync(site_end, stream[0]));
   gpuErrchk(hipFreeAsync(rank, stream[0]));
   gpuErrchk(hipFreeAsync(off_d, stream[0]));
 }
@@ -731,30 +757,78 @@ extern "C" void gpu_pdf_compact_pairs(int n_pairs_b, int n_sites0, int n_channel
 
 // NOT converted to the backend layer, deliberately: it stages a chunk of pairs
 // in __shared__ memory for the whole block, which needs a TeamPolicy the layer
-// does not carry. One thread per sample sums the chunk's kernels at that
-// sample in pair order, so the result does not depend on the scheduler.
+// does not carry.
+//
+// The chunk's pairs are bucketed by the first sample of their window: a count
+// per bucket, the buckets' starts, each pair dropped into its bucket (the slot
+// from an atomic, so in any order) and each bucket then sorted by pair index,
+// which takes the scheduler back out -- a bucket holds a pair or two, as the
+// chunk has fewer pairs than the pdf samples. A sample's pairs are then the
+// buckets of the w_max samples up to it, one run of the sorted list, and one
+// thread per sample sums them in that order. Scanning the whole chunk for
+// each sample instead checked ~13x more pairs than it summed at 25 A.
+// Dynamic shared memory: 2 n_samples + 1 ints.
 __global__ void kernel_pdf_window_gather(const double* r_d, int n_k, int n_samples, double r_min, double dr, double kde_sigma,
-                                         double kde_cut, const double* x_d, double* partial_d) {
+                                         double kde_cut, int w_max, const double* x_d, double* partial_d) {
   __shared__ double r_s[PDF_GATHER_CHUNK];
   __shared__ int lo_s[PDF_GATHER_CHUNK];
   __shared__ int hi_s[PDF_GATHER_CHUNK];
+  __shared__ int order_s[PDF_GATHER_CHUNK];
+  extern __shared__ int bucket_s[];
+  int* start_s = bucket_s;
+  int* cursor_s = bucket_s + n_samples + 1;
 
   const int beg = blockIdx.x * PDF_GATHER_CHUNK;
   const int n = (n_k - beg < PDF_GATHER_CHUNK) ? n_k - beg : PDF_GATHER_CHUNK;
 
+  for (int l = threadIdx.x; l <= n_samples; l += blockDim.x)
+    start_s[l] = 0;
+  for (int l = threadIdx.x; l < n_samples; l += blockDim.x)
+    cursor_s[l] = 0;
+  __syncthreads();
+
   for (int p = threadIdx.x; p < n; p += blockDim.x) {
     const double r = r_d[beg + p];
+    const int lo = pdf_window_lo(r, r_min, dr, kde_sigma, kde_cut);
     r_s[p] = r;
-    lo_s[p] = pdf_window_lo(r, r_min, dr, kde_sigma, kde_cut);
+    lo_s[p] = lo < n_samples - 1 ? lo : n_samples - 1;
     hi_s[p] = pdf_window_hi(r, r_min, dr, kde_sigma, kde_cut, n_samples);
+    atomicAdd(&start_s[lo_s[p] + 1], 1);
+  }
+  __syncthreads();
+
+  if (threadIdx.x == 0) {
+    for (int l = 1; l <= n_samples; l++)
+      start_s[l] += start_s[l - 1];
+  }
+  __syncthreads();
+
+  for (int p = threadIdx.x; p < n; p += blockDim.x) {
+    const int b = lo_s[p];
+    order_s[start_s[b] + atomicAdd(&cursor_s[b], 1)] = p;
+  }
+  __syncthreads();
+
+  for (int b = threadIdx.x; b < n_samples; b += blockDim.x) {
+    for (int s = start_s[b] + 1; s < start_s[b + 1]; s++) {
+      const int v = order_s[s];
+      int t = s - 1;
+      while (t >= start_s[b] && order_s[t] > v) {
+        order_s[t + 1] = order_s[t];
+        t--;
+      }
+      order_s[t + 1] = v;
+    }
   }
   __syncthreads();
 
   for (int l = threadIdx.x; l < n_samples; l += blockDim.x) {
     const double x = x_d[l];
+    const int b0 = (l - w_max + 1 > 0) ? l - w_max + 1 : 0;
     double acc = 0.0;
-    for (int p = 0; p < n; p++) {
-      if (l < lo_s[p] || l > hi_s[p])
+    for (int s = start_s[b0]; s < start_s[l + 1]; s++) {
+      const int p = order_s[s];
+      if (hi_s[p] < l)
         continue;
       const double g = (x - r_s[p]) / kde_sigma;
       acc += exp(-0.5 * g * g);
@@ -788,13 +862,16 @@ extern "C" void gpu_pdf_window_kde(int n_channels, int* off_h, int n_samples, do
     gpuErrchk(hipMallocAsync(&partial, (size_t) n_blk * n_samples * sizeof(double), stream[0]));
 
   int threads = ((n_samples < 1024 ? n_samples : 1024) + 31) / 32 * 32;
+  // The widest window, as the host's accumulate_pair_kde sizes it.
+  const int w_max = (int) (2.0 * kde_cut * kde_sigma / dr) + 5;
+  const size_t shared = (size_t) (2 * n_samples + 1) * sizeof(int);
   for (int c = 0; c < n_channels; c++) {
     const int n_c = off_h[c + 1] - off_h[c];
     const int nb = blk_h[c + 1] - blk_h[c];
     if (nb == 0)
       continue;
-    kernel_pdf_window_gather<<<nb, threads, 0, stream[0]>>>(r_d + off_h[c], n_c, n_samples, r_min, dr, kde_sigma, kde_cut, x_d,
-                                                            partial + (size_t) blk_h[c] * n_samples);
+    kernel_pdf_window_gather<<<nb, threads, shared, stream[0]>>>(r_d + off_h[c], n_c, n_samples, r_min, dr, kde_sigma, kde_cut,
+                                                                 w_max, x_d, partial + (size_t) blk_h[c] * n_samples);
   }
 
   tg_parallel_for(

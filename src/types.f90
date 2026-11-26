@@ -68,11 +68,16 @@ module types
 !     one list by gpu_pdf_compact_pairs and kept on the device from the pdf to
 !     the forces: distance, separation (3 per pair), 1-based atom j2, channel.
 !     pair_off(c) is channel c's first position, pair_off(n_dim_partial) the
-!     number of pairs.
+!     number of pairs. pair_seg_d, n_dim_partial x (n_sites_b + 1): where each
+!     of the batch's n_sites_b sites' pairs of a channel begin; site i is atom
+!     i_off + i.
       type(c_ptr) :: pair_r_d = c_null_ptr
       type(c_ptr) :: pair_xyz_d = c_null_ptr
       type(c_ptr) :: pair_j2_d = c_null_ptr
       type(c_ptr) :: pair_chan_d = c_null_ptr
+      type(c_ptr) :: pair_seg_d = c_null_ptr
+      integer :: n_sites_b = 0
+      integer :: i_off = 0
       integer, allocatable :: pair_off(:)
    end type gpu_storage_type
 
