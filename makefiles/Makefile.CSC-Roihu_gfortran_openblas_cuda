@@ -8,9 +8,8 @@
 #     module load spack/aarch64/v2026_03/gcc/13.4.0/openblas/0.3.30
 #     module load spack/aarch64/v2026_03/gcc/13.4.0/cuda/12.6.3
 #
-# Two things differ from the Aalto arch file beyond the architecture flag:
-# CUDA's target triple is sbsa-linux, not x86_64-linux, and nvToolsExt is a
-# header-only interface in CUDA 12 with no library left to link.
+# One thing differs from the Aalto arch file beyond the architecture flag:
+# CUDA's target triple is sbsa-linux, not x86_64-linux.
 
 ifndef HOP_ROOT
   $(error HOP_ROOT environment variable not set. Please set it before building.)
@@ -55,6 +54,11 @@ endif
 # build for a device that is not attached to the machine doing the build.
 CUDA_LIB_PATH = "$(CUDA_HOME)/targets/sbsa-linux/lib"
 LIBS = -L$(CUDA_LIB_PATH) -L$(CUDA_LIB_PATH)/stubs -lopenblas -lcudart -lcuda -lcublas -lstdc++
+# A PROFILE=1 build's NVTX markers (src/nvtx.f90) call nvtxRangePushA and
+# nvtxRangePop, which this CUDA 12.6 still ships in libnvToolsExt.
+ifeq ($(PROFILE),1)
+  LIBS += -lnvToolsExt
+endif
 
 # A device build. _GPU guards the device code in the sources shared with the
 # CPU build; ST_DIR and DEPS_FILE pick the GPU soap_turbo, whose get_soap takes
