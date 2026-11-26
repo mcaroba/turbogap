@@ -148,6 +148,38 @@ with a long list: 48 x 8 beats one rank per core for CO XRD by 29%, while
 plain MD is fastest at one rank per core. For 7,200-atom GST, 96 x 4 is
 fastest. The GH200 is under-filled at 7,200 atoms.
 
+### A large cell: the replicated mode against the decomposition
+
+194,400 atoms of the same GST (3 x the 7,200 edge), nd MAD at 0.5 fs and NPT,
+from a 200-step melt of a random cell; s/step after Setup, on 384-core CPU
+nodes.
+
+The replicated mode, 96 x 4 on one node, 100 steps: 0.489 s/step at `74d636b`,
+0.411 at `dbf2a20`. Of the 0.078 s/step saved, 0.033 was MPI time spent
+fingerprinting the replicated state three times a step on every rank, 0.031
+the angles of every pair of the 12.85 A list, which only SOAP reads within
+5.5 A, and 0.019 the 2b and core-pot terms clearing whole-system arrays per
+descriptor.
+
+With the observables and the Berendsen barostat on the domains (`49a844c`),
+60 steps in one job:
+
+| | s / step |
+| --- | --- |
+| replicated, 96 x 4 | 0.441 |
+| `rcb`, `dd_integrate = domain`, 96 x 4 | 0.352 |
+| `rcb`, `dd_integrate = domain`, 384 x 1 | 0.328 |
+| `rcb`, `dd_integrate = domain`, 2 nodes, 768 x 1 | 0.261 |
+
+Before, the same `rcb` run integrated on rank 0 and computed the pdf on a
+whole-structure copy: 0.604 s/step at 96 x 4, slower than replicated. Here a
+rank-per-core step is 0.13 s of SOAP, 0.09 of the pattern and its forces (the
+pdf kernel over ~138,000 pairs a rank) and 0.05 of neighbour lists; the two
+nodes scale less than two-fold because the hot start rebuilt the domains every
+third step. Each 194,400-atom frame costs ~1.2 s to gather and write, and is
+in "MD algorithms": the MD step itself is about 0.015 s/step replicated and
+nothing on the domains.
+
 ### Debye XRD and XPS
 
 The same 307,671 atoms, microseconds per step per atom, with the factor over
@@ -278,6 +310,8 @@ What the measured code was tested with, and where:
 | the GAP terms on cut lists (`fe81322`, `74d636b`): `tests/regression --cpu`, all 44 cases | every output against a master (`8a7df2b`) build, each run as the binary under test: 107 files identical | alt |
 | `tests/gap_neighbors` | the CO cell with the GAP alone, with a pdf to 9 A at 1 and 3 ranks, and with its 3b descriptors alone, against master's output to 1e-6; a GAP list 0.05 A short or a 3b list 5% short fails it | alt |
 | the device 2b and core-pot a thread per pair (`74d636b`) against the host build | CO MD and CO and GST nd MAD at 1 and 2 ranks, as close as master's device build is to its host (forces 4e-8); `tests/regression --gpu` fails 22 cases against master's 23; the Kokkos build too | alt: RTX 5070 |
+| the replicated MD sync, angles and pair-term slices (`dbf2a20`), the observables and barostat on the domains (`49a844c`): `tests/regression --cpu`, all 44 cases | every output against a master (`051954c`) build: 107 files identical, after each commit; CO NVE and NPT at 3 ranks and GST nd MAD under NPT at 2, host and device, identical to master | alt |
+| `tests/legacy_dd`, `tests/rcb_dd` | every leg, with new ones: Bussi under the Berendsen barostat integrated on the domains; the pdf -> S(q) -> XRD chain on the domains with two ranks per domain; that chain under the barostat integrated on the domains; each against the replicated run | alt |
 | `tests/xrd_species_order`, absent-species leg | a species listed and absent from the cell: totals, partials and every energy term as when it is not listed, no NaN | alt, host and device |
 | `tests/regression --cpu`, all 44 cases | outputs against the previous binary, bit for bit; only the XPS and Debye cases differ, as intended | alt: x86, 12 cores |
 | `tests/regression --gpu`, all 41 cases with data | device against host within tolerance; the same 36 agree as before | Roihu GH200 |
