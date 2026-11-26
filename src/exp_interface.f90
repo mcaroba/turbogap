@@ -533,7 +533,7 @@ contains
         & indices, md_istep, mc_istep, i_beg, i_end, j_beg, j_end, ierr, rjs, xyz, &
         & neighbors_list, n_neigh, neighbor_species, species, rank,&
         & do_derivatives, pair_distribution_der, pair_distribution_partial_der,&
-        & pair_distribution_partial_temp_der, energies_pair_distribution, forces_pair_distribution, virial)
+        & pair_distribution_partial_temp_der, energies_pair_distribution, forces_pair_distribution, virial, n_total)
       implicit none
       type(input_parameters), intent(inout) :: params
       real(dp), allocatable, intent(out) :: x_pair_distribution(:)
@@ -565,6 +565,9 @@ contains
       real(dp) :: dedv
       integer, intent(in) :: n_species
       integer, intent(in) :: n_sites
+!     The atoms in the system, for the normalisations: n_sites is only the
+!     extent of the per-site arrays, which on a domain holds its halo too.
+      integer, intent(in) :: n_total
       integer, intent(in) :: i_beg
       integer, intent(in) :: i_end
       integer, intent(in) :: j_beg
@@ -667,14 +670,20 @@ contains
       if (allocated(n_atoms_of_species)) deallocate (n_atoms_of_species)
       allocate (n_atoms_of_species(1:n_species))
 
+!     Over this rank's own sites, then summed: on a domain the halo atoms are
+!     another domain's to count.
       do j = 1, n_species
          n_atoms_of_species(j) = 0.d0
-         do i2 = 1, n_sites
+         do i2 = i_beg, i_end
             if (species(i2) == j) then
                n_atoms_of_species(j) = n_atoms_of_species(j) + 1.d0
             end if
          end do
       end do
+#ifdef _MPIF90
+      call mpi_allreduce(MPI_IN_PLACE, n_atoms_of_species, n_species, MPI_DOUBLE_PRECISION, MPI_SUM, &
+                         MPI_COMM_WORLD, ierr)
+#endif
 
 #ifdef _MPIF90
       if (params%pair_distribution_partial) then
@@ -713,7 +722,7 @@ contains
                     &%pair_distribution_rcut, .false.,&
                     & params%pair_distribution_partial, j, k,&
                     & params%pair_distribution_kde_sigma,&
-                    & dfloat(n_sites)/v_uc, params%exp_forces .and. pdf_stores_der(),&
+                    & dfloat(n_total)/v_uc, params%exp_forces .and. pdf_stores_der(),&
                     & pair_distribution_partial_der, pdf_der_slot(n_dim_idx), &
                     & j_beg, j_end, [v_uc, n_atoms_of_species(j), n_atoms_of_species(k), factors(n_dim_idx)])
 
@@ -734,7 +743,7 @@ contains
               &%pair_distribution_n_samples, x_pair_distribution,&
               & y_pair_distribution, params &
               &%pair_distribution_rcut, .false., .false., 1, 1,&
-              & params%pair_distribution_kde_sigma, dfloat(n_sites)&
+              & params%pair_distribution_kde_sigma, dfloat(n_total)&
               &/v_uc, params%do_forces .and. params%exp_forces .and. pdf_stores_der(), &
               & pair_distribution_partial_der, 1, &
               & j_beg, j_end)
@@ -812,7 +821,7 @@ contains
                     & y_pair_distribution(1:params%pair_distribution_n_samples) +  &
                     &  factors(n_dim_idx)*(n_atoms_of_species(j)*n_atoms_of_species(k))* &
                     & pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) &
-                    &  /dfloat(n_sites)/dfloat(n_sites)
+                    &  /dfloat(n_total)/dfloat(n_total)
 
                n_dim_idx = n_dim_idx + 1
 
@@ -825,7 +834,7 @@ contains
 
          ! --- Preprocess the pair distribution according to the output --- !
          if (trim(params%pair_distribution_output) == "D(r)") then
-            y_pair_distribution = 4.d0*pi*(dfloat(n_sites)/v_uc)*x_pair_distribution*(y_pair_distribution - 1.d0)
+            y_pair_distribution = 4.d0*pi*(dfloat(n_total)/v_uc)*x_pair_distribution*(y_pair_distribution - 1.d0)
          end if
 
          !###---   Calculate the forces   ---###!
@@ -842,7 +851,7 @@ contains
             call get_exp_energies(params%exp_energy_scales(params&
                  &%pdf_idx), params%exp_data(params%pdf_idx)%y&
                  &, y_pair_distribution,&
-                 & params%pair_distribution_n_samples, n_sites,&
+                 & params%pair_distribution_n_samples, n_total,&
                  & energies_pair_distribution(i_beg:i_end), params%exp_data(params%pdf_idx)%w)
 
             if (params%do_forces .and. params%exp_forces) then
@@ -873,8 +882,8 @@ contains
                           & j_beg:j_end), params%pair_distribution_partial,&
                           & params%pair_distribution_kde_sigma,&
                           & ((n_atoms_of_species(j)*&
-                          & n_atoms_of_species(k))/dfloat(n_sites)/&
-                          & dfloat(n_sites)), (dfloat(n_sites)/v_uc), params%pair_distribution_output)
+                          & n_atoms_of_species(k))/dfloat(n_total)/&
+                          & dfloat(n_total)), (dfloat(n_total)/v_uc), params%pair_distribution_output)
 #else
                      kern%scale = [v_uc, n_atoms_of_species(j), n_atoms_of_species(k), factors(n_dim_idx)]
                      call get_pair_distribution_forces(n_sites, params%exp_energy_scales(params%pdf_idx),&
@@ -889,8 +898,8 @@ contains
                           &, j, k, partial_rdf=params%pair_distribution_partial,&
                           & kde_sigma=params%pair_distribution_kde_sigma,&
                           & c_factor=((n_atoms_of_species(j)*&
-                          & n_atoms_of_species(k))/dfloat(n_sites)/&
-                          & dfloat(n_sites)), rho=(dfloat(n_sites)/v_uc), output=params%pair_distribution_output,&
+                          & n_atoms_of_species(k))/dfloat(n_total)/&
+                          & dfloat(n_total)), rho=(dfloat(n_total)/v_uc), output=params%pair_distribution_output,&
                           & kern=kern)
 #endif
 
@@ -921,7 +930,7 @@ contains
                      dedv = -params%exp_energy_scales(params%pdf_idx)*&
                           & sum((y_pair_distribution(1:params%pair_distribution_n_samples) - &
                           &      params%exp_data(params%pdf_idx)%y)*&
-                          &     4.d0*pi*(dfloat(n_sites)/v_uc)*&
+                          &     4.d0*pi*(dfloat(n_total)/v_uc)*&
                           &     x_pair_distribution(1:params%pair_distribution_n_samples))
                   else
                      dedv = -params%exp_energy_scales(params%pdf_idx)*&
@@ -973,7 +982,7 @@ contains
          y_pair_distribution = y_pair_distribution* &
               & dot_product(cross_product(a_box, b_box),&
               & c_box)/(dfloat(indices(1)*indices(2)&
-              &*indices(3)))/dfloat(n_sites)/dfloat(n_sites)
+              &*indices(3)))/dfloat(n_total)/dfloat(n_total)
 
       end if
 
@@ -1646,7 +1655,7 @@ contains
         & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
         & neighbor_species, species, rank, q_beg, q_end, ntasks,&
         & sinc_factor_matrix, do_derivatives,&
-        & energies_sf, forces_sf, virial_sf, use_matrix_forces)
+        & energies_sf, forces_sf, virial_sf, use_matrix_forces, n_total)
       implicit none
       type(input_parameters), intent(inout) :: params
       real(dp), allocatable, intent(out) :: x_structure_factor(:)
@@ -1679,6 +1688,8 @@ contains
       type(pdf_kernel_t) :: kern
       integer, intent(in) :: n_species
       integer, intent(in) :: n_sites
+!     The atoms in the system, for the normalisations; see calculate_pair_distribution.
+      integer, intent(in) :: n_total
       integer, intent(in) :: i_beg
       integer, intent(in) :: i_end
       integer, intent(in) :: j_beg
@@ -1819,7 +1830,7 @@ contains
                  & x_pair_distribution, params%pair_distribution_rcut,&
                  & params%pair_distribution_n_samples, params&
                  &%structure_factor_n_samples, n_species, n_dim_partial,&
-                 & n_atoms_of_species, n_sites, dfloat(n_sites)/v_uc, &
+                 & n_atoms_of_species, n_total, dfloat(n_total)/v_uc, &
                  & params%structure_factor_window,&
                  & structure_factor_partial)
 
@@ -1903,13 +1914,13 @@ contains
                   if (j == k) f = 1.d0
                   if (j /= k) f = 0.d0
 
-                  cabh = ((n_atoms_of_species(j)/dfloat(n_sites)) &
-                       &*(n_atoms_of_species(k)/dfloat(n_sites)) &
+                  cabh = ((n_atoms_of_species(j)/dfloat(n_total)) &
+                       &*(n_atoms_of_species(k)/dfloat(n_total)) &
                        & )**(0.5)
 
                   structure_factor_partial(1:params&
                        &%structure_factor_n_samples, n_dim_idx) = f +&
-                       & 4.d0*pi*cabh*(dfloat(n_sites)/v_uc)* &
+                       & 4.d0*pi*cabh*(dfloat(n_total)/v_uc)* &
                        & structure_factor_partial(1:params&
                        &%structure_factor_n_samples, n_dim_idx)
 
@@ -1939,7 +1950,7 @@ contains
          dq = 0.d0
          n_dim_idx = 1
          outer2: do j = 1, n_species
-            dq = dq + (n_atoms_of_species(j)/dfloat(n_sites))
+            dq = dq + (n_atoms_of_species(j)/dfloat(n_total))
             do k = 1, n_species
 
                if (j > k) cycle
@@ -1954,7 +1965,7 @@ contains
                     & y_structure_factor(1:params%structure_factor_n_samples) +  &
                     & f*(n_atoms_of_species(j)*n_atoms_of_species(k))**0.5* &
                     &  (structure_factor_partial(1:params%structure_factor_n_samples, n_dim_idx) &
-                    &  - delta)/dfloat(n_sites) !/ dfloat(n_sites)
+                    &  - delta)/dfloat(n_total) !/ dfloat(n_total)
 
                n_dim_idx = n_dim_idx + 1
 
@@ -1985,7 +1996,7 @@ contains
                call get_exp_energies(params%exp_energy_scales(params&
                     &%sf_idx), params%exp_data(params%sf_idx)%y&
                     &, y_structure_factor,&
-                    & params%structure_factor_n_samples, n_sites,&
+                    & params%structure_factor_n_samples, n_total,&
                     & energies_sf(i_beg:i_end), params%exp_data(params%sf_idx)%w)
 
                if (params%do_forces .and. params%exp_forces) then
@@ -2021,8 +2032,8 @@ contains
                                 &, j, k, kern, params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
-                                & n_atoms_of_species(k))/dfloat(n_sites)/&
-                                & dfloat(n_sites))*(dfloat(n_sites)/&
+                                & n_atoms_of_species(k))/dfloat(n_total)/&
+                                & dfloat(n_total))*(dfloat(n_total)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
                                 & .false., params%xrd_output,&
                                 & n_atoms_of_species, .false., rank, w=params%exp_data(params%sf_idx)%w)
@@ -2041,8 +2052,8 @@ contains
                                 &, j, k, kern, params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
-                                & n_atoms_of_species(k))/dfloat(n_sites)/&
-                                & dfloat(n_sites))*(dfloat(n_sites)/&
+                                & n_atoms_of_species(k))/dfloat(n_total)/&
+                                & dfloat(n_total))*(dfloat(n_total)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
                                 & .false., params%xrd_output,&
                                 & n_atoms_of_species, .false., rank)
@@ -2071,7 +2082,7 @@ contains
               & x_pair_distribution, params%pair_distribution_rcut,&
               & params%pair_distribution_n_samples, params&
               &%structure_factor_n_samples, n_species,&
-              & n_atoms_of_species, n_sites, dfloat(n_sites)/v_uc, params%structure_factor_window)
+              & n_atoms_of_species, n_total, dfloat(n_total)/v_uc, params%structure_factor_window)
 
       else
 
@@ -2516,7 +2527,7 @@ contains
         & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
         & neighbor_species, species, rank, q_beg, q_end, ntasks,&
         & sinc_factor_matrix, do_derivatives,&
-        & energies_xrd, forces_xrd, virial_xrd, neutron, use_matrix_forces)
+        & energies_xrd, forces_xrd, virial_xrd, neutron, use_matrix_forces, n_total)
       implicit none
       type(input_parameters), intent(inout) :: params
       real(dp), allocatable, intent(out) :: x_xrd(:)
@@ -2546,6 +2557,8 @@ contains
       type(pdf_kernel_t) :: kern
       integer, intent(in) :: n_species
       integer, intent(in) :: n_sites
+!     The atoms in the system, for the normalisations; see calculate_pair_distribution.
+      integer, intent(in) :: n_total
       integer, intent(in) :: i_beg
       integer, intent(in) :: i_end
       integer, intent(in) :: j_beg
@@ -2712,7 +2725,7 @@ contains
 
                call get_exp_energies(params%exp_energy_scales(xrd_idx), params%exp_data(xrd_idx)%y&
                     &, y_xrd,&
-                    & params%structure_factor_n_samples, n_sites,&
+                    & params%structure_factor_n_samples, n_total,&
                     & energies_xrd(i_beg:i_end), params%exp_data(xrd_idx)%w)
 
                if (params%do_forces .and. params%exp_forces) then
@@ -2749,8 +2762,8 @@ contains
                                 &, j, k, kern, params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
-                                & n_atoms_of_species(k))/dfloat(n_sites)/&
-                                & dfloat(n_sites))*(dfloat(n_sites)/&
+                                & n_atoms_of_species(k))/dfloat(n_total)/&
+                                & dfloat(n_total))*(dfloat(n_total)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
                                 & .true., xrd_output, n_atoms_of_species, neutron, rank, lp, w=params%exp_data(xrd_idx)%w)
                         else
@@ -2768,8 +2781,8 @@ contains
                                 &, j, k, kern, params%pair_distribution_partial,&
                                 & params%pair_distribution_kde_sigma,&
                                 & 4.d0*pi*f*((n_atoms_of_species(j)*&
-                                & n_atoms_of_species(k))/dfloat(n_sites)/&
-                                & dfloat(n_sites))*(dfloat(n_sites)/&
+                                & n_atoms_of_species(k))/dfloat(n_total)/&
+                                & dfloat(n_total))*(dfloat(n_total)/&
                                 & v_uc), sinc_factor_matrix, n_dim_idx,&
                                 & .true., xrd_output, n_atoms_of_species, neutron, rank, lp)
                         end if

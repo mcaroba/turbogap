@@ -21,15 +21,19 @@
 #     into equal slabs, two of which hold no atom at all, owned or halo;
 #   - MD: five steps; twenty, which reuse the domains between rebuilds; and
 #     twenty with a tiny skin, which rebuild nearly every step;
-#   - dd_integrate = domain: Berendsen, Bussi and NVE, a tiny skin (atoms
+#   - dd_integrate = domain: Berendsen, Bussi and NVE, Bussi under the
+#     Berendsen barostat (the cell changes every step), a tiny skin (atoms
 #     migrate at every step), empty domains, and a thermostat it does not
 #     cover, which must integrate on rank 0 instead and say so;
 #   - TS van der Waals, which reads its neighbours' Hirshfeld volumes, so the
 #     halo copies have to carry them;
 #   - electrostatics, whose neutralising mean charge is a sum over all atoms
 #     (on a 24k cell: this potential's rcut_max is 20 A);
-#   - the pdf -> S(q) -> XRD chain and the Debye XRD, computed on the
-#     whole-structure view while the potential stays decomposed;
+#   - the pdf -> S(q) -> XRD chain, computed on the domains from each one's
+#     own pairs, with two ranks sharing each domain's sites, and integrated on
+#     the domains under a barostat; and the Debye XRD,
+#     computed on the whole-structure view while the potential stays
+#     decomposed;
 #   - the dipole model, whose total dipole is a sum over all atoms, and the
 #     MAD-IR bias it drives through 40 MD steps;
 #   - a grid too fine for the cell, which must fall back to replicated.
@@ -386,6 +390,15 @@ r_range_max = 6.0
 do_structure_factor = .true.
 structure_factor_from_pdf = .true."
 
+XRD_INTEG="$XRD_CHAIN
+dd_integrate = domain
+barostat = berendsen
+barostat_sym = 'diag'
+p_beg = 0
+p_end = 0
+tau_p = 100.
+gamma_p = 10."
+
 XRD_DEBYE="$XRD_COMMON
 xrd_debye = .true.
 xrd_rcut = 6.0"
@@ -408,6 +421,17 @@ integ() {
     fail=$((fail + 1))
   elif [ "$expect" = domain ] && [ "$DD_TYPE" = rcb ] && ! partners_only "$log"; then
     printf '    FAIL: migrated through every rank where only partners were needed\n'
+    pass=$((pass - 1))
+    fail=$((fail + 1))
+  fi
+}
+
+# domains_integrated <name>: the decomposed run of a full_leg integrated on
+# its domains, not on rank 0.
+domains_integrated() {
+  [ "$last_ok" -eq 1 ] || return 0
+  if ! grep -q 'integrated on the domains' "$WORK/$1/dd/out.log"; then
+    printf '    FAIL: did not integrate on the domains\n'
     pass=$((pass - 1))
     fail=$((fail + 1))
   fi
@@ -480,6 +504,15 @@ run_leg() {
 t_beg = 600
 t_end = 600" ;;
   integ_nve) integ integ_nve "$DATA/atoms_7176_vel.xyz" 20 6 "thermostat = none" ;;
+  integ_npt) integ integ_npt "$DATA/atoms_7176_vel.xyz" 20 4 "thermostat = bussi
+t_beg = 600
+t_end = 600
+barostat = berendsen
+barostat_sym = 'diag'
+p_beg = 0
+p_end = 0
+tau_p = 100.
+gamma_p = 10." ;;
   integ_skin) integ integ_skin "$DATA/atoms_7176_vel.xyz" 20 8 "neighbors_buffer = 0.01" ;;
   integ_empty) make_slab "$WORK/slab3i.xyz" 3 && integ integ_empty "$WORK/slab3i.xyz" 10 6 "dd_grid = 1 1 6
 dd_balance = volume" ;;
@@ -489,6 +522,12 @@ tau_t = 100." rank0 ;;
   estat) full_leg estat predict 2 "$DATA_ROOT/C/atoms_24219.xyz" "$DATA_ROOT/CLi/gap_files" - "$ESTAT_INPUT" ;;
   xrd_view) full_leg xrd_view md 4 "$DATA_ROOT/C/atoms_7176.xyz" "$DATA_ROOT/xrd_mad/gap_files" \
     "$DATA_ROOT/xrd_mad/xrd_glassy_carbon_zeng_2017.fq" "$XRD_CHAIN" ;;
+  xrd_block) full_leg xrd_block md 4 "$DATA_ROOT/C/atoms_7176.xyz" "$DATA_ROOT/xrd_mad/gap_files" \
+    "$DATA_ROOT/xrd_mad/xrd_glassy_carbon_zeng_2017.fq" "$XRD_CHAIN
+dd_grid = 2 1 1
+dd_grid_affinity = block" ;;
+  xrd_integ) full_leg xrd_integ md 4 "$DATA_ROOT/C/atoms_7176.xyz" "$DATA_ROOT/xrd_mad/gap_files" \
+    "$DATA_ROOT/xrd_mad/xrd_glassy_carbon_zeng_2017.fq" "$XRD_INTEG" && domains_integrated xrd_integ ;;
   xrd_debye_view) full_leg xrd_debye_view md 4 "$DATA_ROOT/C/atoms_7176.xyz" "$DATA_ROOT/xrd_mad/gap_files" \
     "$DATA_ROOT/xrd_mad/xrd_glassy_carbon_zeng_2017.fq" "$XRD_DEBYE" ;;
   dipole) tile_water "$WORK/water222.xyz" 2 2 2 &&
@@ -519,7 +558,8 @@ pass=0
 fail=0
 last_ok=0
 common="x2 x3 xy4 xyz8 one3 block4 cyclic6 sheared auto8 volume4 slab4 md8 md20 md20_skin integ8 integ_bussi
-integ_nve integ_skin integ_empty integ_gle empty6 vdw_ts estat xrd_view xrd_debye_view dipole mad_ir"
+integ_nve integ_npt integ_skin integ_empty integ_gle empty6 vdw_ts estat xrd_view xrd_block xrd_integ xrd_debye_view
+dipole mad_ir"
 if [ "$DD_TYPE" = rcb ]; then
   legs=${*:-$common prime5 prime7 cluster pore integ_droplet}
 else

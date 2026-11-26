@@ -884,7 +884,7 @@ contains
               & params%exp_forces, pair_distribution_der,&
               & pair_distribution_partial_der,&
               & pair_distribution_partial_temp_der, energies_pdf,&
-              & forces_pdf, virial_pdf)
+              & forces_pdf, virial_pdf, n_sites)
 
             call time_end(time%pdf, "pair_distribution")
          end if
@@ -1353,7 +1353,7 @@ contains
                                   energies_sf, forces_sf, virial_sf, &
                                   energies_xrd, forces_xrd, virial_xrd, &
                                   energies_nd, forces_nd, virial_nd, &
-                                  time)
+                                  time, n_total)
 
       implicit none
 
@@ -1361,6 +1361,9 @@ contains
 !   allocatable, so these must be allocatable too.
       type(input_parameters), intent(inout) :: params
       integer, intent(in) :: n_sites
+!   The atoms in the system. n_sites is the extent of the per-site arrays: on
+!   a domain, its owned sites and its halo.
+      integer, intent(in) :: n_total
       integer, intent(in) :: i_beg
       integer, intent(in) :: i_end
       integer, intent(in) :: j_beg
@@ -1498,7 +1501,10 @@ contains
 
       ! Partials and n_atoms_of_species are indexed by species id, so slot k
       ! must name species k whatever order the atoms come in.
-      n_species_actual = maxval(species(1:n_sites))
+      n_species_actual = maxval(species(i_beg:i_end))
+#ifdef _MPIF90
+      call mpi_allreduce(MPI_IN_PLACE, n_species_actual, 1, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
+#endif
       if (allocated(species_types_actual)) deallocate (species_types_actual)
       allocate (species_types_actual(1:n_species_actual))
       species_types_actual(1:n_species_actual) = params%species_types(1:n_species_actual)
@@ -1515,7 +1521,7 @@ contains
               & n_neigh, neighbor_species, species, rank, params%exp_forces, &
               & pair_distribution_der,&
               & pair_distribution_partial_der,&
-              & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf)
+              & pair_distribution_partial_temp_der, energies_pdf, forces_pdf, virial_pdf, n_total)
 
          call time_end(time%pdf)
          !           if (rank == 0) print *, rank, " TIME_PDF = ", time%pdf(3)
@@ -1534,7 +1540,7 @@ contains
               & i_end, j_beg, j_end, ierr, rjs, xyz, neighbors_list, n_neigh,&
               & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
               & energies_sf, forces_sf, virial_sf, &
-              & params%structure_factor_matrix_forces)
+              & params%structure_factor_matrix_forces, n_total)
 
          call time_end(time%sf)
 
@@ -1557,7 +1563,7 @@ contains
                  & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
                  & energies_xrd,&
                  & forces_xrd, virial_xrd, .false., params&
-                 &%structure_factor_matrix_forces)
+                 &%structure_factor_matrix_forces, n_total)
          end if
 
          call time_end(time%xrd)
@@ -1583,7 +1589,7 @@ contains
                  & neighbor_species, species, rank, q_beg, q_end, ntasks, sinc_factor_matrix, params%exp_forces, &
                  & energies_nd,&
                  & forces_nd, virial_nd, .true., params&
-                 &%structure_factor_matrix_forces)
+                 &%structure_factor_matrix_forces, n_total)
          end if
 
          call time_end(time%nd)

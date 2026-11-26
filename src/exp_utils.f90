@@ -638,7 +638,8 @@ contains
                   sth = 0.d0
                   do j = 1, n_species
                      call get_scattering_factor(wfaci, sf_parameters(1:9, j), x_structure_factor(i)/2.d0)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+                     ! The system's composition: n_atoms_of_species is global, n_sites0 the local extent.
+                     sth = sth + (n_atoms_of_species(j)/sum(n_atoms_of_species))*wfaci !* wfaci
                   end do
 
                   all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -648,7 +649,7 @@ contains
                   sth = 0.d0
                   do j = 1, n_species
                      call get_scattering_factor(wfaci, sf_parameters(1:9, j), x_structure_factor(i)/2.d0)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+                     sth = sth + (n_atoms_of_species(j)/sum(n_atoms_of_species))*wfaci !* wfaci
                   end do
 
                   all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -680,7 +681,7 @@ contains
 !                    unbatched agreed to the last bit for xrd and not at all for
 !                    nd.
                      call get_neutron_scattering_length(species_types(j), wfaci)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                     sth = sth + (n_atoms_of_species(j)/sum(n_atoms_of_species))*wfaci
                   end do
 
                   all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -700,7 +701,7 @@ contains
 !                    unbatched agreed to the last bit for xrd and not at all for
 !                    nd.
                      call get_neutron_scattering_length(species_types(j), wfaci)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                     sth = sth + (n_atoms_of_species(j)/sum(n_atoms_of_species))*wfaci
                   end do
 
                   all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -1482,7 +1483,8 @@ contains
                   sth = 0.d0
                   do j = 1, n_species
                      call get_scattering_factor(wfaci, sf_parameters(1:9, j), x_structure_factor(i)/2.d0)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+                     ! The system's composition: n_atoms_of_species is global, n_sites0 the local extent.
+                     sth = sth + (n_atoms_of_species(j)/sum(n_atoms_of_species))*wfaci !* wfaci
                   end do
 
                   all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -1492,7 +1494,7 @@ contains
                   sth = 0.d0
                   do j = 1, n_species
                      call get_scattering_factor(wfaci, sf_parameters(1:9, j), x_structure_factor(i)/2.d0)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci !* wfaci
+                     sth = sth + (n_atoms_of_species(j)/sum(n_atoms_of_species))*wfaci !* wfaci
                   end do
 
                   all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -1524,7 +1526,7 @@ contains
 !                    unbatched agreed to the last bit for xrd and not at all for
 !                    nd.
                      call get_neutron_scattering_length(species_types(j), wfaci)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                     sth = sth + (n_atoms_of_species(j)/sum(n_atoms_of_species))*wfaci
                   end do
 
                   all_scattering_factors(i) = 2.d0*pi*x(i)*all_scattering_factors(i)/sth**2 !+ 1.d0
@@ -1544,7 +1546,7 @@ contains
 !                    unbatched agreed to the last bit for xrd and not at all for
 !                    nd.
                      call get_neutron_scattering_length(species_types(j), wfaci)
-                     sth = sth + (n_atoms_of_species(j)/dfloat(n_sites0))*wfaci
+                     sth = sth + (n_atoms_of_species(j)/sum(n_atoms_of_species))*wfaci
                   end do
 
                   all_scattering_factors(i) = all_scattering_factors(i)/sth**2 !+ 1.d0

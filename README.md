@@ -235,10 +235,15 @@ says so:
 - the whole run as `none`: MBD, a run without `do_prediction`, a build
   without MPI;
 - integrated on rank 0, still evaluated on the domains: optimisers,
-  thermostats other than none, Berendsen and Bussi, a barostat or box
-  scaling, a variable time step, electronic stopping, MC, nested sampling,
-  MAD-IR, and the pdf, structure factor, XRD (Debye included) and ND
-  observables.
+  thermostats other than none, Berendsen and Bussi, barostats other than
+  Berendsen, a variable time step, electronic stopping, MC, nested sampling,
+  MAD-IR, Debye XRD and the explicit structure factor, and on the device
+  build the pdf, structure factor, XRD and ND.
+
+On the host build the pdf, the structure factor from it, and XRD and ND from
+that are computed on the domains, each the pairs of its own atoms, with only
+the partial pdfs summed over all ranks; a MAD run with them and the Berendsen
+barostat integrates on the domains.
 
 ### Environment
 

@@ -38,7 +38,7 @@ module turbogap_evaluate
    use turbogap_structure, only: state_t
    use turbogap_domain, only: domain_t, neighbors_t, domain_complete_e0, domain_complete_sites, domain_total_dipole, &
                               domain_n_total, domain_decomposed, domain_site_values, domain_site_ids, domain_exp_view, &
-                              domain_complete_contributions
+                              domain_complete_contributions, exp_on_domains
    use turbogap_setup, only: model_t
    use turbogap_results, only: results_t, results_prepare
    use turbogap_loop, only: loop_t
@@ -314,11 +314,12 @@ contains
 !     Under a domain decomposition these are computed on the whole structure,
 !     which they are a property of; the potential stays decomposed.
       if (domain_decomposed(dom) .and. (params%do_pair_distribution .or. params%do_structure_factor .or. &
-                                        params%do_xrd .or. params%do_nd)) then
+                                        params%do_xrd .or. params%do_nd) .and. .not. exp_on_domains(params)) then
          call domain_exp_view(dom, comm, state, params, model)
-         call exp_spectra(dom%view%state, dom%view%nl, dom%view%i_beg, dom%view%i_end, dom%view%j_beg, dom%view%j_end)
+         call exp_spectra(dom%view%state, dom%view%nl, dom%view%i_beg, dom%view%i_end, dom%view%j_beg, &
+                          dom%view%j_end, dom%view%state%n_sites)
       else
-         call exp_spectra(state, nl, dom%i_beg, dom%i_end, dom%j_beg, dom%j_end)
+         call exp_spectra(state, nl, dom%i_beg, dom%i_end, dom%j_beg, dom%j_end, domain_n_total(dom, state))
       end if
 
       if (params%do_prediction) then
@@ -495,13 +496,15 @@ contains
          end do
       end function gap_cutoff
 
-      subroutine exp_spectra(es, enl, ib, ie, jb, je)
+      subroutine exp_spectra(es, enl, ib, ie, jb, je, n_tot)
          type(state_t), intent(inout) :: es
          type(neighbors_t), intent(in) :: enl
          integer, intent(in) :: ib
          integer, intent(in) :: ie
          integer, intent(in) :: jb
          integer, intent(in) :: je
+!        The atoms in the system; es holds only a domain's when decomposed.
+         integer, intent(in) :: n_tot
 
 #ifdef _GPU
          call compute_exp_spectra(params, es%n_sites, es%species, es%positions, enl%rjs, enl%xyz, enl%neighbors_list, &
@@ -523,7 +526,7 @@ contains
                                   res%this_energies_sf, res%this_forces_sf, res%this_virial_sf, &
                                   res%this_energies_xrd, res%this_forces_xrd, res%this_virial_xrd, &
                                   res%this_energies_nd, res%this_forces_nd, res%this_virial_nd, &
-                                  time)
+                                  time, n_tot)
 #endif
       end subroutine exp_spectra
 

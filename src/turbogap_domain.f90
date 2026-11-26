@@ -72,6 +72,7 @@ module turbogap_domain
    public :: domain_decomposed
    public :: domain_free
    public :: domain_sync_state
+   public :: exp_on_domains
    public :: domain_sync_after_md
    public :: domain_sync_after_ipi
    public :: domain_end_step
@@ -258,14 +259,33 @@ contains
       if (params%optimize /= "vv") why = "optimize = "//trim(params%optimize)
       if (params%thermostat /= "none" .and. params%thermostat /= "berendsen" .and. params%thermostat /= "bussi") &
          why = "thermostat = "//trim(params%thermostat)
-      if (params%barostat /= "none" .or. params%scale_box) why = "a barostat or box scaling"
+      if (params%barostat /= "none" .and. params%barostat /= "berendsen") why = "barostat = "//trim(params%barostat)
       if (params%variable_time_step .or. params%adaptive_time) why = "a variable time step"
       if (params%electronic_stopping .or. params%nonadiabatic_processes) why = "electronic stopping"
       if (params%do_mc .or. params%do_nested_sampling) why = "MC or nested sampling"
       if (params%valid_ir .or. params%do_ir) why = "MAD-IR"
-      if (params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd .or. params%do_nd) &
-         why = "a whole-structure observable"
+      if ((params%do_pair_distribution .or. params%do_structure_factor .or. params%do_xrd .or. params%do_nd) &
+          .and. .not. exp_on_domains(params)) why = "a whole-structure observable"
    end function domain_integration_unsupported
+
+!  Whether a decomposed run computes its pdf, structure factor, XRD and ND on
+!  the domains, each rank the pairs of its own sites as the replicated mode
+!  does, rather than on the whole-structure view: a domain's halo reaches the
+!  pdf's cutoff, and only the partial pdfs are summed over all ranks. The pdf
+!  routes on the host build; Debye XRD and the explicit structure factor sum
+!  over the whole structure, and the device build keeps the view.
+   pure logical function exp_on_domains(params)
+      type(input_parameters), intent(in) :: params
+
+#ifdef _GPU
+      exp_on_domains = .false.
+#else
+      exp_on_domains = params%do_pair_distribution .and. params%pair_distribution_partial .and. &
+                       .not. params%xrd_debye .and. &
+                       (params%structure_factor_from_pdf .or. .not. (params%do_structure_factor .or. &
+                                                                     params%do_xrd .or. params%do_nd))
+#endif
+   end function exp_on_domains
 
 !  Is this run integrating on the domains?
    pure logical function domain_integrating(dom) result(yes)

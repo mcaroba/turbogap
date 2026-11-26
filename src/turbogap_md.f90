@@ -864,8 +864,10 @@ contains
 !  domains. thermo.log and the trajectory frames are written by rank 0 through
 !  the same routines as the rank-0 integrator, the frames from arrays gathered
 !  for the purpose; the random draw of the Bussi thermostat is made once, on
-!  rank 0, as it is there. domain_configure lets only what this supports
-!  through: velocity Verlet with no, Berendsen or Bussi thermostat.
+!  rank 0, as it is there. The Berendsen barostat and box scaling act on the
+!  cell on every rank and on each root's owned atoms, from the whole system's
+!  pressure. domain_configure lets only what this supports through: velocity
+!  Verlet with no, Berendsen or Bussi thermostat.
    subroutine md_step_domain(dyn, state, res, nl, model, params, loop, comm, dom, time)
       type(dynamics_t), intent(inout) :: dyn
       type(state_t), intent(inout) :: state
@@ -889,6 +891,9 @@ contains
       real(dp) :: e_pot
       real(dp) :: e_exp
       real(dp) :: f
+      real(dp) :: p_target
+      real(dp) :: p_tensor(1:3, 1:3)
+      real(dp) :: lv(1:3, 1:3)
       real(dp) :: d(1:2)
       real(dp), allocatable :: all_d(:)
       real(dp) :: d1
@@ -956,6 +961,31 @@ contains
       write_frame = loop%md_istep == 0 .or. loop%md_istep == params%md_nsteps .or. &
                     modulo(loop%md_istep, params%write_xyz) == 0 .or. loop%exit_loop
       if (write_frame) call write_frame_gathered(dyn, state, res, model, params, loop, comm, dom)
+
+!     The barostat, where and as compute_md applies it.
+      if (params%scale_box) then
+         call box_scaling(state%positions(1:3, 1:n), state%a_box(1:3), state%b_box(1:3), state%c_box(1:3), &
+                          state%indices, loop%md_istep, params%md_nsteps, params%box_scaling_factor)
+      else if (params%barostat == "berendsen") then
+         p_tensor(1:3, 1:3) = res%virial(1:3, 1:3)/state%v_uc*dyn%eVperA3tobar
+         do k = 1, 3
+            p_tensor(k, k) = p_tensor(k, k) + (dyn%kB*dfloat(n_total - 1)*dyn%instant_temp)/state%v_uc*dyn%eVperA3tobar
+         end do
+         p_target = params%p_beg + (params%p_end - params%p_beg)*dfloat(loop%md_istep + 1)/float(params%md_nsteps)
+         lv(1:3, 1) = state%a_box(1:3)
+         lv(1:3, 2) = state%b_box(1:3)
+         lv(1:3, 3) = state%c_box(1:3)
+         call berendsen_barostat(lv(1:3, 1:3), p_target, p_tensor, params%barostat_sym, params%tau_p, params%gamma_p, &
+                                 dyn%time_step)
+         state%a_box(1:3) = lv(1:3, 1)
+         state%b_box(1:3) = lv(1:3, 2)
+         state%c_box(1:3) = lv(1:3, 3)
+         call berendsen_barostat(state%positions(1:3, 1:n), p_target, p_tensor, params%barostat_sym, params%tau_p, &
+                                 params%gamma_p, dyn%time_step)
+      end if
+      a = state%a_box/dfloat(state%indices(1))
+      b = state%b_box/dfloat(state%indices(2))
+      c = state%c_box/dfloat(state%indices(3))
 
 !     Thermostat, bracketed for the energy ledger as compute_md does.
       if (loop%md_istep == 0) e_thermo_work = 0.d0
@@ -1030,7 +1060,7 @@ contains
       type(loop_t), intent(in) :: loop
       type(comm_t), intent(in) :: comm
       type(domain_t), intent(in) :: dom
-      integer, parameter :: N_FIXED = 26
+      integer, parameter :: N_FIXED = 30
       real(dp), allocatable :: owned(:, :)
       real(dp), allocatable :: out(:, :)
       real(dp), allocatable :: pos(:, :)
@@ -1089,6 +1119,13 @@ contains
             owned(26, i) = res%energies_dipole(i)
             if (n_lp > 0) owned(N_FIXED + 1:nv, i) = res%local_properties(i, 1:n_lp)
          end do
+!        The observables' energies, which a decomposed run integrating on its
+!        domains now carries; 0 for an observable that is off.
+         owned(27:30, 1:n) = 0.d0
+         if (allocated(res%energies_pdf)) owned(27, 1:n) = res%energies_pdf(1:n)
+         if (allocated(res%energies_sf)) owned(28, 1:n) = res%energies_sf(1:n)
+         if (allocated(res%energies_xrd)) owned(29, 1:n) = res%energies_xrd(1:n)
+         if (allocated(res%energies_nd)) owned(30, 1:n) = res%energies_nd(1:n)
       end if
       if (comm%rank == 0) then
          allocate (out(1:nv, 1:n_total))
@@ -1118,6 +1155,10 @@ contains
       e_lp = fam(7, :)
       dip = out(23:25, :)
       edip = out(26, :)
+      e_pdf = out(27, :)
+      e_sf = out(28, :)
+      e_xrd = out(29, :)
+      e_nd = out(30, :)
       allocate (lp(1:n_total, 1:max(n_lp, 1)))
       do i = 1, n_lp
          lp(:, i) = out(N_FIXED + i, :)
