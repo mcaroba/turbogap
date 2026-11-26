@@ -110,9 +110,11 @@ contains
 
       do i = 1, n_distance_2b
          call time_start(time%gap_2b)
-         this_energies = 0.d0
+!        Only this rank's sites: the kernel writes no others, and the rest of
+!        each array is a whole system's worth of zeros to clear and add.
+         this_energies(i_beg:i_end) = 0.d0
          if (params%do_forces) then
-            this_forces = 0.d0
+            this_forces(1:3, i_beg:i_end) = 0.d0
             this_virial = 0.d0
          end if
          call get_2b_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), distance_2b_hypers(i)%alphas, &
@@ -124,9 +126,9 @@ contains
                                        distance_2b_hypers(i)%species1, distance_2b_hypers(i)%species2, &
                                        params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
                                        this_virial)
-         energies_2b = energies_2b + this_energies
+         energies_2b(i_beg:i_end) = energies_2b(i_beg:i_end) + this_energies(i_beg:i_end)
          if (params%do_forces) then
-            forces_2b = forces_2b + this_forces
+            forces_2b(1:3, i_beg:i_end) = forces_2b(1:3, i_beg:i_end) + this_forces(1:3, i_beg:i_end)
             virial_2b = virial_2b + this_virial
          end if
          call time_end(time%gap_2b)
@@ -173,9 +175,11 @@ contains
 
       do i = 1, n_core_pot
          call time_start(time%gap_core_pot)
-         this_energies = 0.d0
+!        Only this rank's sites: the kernel writes no others, and the rest of
+!        each array is a whole system's worth of zeros to clear and add.
+         this_energies(i_beg:i_end) = 0.d0
          if (params%do_forces) then
-            this_forces = 0.d0
+            this_forces(1:3, i_beg:i_end) = 0.d0
             this_virial = 0.d0
          end if
          call get_core_pot_energy_and_forces(rjs(j_beg:j_end), xyz(1:3, j_beg:j_end), &
@@ -186,9 +190,9 @@ contains
                                              core_pot_hypers(i)%species1, core_pot_hypers(i)%species2, &
                                              params%species_types, this_energies(i_beg:i_end), this_forces(1:3, i_beg:i_end), &
                                              this_virial)
-         energies_core_pot = energies_core_pot + this_energies
+         energies_core_pot(i_beg:i_end) = energies_core_pot(i_beg:i_end) + this_energies(i_beg:i_end)
          if (params%do_forces) then
-            forces_core_pot = forces_core_pot + this_forces
+            forces_core_pot(1:3, i_beg:i_end) = forces_core_pot(1:3, i_beg:i_end) + this_forces(1:3, i_beg:i_end)
             virial_core_pot = virial_core_pot + this_virial
          end if
          call time_end(time%gap_core_pot)

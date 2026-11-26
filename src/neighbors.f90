@@ -276,11 +276,14 @@ contains
    subroutine build_neighbors_list(positions, a_box, b_box, c_box, do_timing, &
                                    species_supercell, rcut_max, n_atom_pairs, rjs, &
                                    thetas, phis, xyz, n_neigh, neighbors_list, neighbor_species, &
-                                   n_sites, indices, rebuild_neighbors_list, do_list, rank)
+                                   n_sites, indices, rebuild_neighbors_list, do_list, rank, rcut_angles)
 
       implicit none
 
       real(dp), intent(in) :: rcut_max
+!     Polar angles only for pairs this close, the ones SOAP reads; absent, for
+!     every pair. The rest get 0.
+      real(dp), intent(in), optional :: rcut_angles
       real(dp), intent(in) :: positions(:, :)
 !    integer, intent(in) :: species_multiplicity(:), n_species
       integer, intent(in) :: species_supercell(:)
@@ -310,6 +313,7 @@ contains
       real(dp) :: time2
       real(dp) :: dist(1:3)
       real(dp) :: d
+      real(dp) :: rcut_theta
       real(dp) :: neigh_time
       real(dp) :: time3
       real(dp) :: tol
@@ -362,6 +366,9 @@ contains
       logical :: is_box_small
       logical, save :: print_cutoff_warning = .true.
       logical, save :: print_shape_warning = .true.
+
+      rcut_theta = huge(1.d0)
+      if (present(rcut_angles)) rcut_theta = rcut_angles
 
       if (do_timing) then
 !        get_time, not cpu_time. cpu_time returns processor time summed over
@@ -707,17 +714,21 @@ contains
                                     c_box(1:3), (/.true., .true., .true./), dist, d, i_shift)
                   rjs(k2) = d
                   xyz(1:3, k2) = dist
+                  if (d > rcut_theta) then
+                     thetas(k2) = 0.d0
+                     phis(k2) = 0.d0
 !           Avoid numerical artifacts
-                  if (dabs(dist(3)) >= d) then
+                  else if (dabs(dist(3)) >= d) then
                      if (dist(3) > 0.d0) then
                         thetas(k2) = 0.d0
                      else
                         thetas(k2) = dacos(-1.d0)
                      end if
+                     phis(k2) = datan2(dist(2), dist(1))
                   else
                      thetas(k2) = dacos(dist(3)/d)
+                     phis(k2) = datan2(dist(2), dist(1))
                   end if
-                  phis(k2) = datan2(dist(2), dist(1))
                   neighbor_species(k2) = species_supercell(j)
                end if
             end do

@@ -174,6 +174,10 @@ module turbogap_domain
 !     migrate between domains at rebuilds; rank 0 holds the structure only
 !     long enough to write it out.
       logical :: integrate = .false.
+!     Replicated MD with nothing but the MD step moving the structure: after
+!     the first step, domain_sync_after_md sends what the step moved and the
+!     generic syncs, which fingerprint every array on every rank, are skipped.
+      logical :: md_sync_only = .false.
 !     Legacy: each owned site's pair count at the last full build, what
 !     dd_type rcb balances when the atoms next migrate.
       real(dp), allocatable :: owned_pairs(:)
@@ -285,8 +289,35 @@ contains
 
 !     Legacy: domain_build hands each rank its domain.
       if (dom%dd_type == DD_LEGACY) return
+      if (dom%md_sync_only) return
       call replicate_state(comm, state, params, time)
    end subroutine domain_sync_state
+
+!  Whether only the MD step changes the structure between steps, and only
+!  rank 0 reads the velocities. MC, nested sampling and MAD-IR change or read
+!  more; i-PI never comes through domain_sync_after_md.
+   pure logical function md_moves_only(params)
+      type(input_parameters), intent(in) :: params
+
+      md_moves_only = params%do_md .and. .not. (params%do_mc .or. params%do_nested_sampling .or. &
+                                                params%valid_ir .or. params%do_ir)
+   end function md_moves_only
+
+!  What an MD step on rank 0 moves: the positions, supercell images included,
+!  and the cell, which a barostat or box relaxation changes.
+   subroutine sync_md_step(comm, state, time)
+      type(comm_t), intent(in) :: comm
+      type(state_t), intent(inout) :: state
+      type(times_t), intent(inout) :: time
+
+      if (comm%size == 1) return
+      call time_start(time%mpi_positions)
+      call comm_bcast(comm, state%positions, size(state%positions))
+      call comm_bcast(comm, state%a_box, 3)
+      call comm_bcast(comm, state%b_box, 3)
+      call comm_bcast(comm, state%c_box, 3)
+      call time_end(time%mpi_positions)
+   end subroutine sync_md_step
 
 !  Rank 0's structure to every rank, as the replicated mode keeps it.
    subroutine replicate_state(comm, state, params, time)
@@ -468,7 +499,13 @@ contains
          return
       end if
       call comm_bcast(comm, nl%rebuild_neighbors_list)
-      if (params%do_md) call domain_sync_state(dom, comm, state, params, time)
+      if (.not. params%do_md) return
+      if (md_moves_only(params)) then
+         call sync_md_step(comm, state, time)
+         dom%md_sync_only = .true.
+      else
+         call domain_sync_state(dom, comm, state, params, time)
+      end if
    end subroutine domain_sync_after_md
 
 !  After an i-PI exchange: rank 0 holds i-PI's next configuration, or the
@@ -619,7 +656,7 @@ contains
                                 state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
                                 nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
                                 state%n_sites, state%indices, &
-                                nl%rebuild_neighbors_list, dom%do_list, comm%rank)
+                                nl%rebuild_neighbors_list, dom%do_list, comm%rank, soap_cutoff(model))
       if (nl%rebuild_neighbors_list) then
          !     Get total number of atom pairs
          call comm_allgather(comm, nl%n_atom_pairs, dom%n_atom_pairs_by_rank)
@@ -771,7 +808,7 @@ contains
       call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
                                 state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
                                 nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
-                                state%n_sites, state%indices, .true., dom%do_list, comm%rank)
+                                state%n_sites, state%indices, .true., dom%do_list, comm%rank, soap_cutoff(model))
 
       allocate (pairs(1:n_ranks))
       call comm_allgather(dom%legacy%local, nl%n_atom_pairs, pairs)
@@ -883,7 +920,7 @@ contains
          call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
                                    state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
                                    nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
-                                   state%n_sites, state%indices, .false., dom%do_list, comm%rank)
+                                   state%n_sites, state%indices, .false., dom%do_list, comm%rank, soap_cutoff(model))
          return
       end if
 
@@ -996,7 +1033,7 @@ contains
       call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
                                 state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
                                 nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
-                                state%n_sites, state%indices, .false., dom%do_list, comm%rank)
+                                state%n_sites, state%indices, .false., dom%do_list, comm%rank, soap_cutoff(model))
    end subroutine legacy_reuse
 
 !  The contiguous block of n sites that rank r of n_ranks handles; the first
@@ -1020,6 +1057,18 @@ contains
 !  Make every rank's copy of the per-site properties whole. Replicated data:
 !  each rank computed its own sites and left zeros elsewhere, so a sum is the
 !  whole reduction; rank 0 sums and broadcasts.
+!  The furthest SOAP reaches: the list builds give polar angles, which only
+!  SOAP reads, to pairs within it. 0 without SOAP.
+   pure real(dp) function soap_cutoff(model)
+      type(model_t), intent(in) :: model
+      integer :: k
+
+      soap_cutoff = 0.d0
+      do k = 1, model%n_soap_turbo
+         soap_cutoff = max(soap_cutoff, model%soap_turbo_hypers(k)%rcut_max)
+      end do
+   end function soap_cutoff
+
    subroutine domain_complete_sites(dom, comm, res, state, params, model, time)
       type(domain_t), intent(inout) :: dom
       type(comm_t), intent(in) :: comm
@@ -1597,7 +1646,7 @@ contains
          call build_neighbors_list(v%state%positions, v%state%a_box, v%state%b_box, v%state%c_box, params%do_timing, &
                                    v%state%species_supercell, model%rcut_max, v%nl%n_atom_pairs, v%nl%rjs, &
                                    v%nl%thetas, v%nl%phis, v%nl%xyz, v%nl%n_neigh_local, v%nl%neighbors_list, &
-                                   v%nl%neighbor_species, n, v%state%indices, .true., do_list, comm%rank)
+                                   v%nl%neighbor_species, n, v%state%indices, .true., do_list, comm%rank, 0.d0)
          allocate (pairs(1:comm%size))
          call comm_allgather(comm, v%nl%n_atom_pairs, pairs)
          v%j_beg = 1
