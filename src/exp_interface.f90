@@ -271,7 +271,7 @@ contains
       pair_distribution = 0.d0
 
       do i = 1, n_samples + 1
-         bin_edges(i) = r_min + (real((i - 1))/real(n_samples))*(r_max - r_min)
+         bin_edges(i) = r_min + (dfloat(i - 1)/dfloat(n_samples))*(r_max - r_min)
       end do
 
       do i = 1, n_samples

@@ -64,6 +64,9 @@ module exp_utils
       real(dp) :: dr = 0.d0
       real(dp) :: sigma = 0.d0
       real(dp) :: norm = 0.d0
+!     The samples' spacing when they are evenly spaced, for pair_kde_row's
+!     recurrence; 0 when they are not.
+      real(dp) :: step = 0.d0
       real(dp), allocatable :: x(:)
       real(dp), allocatable :: dv(:)
       logical :: has_scale = .false.
@@ -2049,7 +2052,7 @@ contains
       integer :: i
 
       do i = 1, n_samples + 1
-         bin_edges(i) = r_min + (real((i - 1))/real(n_samples))*(r_max - r_min)
+         bin_edges(i) = r_min + (dfloat(i - 1)/dfloat(n_samples))*(r_max - r_min)
       end do
       do i = 1, n_samples
          x(i) = (bin_edges(i) + bin_edges(i + 1))/2.d0
@@ -2081,12 +2084,32 @@ contains
       kern%dr = (kern%r_max - kern%r_min)/dfloat(n_samples)
       kern%sigma = sigma
       kern%norm = sqrt(2.d0*pi)*sigma
+      kern%step = uniform_step(kern%x, kern%dr)
    end subroutine make_pdf_kernel
+
+!  dr when the samples x are evenly spaced by it, to round-off; 0 otherwise.
+   pure real(dp) function uniform_step(x, dr)
+      real(dp), intent(in) :: x(:)
+      real(dp), intent(in) :: dr
+      integer :: n
+
+      n = size(x)
+      uniform_step = 0.d0
+      if (n < 2 .or. dr <= 0.d0) return
+      if (maxval(abs((x(2:n) - x(1:n - 1)) - dr)) <= 1.d-12*dr) uniform_step = dr
+   end function uniform_step
 
 !  The kernel of one pair at distance r, exp(-(x - r)^2 / 2 sigma^2), at the
 !  samples lo..hi within kde_cut sigma. The pdf and the force routines both call
 !  this, so they see the same values to the last bit.
-   subroutine pair_kde_row(r, n_samples, x, r_min, dr, sigma, kde_cut, lo, hi, kde_row)
+!
+!  With step, the samples' even spacing: on such a grid the ratio of two
+!  neighbouring values, g(k+1)/g(k) = exp(-u h - h^2/2) exp(-k h^2) for
+!  u = (x(c) - r)/sigma and h = step/sigma, changes by exp(-h^2) from one sample
+!  to the next. So one exp at the sample c nearest r and two for the ratios
+!  start the row, and each further sample is two multiplications, outwards
+!  both ways. Within 46 samples of c that is ~1e-14 of the exp it replaces.
+   subroutine pair_kde_row(r, n_samples, x, r_min, dr, sigma, kde_cut, lo, hi, kde_row, step)
       implicit none
       real(dp), intent(in) :: r
       integer, intent(in) :: n_samples
@@ -2098,12 +2121,46 @@ contains
       integer, intent(out) :: lo
       integer, intent(out) :: hi
       real(dp), intent(inout) :: kde_row(1:n_samples)
+      real(dp), intent(in), optional :: step
+      real(dp) :: h
+      real(dp) :: u
+      real(dp) :: g
+      real(dp) :: a
+      real(dp) :: q
+      logical :: recur
+      integer :: c
       integer :: l
 
       lo = max(1, int((r - kde_cut*sigma - r_min)/dr))
       hi = min(n_samples, int((r + kde_cut*sigma - r_min)/dr) + 2)
-      do l = lo, hi
-         kde_row(l) = exp(-((x(l) - r)/sigma)**2/2.d0)
+      recur = .false.
+      if (present(step)) recur = step > 0.d0
+      if (.not. recur) then
+         do l = lo, hi
+            kde_row(l) = exp(-((x(l) - r)/sigma)**2/2.d0)
+         end do
+         return
+      end if
+      if (hi < lo) return
+
+      c = min(hi, max(lo, lo + nint((r - x(lo))/step)))
+      h = step/sigma
+      u = (x(c) - r)/sigma
+      q = exp(-h*h)
+      kde_row(c) = exp(-u*u/2.d0)
+      g = kde_row(c)
+      a = exp(-u*h - h*h/2.d0)
+      do l = c + 1, hi
+         g = g*a
+         kde_row(l) = g
+         a = a*q
+      end do
+      g = kde_row(c)
+      a = exp(u*h - h*h/2.d0)
+      do l = c - 1, lo, -1
+         g = g*a
+         kde_row(l) = g
+         a = a*q
       end do
    end subroutine pair_kde_row
 
@@ -2149,7 +2206,8 @@ contains
       lo = 1
       hi = 0
       if (kern%sigma <= 0.d0) return
-      call pair_kde_row(r, kern%n_samples, kern%x, kern%r_min, kern%dr, kern%sigma, PDF_KDE_CUT, lo, hi, kde_row)
+      call pair_kde_row(r, kern%n_samples, kern%x, kern%r_min, kern%dr, kern%sigma, PDF_KDE_CUT, lo, hi, kde_row, &
+                        kern%step)
       if (kern%has_scale) then
          call pair_der_row(r, kern%n_samples, kern%x, kern%dv, kern%dr, kern%sigma, kern%norm, lo, hi, &
               & kde_row, der_row, kern%scale)
@@ -2213,6 +2271,7 @@ contains
       real(dp), allocatable :: kde_row(:)
       real(dp), allocatable :: der_row(:)
       real(dp) :: r
+      real(dp) :: step
       integer :: n_pairs
       integer :: width
       integer :: k_beg
@@ -2227,6 +2286,7 @@ contains
 
       n_pairs = sum(n_neigh)
       if (n_pairs == 0) return
+      step = uniform_step(x, dr)
       allocate (owner_species(1:n_pairs))
       call pair_owner_species(n_neigh, neighbor_species, owner_species)
 
@@ -2265,7 +2325,7 @@ contains
             if (r < r_min) cycle
             if (r > r_max + kde_sigma*6.d0) cycle
 
-            call pair_kde_row(r, n_samples, x, r_min, dr, kde_sigma, kde_cut, lo, hi, kde_row)
+            call pair_kde_row(r, n_samples, x, r_min, dr, kde_sigma, kde_cut, lo, hi, kde_row, step)
             l_lo(kk) = lo
             l_hi(kk) = hi
             kde(1:hi - lo + 1, kk) = kde_row(lo:hi)
@@ -4944,7 +5004,7 @@ contains
       bin_edges = 0.d0
 
       do i = 1, n_samples + 1
-         bin_edges(i) = r_min + (real((i - 1))/real(n_samples))*(r_max - r_min)
+         bin_edges(i) = r_min + (dfloat(i - 1)/dfloat(n_samples))*(r_max - r_min)
       end do
 
       do i = 1, n_samples

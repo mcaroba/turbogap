@@ -123,6 +123,11 @@ jobs:
         working-directory: turbogap
         run: tests/exp_omp/run.sh
 
+      - name: The pdf kernel recurrence against quad precision
+        if: always()
+        working-directory: turbogap
+        run: tests/pdf_kernel/run.sh
+
       - name: Dipole prediction against QUIP
         if: always()
         working-directory: turbogap
