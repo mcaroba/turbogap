@@ -41,9 +41,10 @@
 # Under dd_type rcb (TURBOGAP_DD_TYPE=rcb, as tests/rcb_dd/run.sh sets it)
 # the same legs run, a dd_grid giving only the number of domains, without the
 # fallback leg, since no cell is too narrow for it, and with legs of their
-# own: a cluster in vacuum, a pore, prime rank counts, and a droplet in thin
+# own: a cluster in vacuum, a pore, prime rank counts, a droplet in thin
 # vapour integrated on the domains, where count and cost disagree and the boxes
-# must be redrawn by pair count.
+# must be redrawn by pair count, and the integrated pdf chain cut wider than
+# the domains, whose halos then reach past their neighbours.
 #
 # Environment:
 #   TURBOGAP_BIN        binary under test (default: <repo>/bin/turbogap)
@@ -399,6 +400,27 @@ p_end = 0
 tau_p = 100.
 gamma_p = 10."
 
+# XRD_INTEG with the pdf to 15 A on 16 domains of the 52 A cell: rcb cuts some
+# axis twice, so the boxes are ~13 A across it, and a 15 A halo reaches past
+# the next domain without wrapping round the cell (13 + 2 x 15 < 52).
+XRD_NARROW="$XRD_COMMON
+do_pair_distribution = .true.
+pair_distribution_kde_sigma = 0.1
+pair_distribution_n_samples = 201
+pair_distribution_partial = .true.
+pair_distribution_rcut = 15.0
+r_range_min = 0.1
+r_range_max = 14.4
+do_structure_factor = .true.
+structure_factor_from_pdf = .true.
+dd_integrate = domain
+barostat = berendsen
+barostat_sym = 'diag'
+p_beg = 0
+p_end = 0
+tau_p = 100.
+gamma_p = 10."
+
 XRD_DEBYE="$XRD_COMMON
 xrd_debye = .true.
 xrd_rcut = 6.0"
@@ -432,6 +454,19 @@ domains_integrated() {
   [ "$last_ok" -eq 1 ] || return 0
   if ! grep -q 'integrated on the domains' "$WORK/$1/dd/out.log"; then
     printf '    FAIL: did not integrate on the domains\n'
+    pass=$((pass - 1))
+    fail=$((fail + 1))
+  fi
+}
+
+# halos_partial <name> <n_atoms>: no domain of the leg's decomposed run held
+# every atom, so its halos were cut from the cell rather than covering it.
+halos_partial() {
+  [ "$last_ok" -eq 1 ] || return 0
+  if ! awk -v n="$2" '/rank  dom.rank/ {t = 1; next}
+      t && NF == 13 {seen = 1; if ($4 >= n) whole = 1}
+      END {exit !(seen && !whole)}' "$WORK/$1/dd/out.log"; then
+    printf '    FAIL: a domain held all %s atoms\n' "$2"
     pass=$((pass - 1))
     fail=$((fail + 1))
   fi
@@ -528,6 +563,9 @@ dd_grid = 2 1 1
 dd_grid_affinity = block" ;;
   xrd_integ) full_leg xrd_integ md 4 "$DATA_ROOT/C/atoms_7176.xyz" "$DATA_ROOT/xrd_mad/gap_files" \
     "$DATA_ROOT/xrd_mad/xrd_glassy_carbon_zeng_2017.fq" "$XRD_INTEG" && domains_integrated xrd_integ ;;
+  xrd_narrow) full_leg xrd_narrow md 16 "$DATA_ROOT/C/atoms_24219.xyz" "$DATA_ROOT/xrd_mad/gap_files" \
+    "$DATA_ROOT/xrd_mad/xrd_glassy_carbon_zeng_2017.fq" "$XRD_NARROW" && domains_integrated xrd_narrow &&
+    halos_partial xrd_narrow 24219 ;;
   xrd_debye_view) full_leg xrd_debye_view md 4 "$DATA_ROOT/C/atoms_7176.xyz" "$DATA_ROOT/xrd_mad/gap_files" \
     "$DATA_ROOT/xrd_mad/xrd_glassy_carbon_zeng_2017.fq" "$XRD_DEBYE" ;;
   dipole) tile_water "$WORK/water222.xyz" 2 2 2 &&
@@ -561,7 +599,7 @@ common="x2 x3 xy4 xyz8 one3 block4 cyclic6 sheared auto8 volume4 slab4 md8 md20 
 integ_nve integ_npt integ_skin integ_empty integ_gle empty6 vdw_ts estat xrd_view xrd_block xrd_integ xrd_debye_view
 dipole mad_ir"
 if [ "$DD_TYPE" = rcb ]; then
-  legs=${*:-$common prime5 prime7 cluster pore integ_droplet}
+  legs=${*:-$common prime5 prime7 cluster pore integ_droplet xrd_narrow}
 else
   legs=${*:-$common narrow}
 fi
