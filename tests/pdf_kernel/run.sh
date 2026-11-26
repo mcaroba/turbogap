@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# The pdf kernel's recurrence (exp_utils:pair_kde_row with step) and the exp
-# it replaces against the Gaussian in quad precision, on the grids of a 12 A and
-# a 24.4 A pdf at three kernel widths: see pdf_kernelverify.f90. Linked against
+# The pdf's sample grid and Gaussian kernel (exp_utils:make_pdf_kernel,
+# pair_kde_row) against quad precision, on the grids of a 12 A and a 24.4 A pdf
+# at three kernel widths: see pdf_kernelverify.f90. Linked against
 # lib/libturbogap.a, which make builds.
 #
 # Usage:  ./run.sh [path/to/tree]
@@ -25,7 +25,7 @@ fi
 mkdir -p "$BUILD"
 cd "$BUILD"
 
-echo "==> pdf_kernelverify (the recurrence and exp against quad precision)"
+echo "==> pdf_kernelverify (the grid and the kernel against quad precision)"
 # -fopenmp: the library is threaded unless built with OPENMP=0.
 $MPIFC $FFLAGS -I"$INCDIR" -o pdf_kernelverify "$HERE/pdf_kernelverify.f90" "$LIBDIR/libturbogap.a" $LIBS -fopenmp
 ./pdf_kernelverify

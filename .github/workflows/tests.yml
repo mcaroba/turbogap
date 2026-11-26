@@ -123,7 +123,7 @@ jobs:
         working-directory: turbogap
         run: tests/exp_omp/run.sh
 
-      - name: The pdf kernel recurrence against quad precision
+      - name: The pdf grid and kernel against quad precision
         if: always()
         working-directory: turbogap
         run: tests/pdf_kernel/run.sh
