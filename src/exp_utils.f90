@@ -1446,6 +1446,9 @@ contains
       logical, intent(in) :: neutron
       logical :: species_in_list
       logical :: counted_1 = .false.
+      integer, parameter :: FORCE_PAIR_CHUNK = 4096
+      integer :: k_beg
+      integer :: k_end
       real(dp), allocatable :: w_r(:)
       real(dp), allocatable :: pair_force(:, :)
       integer, allocatable :: owner_species(:)
@@ -1580,58 +1583,64 @@ contains
 
 !     Each pair's dot product is its own, so they are formed in parallel; the
 !     forces and the virial then take them in pair order, which keeps both
-!     bit-identical to the serial loop at any thread count.
+!     bit-identical to the serial loop at any thread count. FORCE_PAIR_CHUNK
+!     pairs at a time, so that their forces stay in cache between the two.
       allocate (owner_species(1:n_pairs))
-      allocate (pair_force(1:3, 1:n_pairs))
-      allocate (pair_used(1:n_pairs))
+      allocate (pair_force(1:3, 1:FORCE_PAIR_CHUNK))
+      allocate (pair_used(1:FORCE_PAIR_CHUNK))
       call pair_owner_species(n_neigh, neighbor_species, owner_species)
 
-!$omp parallel default(shared) private(k, l, lo, hi, species_i, species_j, r, f, dot, kde_row, der_row)
-      allocate (kde_row(1:kern%n_samples))
-      allocate (der_row(1:kern%n_samples))
+      do k_beg = 1, n_pairs, FORCE_PAIR_CHUNK
+         k_end = min(n_pairs, k_beg + FORCE_PAIR_CHUNK - 1)
+!$omp parallel default(shared) private(k, kk, l, lo, hi, species_i, species_j, r, f, dot, kde_row, der_row)
+         allocate (kde_row(1:kern%n_samples))
+         allocate (der_row(1:kern%n_samples))
 !$omp do schedule(static)
-      do k = 1, n_pairs
-         pair_used(k) = .false.
-         species_i = owner_species(k)
-         if (species_i == 0) cycle
-         species_j = neighbor_species(k)
+         do k = k_beg, k_end
+            kk = k - k_beg + 1
+            pair_used(kk) = .false.
+            species_i = owner_species(k)
+            if (species_i == 0) cycle
+            species_j = neighbor_species(k)
 
-         if (((species_i /= species_1) .or. (species_j /= species_2))) then
-            if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
-         end if
+            if (((species_i /= species_1) .or. (species_j /= species_2))) then
+               if (.not. (species_i == species_2 .and. species_j == species_1)) cycle
+            end if
 
-         r = rjs(k)
-         if (r < 1e-3 .or. r > r_cut) cycle
-         if (r < r_min) cycle
-         if (r > r_max + kde_sigma*6.d0) cycle
+            r = rjs(k)
+            if (r < 1e-3 .or. r > r_cut) cycle
+            if (r < r_min) cycle
+            if (r > r_max + kde_sigma*6.d0) cycle
 
-!        d g / d r is zero outside lo..hi, where the dot would only add zeros.
-         call pair_der_window(kern, r, kde_row, der_row, lo, hi)
-         dot = 0.d0
-         do l = lo, hi
-            dot = dot + w_r(l)*der_row(l)
+!           d g / d r is zero outside lo..hi, where the dot would only add zeros.
+            call pair_der_window(kern, r, kde_row, der_row, lo, hi)
+            dot = 0.d0
+            do l = lo, hi
+               dot = dot + w_r(l)*der_row(l)
+            end do
+            f = -2.d0*c_factor*dot
+            pair_force(1:3, kk) = energy_scale*f*xyz(1:3, k)
+            pair_used(kk) = .true.
          end do
-         f = -2.d0*c_factor*dot
-         pair_force(1:3, k) = energy_scale*f*xyz(1:3, k)
-         pair_used(k) = .true.
-      end do
 !$omp end do
-      deallocate (der_row)
-      deallocate (kde_row)
+         deallocate (der_row)
+         deallocate (kde_row)
 !$omp end parallel
 
-      do k = 1, n_pairs
-         if (.not. pair_used(k)) cycle
-         j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
-         this_force(1:3) = pair_force(1:3, k)
-         forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
+         do k = k_beg, k_end
+            kk = k - k_beg + 1
+            if (.not. pair_used(kk)) cycle
+            j2 = modulo(neighbors_list(k) - 1, n_sites0) + 1
+            this_force(1:3) = pair_force(1:3, kk)
+            forces0(1:3, j2) = forces0(1:3, j2) + this_force(1:3)
 
-!        See the note in get_structure_factor_forces: 0.25 is 0.5 to
-!        symmetrise, times 0.5 because the pairs are ordered and the
-!        reversed pair reproduces this term rather than adding a new one.
-         do k1 = 1, 3
-            do k2 = 1, 3
-               virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+!           See the note in get_structure_factor_forces: 0.25 is 0.5 to
+!           symmetrise, times 0.5 because the pairs are ordered and the
+!           reversed pair reproduces this term rather than adding a new one.
+            do k1 = 1, 3
+               do k2 = 1, 3
+                  virial(k1, k2) = virial(k1, k2) + 0.25d0*(this_force(k1)*xyz(k2, k) + this_force(k2)*xyz(k1, k))
+               end do
             end do
          end do
       end do
@@ -2233,7 +2242,7 @@ contains
 
 !  The kernel density estimate of get_pair_distribution. A pair's kernel values
 !  and its derivative row depend on that pair alone, so they are formed in
-!  parallel, KDE_PAIR_CHUNK pairs at a time; the histogram then takes them in
+!  parallel, a cache's worth of pairs at a time; the histogram then takes them in
 !  pair order, which keeps it bit-identical to the serial sum at any thread
 !  count. Arguments as in get_pair_distribution; count is incremented per pair.
    subroutine accumulate_pair_kde(n_neigh, neighbor_species, rjs, r_min, r_max, r_cut, n_samples, x, dV, &
@@ -2262,8 +2271,12 @@ contains
       real(dp), intent(inout) :: pair_distribution(1:n_samples)
       integer, intent(inout) :: count
       real(dp), intent(in), optional :: der_scale(1:4)
-!     Scratch is width x KDE_PAIR_CHUNK doubles: 6 MB at sigma 0.1 A, dr 0.04 A.
-      integer, parameter :: KDE_PAIR_CHUNK = 16384
+!     The scratch, width x chunk doubles, is kept to KDE_SCRATCH_BYTES so that it
+!     stays in a core's L2. At 16384 pairs (6.7 MB at sigma 0.1 A, dr 0.04 A) it
+!     went to memory and back on a 384-rank node, where the pdf then cost 3.5x
+!     per pair what it cost one rank holding the whole L3.
+      integer, parameter :: KDE_SCRATCH_BYTES = 524288
+      integer :: chunk
       integer, allocatable :: owner_species(:)
       integer, allocatable :: l_lo(:)
       integer, allocatable :: l_hi(:)
@@ -2293,12 +2306,13 @@ contains
 !     l_hi - l_lo + 1 is at most int(2 kde_cut sigma / dr) + 4; one more for
 !     the rounding of the two ends, which are truncated separately.
       width = int(2.d0*kde_cut*kde_sigma/dr) + 5
-      allocate (kde(1:width, 1:KDE_PAIR_CHUNK))
-      allocate (l_lo(1:KDE_PAIR_CHUNK))
-      allocate (l_hi(1:KDE_PAIR_CHUNK))
+      chunk = max(64, KDE_SCRATCH_BYTES/(8*width))
+      allocate (kde(1:width, 1:chunk))
+      allocate (l_lo(1:chunk))
+      allocate (l_hi(1:chunk))
 
-      do k_beg = 1, n_pairs, KDE_PAIR_CHUNK
-         k_end = min(n_pairs, k_beg + KDE_PAIR_CHUNK - 1)
+      do k_beg = 1, n_pairs, chunk
+         k_end = min(n_pairs, k_beg + chunk - 1)
 
 !        kde_row(l), indexed by sample as the serial loop indexed its kernel,
 !        so that the exp loop vectorises the same way: the vector and scalar exp
