@@ -1,0 +1,9 @@
+# TurboGAP on the Grace CPUs of CSC Roihu's GPU nodes, host only: the reference
+# the device regression suite (--gpu) compares the GH200 build against. Load the
+# modules of Makefile.CSC-Roihu_gfortran_openblas_cuda, without cuda.
+
+F90=mpif90
+PP=-cpp -D _MPIF90
+F90_MOD_DIR_OPT=-J
+F90_OPTS=-fPIC -O3 -mcpu=neoverse-v2
+LIBS=-lopenblas
