@@ -2708,6 +2708,17 @@ contains
          write (*, '(A)') ''
       end if
       if (every .or. .not. gap_only) then
+         write (*, '(A)') '  gpu_pdf_neighbors                    [logical, default true]'
+         write (*, '(A)') '      Build the batched pdf''s pairs on the device from the positions'
+         write (*, '(A)') '      instead of uploading the host''s neighbour list every step, and build'
+         write (*, '(A)') '      the host list only to the cutoffs of everything else. Taken when the'
+         write (*, '(A)') '      cell is orthorhombic, holds no periodic images and is at least three'
+         write (*, '(A)') '      pdf cutoffs wide when the first list is built; otherwise the list is'
+         write (*, '(A)') '      uploaded.'
+         write (*, '(A)') '      -> see gpu_batched, pair_distribution_rcut'
+         write (*, '(A)') ''
+      end if
+      if (every .or. .not. gap_only) then
          write (*, '(A)') '  n_batches                            [integer, default 0]'
          write (*, '(A)') '      Split the SOAP descriptor calculation into exactly this many'
          write (*, '(A)') '      batches, instead of choosing the count from max_Gbytes_per_process.'

@@ -1221,6 +1221,57 @@ MODULE F_B_C
          type(c_ptr) :: stream
       end subroutine gpu_xrd_window_forces
 
+!     The batched pdf's pairs built on the device: src/gpu/mad_pdf.cu.
+      function gpu_pdf_cells_build(n, pos, species, lx, ly, lz, rcut, stream) result(cells) &
+         bind(C, name="gpu_pdf_cells_build")
+         use iso_c_binding
+         implicit none
+         integer(c_int), value :: n
+         type(c_ptr), value :: pos
+         type(c_ptr), value :: species
+         real(c_double), value :: lx
+         real(c_double), value :: ly
+         real(c_double), value :: lz
+         real(c_double), value :: rcut
+         type(c_ptr) :: stream
+         type(c_ptr) :: cells
+      end function gpu_pdf_cells_build
+
+      subroutine gpu_pdf_cells_count(cells, site_beg, n_site, counts, stream) bind(C, name="gpu_pdf_cells_count")
+         use iso_c_binding
+         implicit none
+         type(c_ptr), value :: cells
+         integer(c_int), value :: site_beg
+         integer(c_int), value :: n_site
+         integer(c_int) :: counts(*)
+         type(c_ptr) :: stream
+      end subroutine gpu_pdf_cells_count
+
+      subroutine gpu_pdf_cells_fill(cells, site_beg, n_site, n_neigh, n_pairs, n_neigh_d, species_d, neighbors_list_d, &
+                                    neighbor_species_d, rjs_d, xyz_d, stream) bind(C, name="gpu_pdf_cells_fill")
+         use iso_c_binding
+         implicit none
+         type(c_ptr), value :: cells
+         integer(c_int), value :: site_beg
+         integer(c_int), value :: n_site
+         integer(c_int) :: n_neigh(*)
+         integer(c_int), value :: n_pairs
+         type(c_ptr) :: n_neigh_d
+         type(c_ptr) :: species_d
+         type(c_ptr) :: neighbors_list_d
+         type(c_ptr) :: neighbor_species_d
+         type(c_ptr) :: rjs_d
+         type(c_ptr) :: xyz_d
+         type(c_ptr) :: stream
+      end subroutine gpu_pdf_cells_fill
+
+      subroutine gpu_pdf_cells_free(cells, stream) bind(C, name="gpu_pdf_cells_free")
+         use iso_c_binding
+         implicit none
+         type(c_ptr), value :: cells
+         type(c_ptr) :: stream
+      end subroutine gpu_pdf_cells_free
+
       subroutine gpu_print_pointer_int(p) bind(C&
            &, name="gpu_print_pointer_int")
          use iso_c_binding

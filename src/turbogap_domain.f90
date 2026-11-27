@@ -39,7 +39,7 @@ module turbogap_domain
    use types, only: input_parameters, any_has_local_properties, contribution_ref, perform_t
    use timing, only: times_t, time_start, time_end
    use turbogap_structure, only: state_t
-   use turbogap_setup, only: model_t
+   use turbogap_setup, only: model_t, pdf_list_rcut
    use turbogap_loop, only: loop_t
    use turbogap_results, only: results_t, results_resize_sites, results_bcast_sites
    use domain_legacy, only: legacy_dd_t, legacy_init, legacy_free, legacy_check_widths, legacy_distribute, &
@@ -669,7 +669,9 @@ contains
       dom%do_list(dom%i_beg:dom%i_end) = .true.
 
       call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
-                                state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
+                                state%species_supercell, &
+                                pdf_list_rcut(model, params, state%a_box, state%b_box, state%c_box, state%indices), &
+                                nl%n_atom_pairs, nl%rjs, &
                                 nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
                                 state%n_sites, state%indices, &
                                 nl%rebuild_neighbors_list, dom%do_list, comm%rank, soap_cutoff(model))
@@ -822,7 +824,9 @@ contains
       if (allocated(nl%n_neigh)) deallocate (nl%n_neigh)
       if (allocated(nl%n_neigh_local)) deallocate (nl%n_neigh_local)
       call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
-                                state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
+                                state%species_supercell, &
+                                pdf_list_rcut(model, params, state%a_box, state%b_box, state%c_box, state%indices), &
+                                nl%n_atom_pairs, nl%rjs, &
                                 nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
                                 state%n_sites, state%indices, .true., dom%do_list, comm%rank, soap_cutoff(model))
 
@@ -934,7 +938,9 @@ contains
          state%positions(1:3, 1:n_local) = t(1:3, 1:n_local)
          dom%legacy%n_refreshes = dom%legacy%n_refreshes + 1
          call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
-                                   state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
+                                   state%species_supercell, &
+                                   pdf_list_rcut(model, params, state%a_box, state%b_box, state%c_box, state%indices), &
+                                   nl%n_atom_pairs, nl%rjs, &
                                    nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
                                    state%n_sites, state%indices, .false., dom%do_list, comm%rank, soap_cutoff(model))
          return
@@ -1047,7 +1053,9 @@ contains
       dom%do_list = .false.
       dom%do_list(dom%i_beg:dom%i_end) = .true.
       call build_neighbors_list(state%positions, state%a_box, state%b_box, state%c_box, params%do_timing, &
-                                state%species_supercell, model%rcut_max, nl%n_atom_pairs, nl%rjs, &
+                                state%species_supercell, &
+                                pdf_list_rcut(model, params, state%a_box, state%b_box, state%c_box, state%indices), &
+                                nl%n_atom_pairs, nl%rjs, &
                                 nl%thetas, nl%phis, nl%xyz, nl%n_neigh_local, nl%neighbors_list, nl%neighbor_species, &
                                 state%n_sites, state%indices, .false., dom%do_list, comm%rank, soap_cutoff(model))
    end subroutine legacy_reuse

@@ -1366,32 +1366,15 @@ contains
          integer :: k2
          integer :: i_chunk
          integer :: n_atom_pairs_in
+         integer, allocatable :: k_start(:)
+         integer, allocatable :: n_in(:)
 
          n_sites = size(n_neigh)
          n_atom_pairs = size(rjs)
 
-         k = 0
-         n_atom_pairs_in = 0
-         do i = 1, n_sites
-            do j = 1, n_neigh(i)
-               k = k + 1
-               if (rjs(k) < rcut) then
-                  n_atom_pairs_in = n_atom_pairs_in + 1
-               end if
-            end do
-         end do
-
-         ! !   This is a conservative estimate of the maximum memory that this run will need
-
-         ! !
-         ! estimated_memory_in_Gbytes = dfloat(n_atom_pairs_in) * 150.d0 / 1024.d0**3
-         mem_ratio = estimated_memory_in_Gbytes/max_Gbytes_per_process
-!    n_chunks = ceiling(mem_ratio)
          if (n_chunks > n_sites) then
             n_chunks = n_sites
          end if
-
-         pairs_per_chunk = dfloat(n_atom_pairs_in)/dfloat(n_chunks)
 
          allocate (i_beg_list(1:n_chunks))
          allocate (i_end_list(1:n_chunks))
@@ -1411,16 +1394,31 @@ contains
             return
          end if
 
-         k = 0
+!        The pairs inside rcut, site by site and in parallel: the split below
+!        walks the sites and needs only these counts. The whole list used to be
+!        walked twice in one thread every step, one batch or not.
+         allocate (k_start(1:n_sites))
+         allocate (n_in(1:n_sites))
+         k_start(1) = 0
+         do i = 2, n_sites
+            k_start(i) = k_start(i - 1) + n_neigh(i - 1)
+         end do
+!$omp parallel do schedule(static) private(i, k)
+         do i = 1, n_sites
+            n_in(i) = 0
+            do k = k_start(i) + 1, k_start(i) + n_neigh(i)
+               if (rjs(k) < rcut) n_in(i) = n_in(i) + 1
+            end do
+         end do
+!$omp end parallel do
+         n_atom_pairs_in = sum(n_in)
+         pairs_per_chunk = dfloat(n_atom_pairs_in)/dfloat(n_chunks)
+
          k2 = 0
          i_chunk = 1
          do i = 1, n_sites
-            do j = 1, n_neigh(i)
-               k = k + 1
-               if (rjs(k) < rcut) then
-                  k2 = k2 + 1
-               end if
-            end do
+            k = k_start(i) + n_neigh(i)
+            k2 = k2 + n_in(i)
             if (k2 >= int(float(i_chunk)*pairs_per_chunk)) then
                i_end_list(i_chunk) = i
                j_end_list(i_chunk) = k
@@ -1432,17 +1430,73 @@ contains
                end if
             end if
          end do
-         return
+         deallocate (n_in)
+         deallocate (k_start)
 
       end subroutine get_gpu_batches
+
+!     The batches of get_gpu_batches from each site's number of entries,
+!     n_per_site, rather than from a neighbour list: for pairs built on the
+!     device, where the host holds only their counts. j_beg_list..j_end_list
+!     are each batch's entries in that numbering.
+      subroutine get_gpu_batches_from_counts(n_per_site, n_chunks, i_beg_list, i_end_list, j_beg_list, j_end_list)
+
+         implicit none
+
+         integer, intent(in) :: n_per_site(:)
+         integer, intent(inout) :: n_chunks
+         integer, allocatable, intent(out) :: i_beg_list(:)
+         integer, allocatable, intent(out) :: i_end_list(:)
+         integer, allocatable, intent(out) :: j_beg_list(:)
+         integer, allocatable, intent(out) :: j_end_list(:)
+         real(dp) :: pairs_per_chunk
+         integer :: n_sites
+         integer :: n_total
+         integer :: i
+         integer :: k
+         integer :: i_chunk
+
+         n_sites = size(n_per_site)
+         n_total = sum(n_per_site)
+         if (n_chunks > n_sites) n_chunks = n_sites
+
+         allocate (i_beg_list(1:n_chunks))
+         allocate (i_end_list(1:n_chunks))
+         allocate (j_beg_list(1:n_chunks))
+         allocate (j_end_list(1:n_chunks))
+         if (n_chunks == 0) return
+
+         i_beg_list(1) = 1
+         j_beg_list(1) = 1
+         i_end_list(n_chunks) = n_sites
+         j_end_list(n_chunks) = n_total
+         if (n_chunks == 1) return
+
+         pairs_per_chunk = dfloat(n_total)/dfloat(n_chunks)
+         k = 0
+         i_chunk = 1
+         do i = 1, n_sites
+            k = k + n_per_site(i)
+            if (k >= int(dfloat(i_chunk)*pairs_per_chunk)) then
+               i_end_list(i_chunk) = i
+               j_end_list(i_chunk) = k
+               i_chunk = i_chunk + 1
+               i_beg_list(i_chunk) = i + 1
+               j_beg_list(i_chunk) = k + 1
+               if (i_chunk == n_chunks) exit
+            end if
+         end do
+
+      end subroutine get_gpu_batches_from_counts
 
       subroutine estimate_max_exp_forces_device_memory_usage(n_sites, n_pairs, n_dim_partial, n_samples, n_samples_sf, total, &
                                                              be_verbose)
 !     Device memory of the batched pdf/xrd route for one batch of n_pairs
 !     neighbour-list entries, in GB. The route keeps no n_pairs x n_samples
-!     array: per pair it holds the neighbour data, a channel tag, the
-!     compaction's rank per species pair, the compacted pair, its force and the
-!     scatter's scratch, all counted as if alive at once.
+!     array. Its peak is the larger of two phases: compacting the pairs (the
+!     neighbour data, a channel tag and one rank per species pair, and the
+!     compacted pairs) and their forces (the compacted pairs, a force per pair
+!     and, per site, its run starts and virial); the grids are alive in both.
          implicit none
          integer :: n_sites
          integer :: n_samples
@@ -1472,19 +1526,20 @@ contains
          tags = pairs*4.d0*(1.d0 + dfloat(n_dim_partial))*to_gb
 !        r, xyz, j2, channel
          compacted = pairs*(8.d0 + 24.d0 + 4.d0 + 4.d0)*to_gb
-!        pair force, the scatter's three ints per pair, the atoms' forces
-         forces = (pairs*(24.d0 + 12.d0) + dfloat(n_sites)*24.d0)*to_gb
+!        pair force; per site its run start in each channel, its virial, the
+!        atoms' forces
+         forces = (pairs*24.d0 + dfloat(n_sites)*(4.d0*dfloat(n_dim_partial + 1) + 72.d0 + 24.d0))*to_gb
 !        the gather's partial sums per block of 1024 pairs, W, S, the pdf
          grids = (pairs/1024.d0 + 2.d0*dfloat(n_dim_partial) + dfloat(n_samples_sf))*dfloat(n_samples)*8.d0*to_gb
 
-         total = neigh + tags + compacted + forces + grids
+         total = max(neigh + tags + compacted, compacted + forces) + grids
 
          if (verbose) then
             write (*, '(A)') "> Device memory of the batched pdf/xrd route"
             write (*, '(A,1X,F10.6,1X,A)') ">> neighbour data        ", neigh, " Gb"
             write (*, '(A,1X,F10.6,1X,A)') ">> pair tags and ranks   ", tags, " Gb"
             write (*, '(A,1X,F10.6,1X,A)') ">> compacted pairs       ", compacted, " Gb"
-            write (*, '(A,1X,F10.6,1X,A)') ">> forces and scatter    ", forces, " Gb"
+            write (*, '(A,1X,F10.6,1X,A)') ">> forces and site sums  ", forces, " Gb"
             write (*, '(A,1X,F10.6,1X,A)') ">> grids and partials    ", grids, " Gb"
             write (*, '(A,1X,F10.6,1X,A)') "--- Total device memory usage:  ", total, " Gb"
          end if

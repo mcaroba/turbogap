@@ -71,6 +71,12 @@ Everything TurboGAP runs on a GPU lives here. It used to live in three files in
   9 sigma window holds it (the samples the host evaluates), in a fixed order:
   a block's pairs are bucketed by their window's first sample, so a sample
   visits only the pairs that can reach it. No `n_pairs x n_samples` array.
+  In an orthorhombic cell at least three pdf cutoffs wide, the pairs
+  themselves are built here too (`gpu_pdf_cells_*`): sites binned in cells of
+  rc/2 or more, a warp per site over the +-2 stencil, hits placed by ballot and
+  popc so the list has a fixed order in the host's layout; a count pass sizes
+  the batches before the fill. The host list then stops at the potential's
+  cutoff (`gpu_pdf_neighbors`, `pdf_list_rcut` in `turbogap_setup.f90`).
 - `mad_xrd.cu` — the structure factor forces: each pair's force as one sum of
   the pdf derivative against w = S^T (residual x scattering factor), and their
   collection into forces and the virial. On the batched route each pair

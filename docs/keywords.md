@@ -6,7 +6,7 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 
 ## Contents
 
-**The input file** &mdash; 305 keywords
+**The input file** &mdash; 306 keywords
 
 - [General](#general) (60)
 - [Run control](#run-control) (20)
@@ -19,7 +19,7 @@ keyword in `src/read_files.f90` and regenerate with `make docs`.
 - [Electronic stopping and EPH](#electronic-stopping-and-eph) (32)
 - [Local properties](#local-properties) (5)
 - [Output](#output) (20)
-- [GPU](#gpu) (5)
+- [GPU](#gpu) (6)
 
 **The potential (.gap) file** &mdash; 59 keywords
 
@@ -420,6 +420,7 @@ Accepted by the CPU build too, so one deck runs on both.
 | `gpu_low_memory` | logical | `true` |  | all | Free each batch's device arrays as soon as its contribution has been accumulated, rather than holding them for the whole calculation. Slower and much smaller. | see `gpu_batched` |
 | `gpu_max_batch_size` | real | `1.0` | GB | all | Largest device allocation a single batch may make. The batch count follows from it. | see `gpu_n_batches` |
 | `gpu_n_batches` | integer | `1` |  | all | Split the work into exactly this many batches, instead of choosing the count from the memory budget. | see `gpu_max_batch_size` |
+| `gpu_pdf_neighbors` | logical | `true` |  | all | Build the batched pdf's pairs on the device from the positions instead of uploading the host's neighbour list every step, and build the host list only to the cutoffs of everything else. Taken when the cell is orthorhombic, holds no periodic images and is at least three pdf cutoffs wide when the first list is built; otherwise the list is uploaded. | see `gpu_batched`; see `pair_distribution_rcut` |
 | `n_batches` | integer | `0` |  | all | Split the SOAP descriptor calculation into exactly this many batches, instead of choosing the count from max_Gbytes_per_process. | see `max_gbytes_per_process` |
 
 # Keywords for the potential (.gap) file

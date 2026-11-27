@@ -20,11 +20,12 @@
 
 module turbogap_exp
    use turbogap_loop, only: loop_t
-   use turbogap_setup, only: model_t
+   use turbogap_setup, only: model_t, pdf_cell_ok, pdf_device_pairs
    use turbogap_comm, only: comm_t, comm_sum_all
 #ifdef _GPU
 
    use kinds
+   use error, only: turbogap_abort
 
    use timing
    use types
@@ -439,6 +440,15 @@ contains
 !     forces. Asking for less should not cost more.
       logical :: batched_pdf
       logical :: pdf_needed
+!     The batched pdf's pairs built on the device (pdf_pairs_on_device): the
+!     cell list, each own site's entries (its neighbours and itself), and the
+!     positions and species in arrays C can be handed.
+      logical :: device_pairs
+      type(c_ptr) :: pdf_cells
+      integer, allocatable, target :: pdf_entries(:)
+      real(dp), allocatable, target :: pos_t(:, :)
+      integer, allocatable, target :: species_t(:)
+      integer :: n_entries
 !     Whether this step is one the observables are wanted on; see the gate below.
       logical :: observables_wanted
       real(dp), allocatable, target :: sinc_factor_matrix(:, :)
@@ -631,6 +641,34 @@ contains
 !        beside the xrd_batched interval below, which is.
          call time_start(time%pdf, "pair_distribution_batched")
 
+!        Pairs on the device: the cell list of every atom this rank holds, and
+!        how many entries each of its own sites will have. The batches below
+!        are cut from those counts, and each batch's list is built where the
+!        host's used to be uploaded.
+         device_pairs = pdf_cell_ok(params, a_box, b_box, c_box, indices, 1.d0)
+         if (pdf_device_pairs .and. .not. device_pairs) then
+            write (0, '(A)') 'ERROR: the neighbour list was built short of the pdf cutoff for the device to build'
+            write (0, '(A)') '       the pdf pairs, and the cell no longer allows that: it must stay orthorhombic and'
+            write (0, '(A)') '       at least three pair_distribution_rcut a side. Set gpu_pdf_neighbors = .false.'
+            call turbogap_abort()
+         end if
+         if (device_pairs) then
+            allocate (pos_t(1:3, 1:n_sites))
+            allocate (species_t(1:n_sites))
+            pos_t = positions(1:3, 1:n_sites)
+            species_t = species(1:n_sites)
+            pdf_cells = gpu_pdf_cells_build(n_sites, c_loc(pos_t), c_loc(species_t), a_box(1), b_box(2), c_box(3), &
+                                            params%pair_distribution_rcut, gpu_stream)
+            allocate (pdf_entries(1:i_end - i_beg + 1))
+            call gpu_pdf_cells_count(pdf_cells, i_beg - 1, i_end - i_beg + 1, pdf_entries, gpu_stream)
+            pdf_entries = pdf_entries + 1
+            n_entries = sum(pdf_entries)
+            if (rank == 0 .and. md_istep <= 0 .and. mc_istep <= 0) write (*, *) &
+               ' - pdf pairs built on the device      |'
+         else
+            n_entries = j_end - j_beg + 1
+         end if
+
 !        Size the batch count from the device, unless the input opted out.
 !
 !        The estimator was written for exactly this and its call site has been
@@ -642,7 +680,7 @@ contains
 !        gpu_batches_for_gb only ever raises the count, and does nothing at all
 !        when gpu_mem_fraction = 0. The breakdown is printed on the first step
 !        only; every snapshot repeats it.
-         call estimate_max_exp_forces_device_memory_usage(i_end - i_beg + 1, j_end - j_beg + 1, n_dim_partial, &
+         call estimate_max_exp_forces_device_memory_usage(i_end - i_beg + 1, n_entries, n_dim_partial, &
                                                           params%pair_distribution_n_samples, &
                                                           params%structure_factor_n_samples, gpu_memory_usage, &
                                                     be_verbose=(rank == 0 .and. params%gpu_mem_fraction > 0.d0 .and. md_istep <= 0))
@@ -653,9 +691,14 @@ contains
          params%gpu_n_batches = gpu_batches_for_gb(gpu_memory_usage, gpu_n_batches_floor, &
                                                    i_end - i_beg + 1, rank, "pdf/xrd batched forces")
 
-         call get_gpu_batches(n_neigh(i_beg:i_end), rjs(j_beg:j_end), params%pair_distribution_rcut, &
-                              params%gpu_n_batches, gpu_memory_usage, &
-                              params%gpu_max_batch_size, i_beg_list, i_end_list, j_beg_list, j_end_list)
+         if (device_pairs) then
+            call get_gpu_batches_from_counts(pdf_entries, params%gpu_n_batches, i_beg_list, i_end_list, j_beg_list, &
+                                             j_end_list)
+         else
+            call get_gpu_batches(n_neigh(i_beg:i_end), rjs(j_beg:j_end), params%pair_distribution_rcut, &
+                                 params%gpu_n_batches, gpu_memory_usage, &
+                                 params%gpu_max_batch_size, i_beg_list, i_end_list, j_beg_list, j_end_list)
+         end if
 
          gpu_memory_usage = 0.d0
 
@@ -707,15 +750,22 @@ contains
             n_sites_temp = this_i_end - this_i_beg + 1
             n_pairs_temp = this_j_end - this_j_beg + 1
 
-            call gpu_malloc_neighbors(gpu_neigh(i), &
-                                      n_sites_temp, n_pairs_temp, &
-                                      n_neigh(this_i_beg:this_i_end), &
-                                      species(this_i_beg:this_i_end), &
-                                      neighbor_species(this_j_beg:this_j_end), &
-                                      neighbors_list(this_j_beg:this_j_end), &
-                                      rjs(this_j_beg:this_j_end), &
-                                      xyz(1:3, this_j_beg:this_j_end), &
-                                      gpu_streams(omp_task), rank)
+            if (device_pairs) then
+               call gpu_pdf_cells_fill(pdf_cells, this_i_beg - 1, n_sites_temp, pdf_entries(i_beg_list(i):i_end_list(i)), &
+                                       n_pairs_temp, gpu_neigh(i)%n_neigh_d, gpu_neigh(i)%species_d, &
+                                       gpu_neigh(i)%neighbors_list_d, gpu_neigh(i)%neighbor_species_d, &
+                                       gpu_neigh(i)%rjs_d, gpu_neigh(i)%xyz_d, gpu_streams(omp_task))
+            else
+               call gpu_malloc_neighbors(gpu_neigh(i), &
+                                         n_sites_temp, n_pairs_temp, &
+                                         n_neigh(this_i_beg:this_i_end), &
+                                         species(this_i_beg:this_i_end), &
+                                         neighbor_species(this_j_beg:this_j_end), &
+                                         neighbors_list(this_j_beg:this_j_end), &
+                                         rjs(this_j_beg:this_j_end), &
+                                         xyz(1:3, this_j_beg:this_j_end), &
+                                         gpu_streams(omp_task), rank)
+            end if
 
             print *, " Total neighbors   = ", j_end
             print *, "   n_batch         = ", i
@@ -760,6 +810,12 @@ contains
          end do
          !$OMP END PARALLEL DO
          deallocate (gpu_neigh)
+         if (device_pairs) then
+            call gpu_pdf_cells_free(pdf_cells, gpu_stream)
+            deallocate (pdf_entries)
+            deallocate (species_t)
+            deallocate (pos_t)
+         end if
 
          ! Collect the pdf
          !call gpu_

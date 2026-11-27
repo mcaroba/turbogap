@@ -39,7 +39,7 @@ module turbogap_evaluate
    use turbogap_domain, only: domain_t, neighbors_t, domain_complete_e0, domain_complete_sites, domain_total_dipole, &
                               domain_n_total, domain_decomposed, domain_site_values, domain_site_ids, domain_exp_view, &
                               domain_complete_contributions, exp_on_domains
-   use turbogap_setup, only: model_t
+   use turbogap_setup, only: model_t, pdf_device_pairs
    use turbogap_results, only: results_t, results_prepare
    use turbogap_loop, only: loop_t
    use turbogap_md, only: dynamics_t
@@ -145,7 +145,8 @@ contains
       call domain_complete_e0(dom, comm, res, state, time)
 
       rcut_gap = gap_cutoff()
-      if (model%rcut_max > rcut_gap + params%neighbors_buffer + RCUT_ROUNDOFF .and. &
+      if (merge(model%rcut_list, model%rcut_max, pdf_device_pairs) > rcut_gap + params%neighbors_buffer + RCUT_ROUNDOFF &
+          .and. &
           .not. params%write_derivatives) then
          call cut_neighbors_list(rcut_gap, dom%i_beg, dom%i_end, nl%n_neigh, nl%rjs, nl%thetas, nl%phis, nl%xyz, &
                                  nl%neighbor_species, nl%neighbors_list, gap_nl%n_neigh, gap_nl%rjs, gap_nl%thetas, &

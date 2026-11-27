@@ -892,3 +892,318 @@ extern "C" void gpu_pdf_window_kde(int n_channels, int* off_h, int n_samples, do
   gpuErrchk(hipFreeAsync(blk_d, stream[0]));
   free(blk_h);
 }
+
+// ---------------------------------------------------------------------------
+// The pdf's pairs built on the device from the positions, rather than uploaded
+// from the host's neighbour list every step. For an orthorhombic cell at least
+// three cutoffs wide: a cell list whose cells are at least rcut / 2 wide, the
+// atoms copied into cell order and, within a cell, index order; then each
+// site's neighbours within rcut among the 5 x 5 x 5 cells around its own,
+// nearest image. One warp per site walks those cells' atoms 32 at a time, so
+// the loads of a cell are one sweep; a ballot counts the hits and places them
+// in the order walked, which is fixed. The output is a batch's list in the
+// host's layout -- each site's own entry, then its neighbours -- so everything
+// that read the uploaded list reads it unchanged.
+//
+// NOT converted to the backend layer, deliberately: the warp-wide ballot is a
+// team pattern the layer does not carry. The cell list itself is flat maps.
+
+#define PDF_CELL_REACH 2
+#define PDF_WARPS 8
+
+struct pdf_cells_t {
+  int n;
+  int nc[3];
+  double L[3];
+  double rcut;
+  double* x_d;
+  double* y_d;
+  double* z_d;
+  int* atom_d;
+  int* species_d;
+  int* species_idx_d;
+  int* cell_start_d;
+  int* cell_of_site_d;
+};
+
+TG_INLINE_FUNCTION int pdf_cell_of(double x, double L, int nc) {
+  double s = x / L;
+  s -= floor(s);
+  const int c = (int) (s * nc);
+  return c < nc ? c : nc - 1;
+}
+
+// The cell list of n atoms (pos_h 3 x n, species_h 1-based) in an lx x ly x lz
+// cell. The caller has checked it is at least three rcut a side, so there are
+// at least six cells a side and the 125 around a cell are distinct.
+extern "C" void* gpu_pdf_cells_build(int n, double* pos_h, int* species_h, double lx, double ly, double lz, double rcut,
+                                     hipStream_t* stream) {
+  pdf_cells_t* cl = new pdf_cells_t;
+  cl->n = n;
+  cl->L[0] = lx;
+  cl->L[1] = ly;
+  cl->L[2] = lz;
+  cl->rcut = rcut;
+  for (int d = 0; d < 3; d++)
+    cl->nc[d] = (int) (cl->L[d] / (rcut / PDF_CELL_REACH));
+  const int nc0 = cl->nc[0];
+  const int nc1 = cl->nc[1];
+  const int nc2 = cl->nc[2];
+  const int ncell = nc0 * nc1 * nc2;
+  const size_t nn = (size_t) (n > 0 ? n : 1);
+
+  double* pos;
+  int* cell_of;
+  int* cursor;
+  int* order;
+  gpuErrchk(hipMallocAsync(&pos, 3 * nn * sizeof(double), stream[0]));
+  gpuErrchk(hipMallocAsync(&cell_of, nn * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&cursor, (size_t) ncell * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&order, nn * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&cl->x_d, nn * sizeof(double), stream[0]));
+  gpuErrchk(hipMallocAsync(&cl->y_d, nn * sizeof(double), stream[0]));
+  gpuErrchk(hipMallocAsync(&cl->z_d, nn * sizeof(double), stream[0]));
+  gpuErrchk(hipMallocAsync(&cl->atom_d, nn * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&cl->species_d, nn * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&cl->species_idx_d, nn * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&cl->cell_start_d, (size_t) (ncell + 1) * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&cl->cell_of_site_d, nn * sizeof(int), stream[0]));
+  gpuErrchk(hipMemcpyAsync(pos, pos_h, 3 * (size_t) n * sizeof(double), hipMemcpyHostToDevice, stream[0]));
+  gpuErrchk(hipMemcpyAsync(cl->species_idx_d, species_h, (size_t) n * sizeof(int), hipMemcpyHostToDevice, stream[0]));
+  gpuErrchk(hipMemsetAsync(cl->cell_start_d, 0, (size_t) (ncell + 1) * sizeof(int), stream[0]));
+  gpuErrchk(hipMemsetAsync(cursor, 0, (size_t) ncell * sizeof(int), stream[0]));
+
+  int* cell_start = cl->cell_start_d;
+  int* cell_of_site = cl->cell_of_site_d;
+  double* x = cl->x_d;
+  double* y = cl->y_d;
+  double* z = cl->z_d;
+  int* atom = cl->atom_d;
+  int* spec = cl->species_d;
+  const int* spec_in = cl->species_idx_d;
+  const double L0 = lx;
+  const double L1 = ly;
+  const double L2 = lz;
+
+  tg_parallel_for(
+      "turbogap_pdf_cells_bin", n, stream,
+      TG_LAMBDA(const int a) {
+        const int c = pdf_cell_of(pos[3 * (size_t) a], L0, nc0) +
+                      nc0 * (pdf_cell_of(pos[3 * (size_t) a + 1], L1, nc1) + nc1 * pdf_cell_of(pos[3 * (size_t) a + 2], L2, nc2));
+        cell_of[a] = c;
+        cell_of_site[a] = c;
+        TG_ATOMIC_ADD(&cell_start[c + 1], 1);
+      },
+      tpb);
+  inclusiveScan(cell_start + 1, ncell, stream);
+  tg_parallel_for(
+      "turbogap_pdf_cells_place", n, stream,
+      TG_LAMBDA(const int a) {
+        const int c = cell_of[a];
+        order[cell_start[c] + TG_ATOMIC_FETCH_ADD(&cursor[c], 1)] = a;
+      },
+      tpb);
+  // The atomics left each cell in any order; index order fixes it.
+  tg_parallel_for(
+      "turbogap_pdf_cells_order", ncell, stream,
+      TG_LAMBDA(const int c) {
+        for (int s = cell_start[c] + 1; s < cell_start[c + 1]; s++) {
+          const int v = order[s];
+          int t = s - 1;
+          while (t >= cell_start[c] && order[t] > v) {
+            order[t + 1] = order[t];
+            t--;
+          }
+          order[t + 1] = v;
+        }
+      },
+      tpb);
+  tg_parallel_for(
+      "turbogap_pdf_cells_gather", n, stream,
+      TG_LAMBDA(const int t) {
+        const int a = order[t];
+        x[t] = pos[3 * (size_t) a];
+        y[t] = pos[3 * (size_t) a + 1];
+        z[t] = pos[3 * (size_t) a + 2];
+        atom[t] = a;
+        spec[t] = spec_in[a];
+      },
+      tpb);
+
+  gpuErrchk(hipFreeAsync(order, stream[0]));
+  gpuErrchk(hipFreeAsync(cursor, stream[0]));
+  gpuErrchk(hipFreeAsync(cell_of, stream[0]));
+  gpuErrchk(hipFreeAsync(pos, stream[0]));
+  gpuErrchk(hipStreamSynchronize(stream[0]));
+  return cl;
+}
+
+// Site i's neighbours within sqrt(rc2), one warp: counted, and written from
+// entry k on when rjs is not null (1-based atom, species, distance,
+// separation). The site's position comes from the cell-ordered arrays through
+// its slot, found by scanning its own cell.
+__device__ int pdf_warp_site(const int i, const pdf_cells_t cl, const double rc2, int k, int* nl, int* nspec, double* rjs,
+                             double* xyz) {
+  const int lane = threadIdx.x & 31;
+  const unsigned lanes_below = (1u << lane) - 1u;
+  const int ci = cl.cell_of_site_d[i];
+  int slot = -1;
+  for (int t0 = cl.cell_start_d[ci]; t0 < cl.cell_start_d[ci + 1]; t0 += 32) {
+    const int t = t0 + lane;
+    const unsigned found = __ballot_sync(0xffffffffu, t < cl.cell_start_d[ci + 1] && cl.atom_d[t] == i);
+    if (found != 0u) {
+      slot = t0 + __ffs(found) - 1;
+      break;
+    }
+  }
+  const double xi = cl.x_d[slot];
+  const double yi = cl.y_d[slot];
+  const double zi = cl.z_d[slot];
+  const int nc0 = cl.nc[0];
+  const int nc1 = cl.nc[1];
+  const int nc2 = cl.nc[2];
+  const int cx = ci % nc0;
+  const int cy = (ci / nc0) % nc1;
+  const int cz = ci / (nc0 * nc1);
+  int n = 0;
+  for (int dz = -PDF_CELL_REACH; dz <= PDF_CELL_REACH; dz++) {
+    const int zc = (cz + dz + nc2) % nc2;
+    for (int dy = -PDF_CELL_REACH; dy <= PDF_CELL_REACH; dy++) {
+      const int yc = (cy + dy + nc1) % nc1;
+      for (int dx = -PDF_CELL_REACH; dx <= PDF_CELL_REACH; dx++) {
+        const int xc = (cx + dx + nc0) % nc0;
+        const int c = xc + nc0 * (yc + nc1 * zc);
+        const int beg = cl.cell_start_d[c];
+        const int end = cl.cell_start_d[c + 1];
+        for (int t0 = beg; t0 < end; t0 += 32) {
+          const int t = t0 + lane;
+          bool hit = false;
+          double ax = 0.0;
+          double ay = 0.0;
+          double az = 0.0;
+          double r2 = 0.0;
+          if (t < end && t != slot) {
+            ax = cl.x_d[t] - xi;
+            ay = cl.y_d[t] - yi;
+            az = cl.z_d[t] - zi;
+            ax -= cl.L[0] * rint(ax / cl.L[0]);
+            ay -= cl.L[1] * rint(ay / cl.L[1]);
+            az -= cl.L[2] * rint(az / cl.L[2]);
+            r2 = ax * ax + ay * ay + az * az;
+            hit = r2 < rc2;
+          }
+          const unsigned hits = __ballot_sync(0xffffffffu, hit);
+          if (rjs != nullptr && hit) {
+            const int p = k + n + __popc(hits & lanes_below);
+            nl[p] = cl.atom_d[t] + 1;
+            nspec[p] = cl.species_d[t];
+            rjs[p] = sqrt(r2);
+            xyz[3 * (size_t) p] = ax;
+            xyz[3 * (size_t) p + 1] = ay;
+            xyz[3 * (size_t) p + 2] = az;
+          }
+          n += __popc(hits);
+        }
+      }
+    }
+  }
+  return n;
+}
+
+__global__ void kernel_pdf_cells_count(const pdf_cells_t cl, int site_beg, int n_site, double rc2, int* counts) {
+  const int s = blockIdx.x * PDF_WARPS + threadIdx.x / 32;
+  if (s >= n_site)
+    return;
+  const int n = pdf_warp_site(site_beg + s, cl, rc2, 0, nullptr, nullptr, nullptr, nullptr);
+  if ((threadIdx.x & 31) == 0)
+    counts[s] = n;
+}
+
+__global__ void kernel_pdf_cells_fill(const pdf_cells_t cl, int site_beg, int n_site, double rc2, const int* n_neigh,
+                                      const int* site_end, int* species_b, int* nl, int* nspec, double* rjs, double* xyz) {
+  const int s = blockIdx.x * PDF_WARPS + threadIdx.x / 32;
+  if (s >= n_site)
+    return;
+  const int i = site_beg + s;
+  const int k = site_end[s] - n_neigh[s];
+  if ((threadIdx.x & 31) == 0) {
+    species_b[s] = cl.species_idx_d[i];
+    nl[k] = i + 1;
+    nspec[k] = cl.species_idx_d[i];
+    rjs[k] = 0.0;
+    xyz[3 * (size_t) k] = 0.0;
+    xyz[3 * (size_t) k + 1] = 0.0;
+    xyz[3 * (size_t) k + 2] = 0.0;
+  }
+  pdf_warp_site(i, cl, rc2, k + 1, nl, nspec, rjs, xyz);
+}
+
+// counts_h(s): the neighbours of site site_beg + s (0-based) within rcut.
+extern "C" void gpu_pdf_cells_count(void* h, int site_beg, int n_site, int* counts_h, hipStream_t* stream) {
+  if (n_site <= 0)
+    return;
+  const pdf_cells_t* cl = (const pdf_cells_t*) h;
+  int* counts_d;
+  gpuErrchk(hipMallocAsync(&counts_d, (size_t) n_site * sizeof(int), stream[0]));
+  const int blocks = (n_site + PDF_WARPS - 1) / PDF_WARPS;
+  kernel_pdf_cells_count<<<blocks, 32 * PDF_WARPS, 0, stream[0]>>>(*cl, site_beg, n_site, cl->rcut * cl->rcut, counts_d);
+  gpuErrchk(hipMemcpyAsync(counts_h, counts_d, (size_t) n_site * sizeof(int), hipMemcpyDeviceToHost, stream[0]));
+  gpuErrchk(hipStreamSynchronize(stream[0]));
+  gpuErrchk(hipFreeAsync(counts_d, stream[0]));
+}
+
+// A batch's list, sites site_beg .. site_beg + n_site - 1 (0-based), in the
+// host's layout. n_neigh_h(s) is the site's entries, its own included, as
+// gpu_pdf_cells_count gave them plus one; n_pairs their sum. The arrays are
+// allocated here on the stream, for gpu_free_neighbors to release.
+extern "C" void gpu_pdf_cells_fill(void* h, int site_beg, int n_site, int* n_neigh_h, int n_pairs, void** n_neigh_out,
+                                   void** species_out, void** nl_out, void** nspec_out, void** rjs_out, void** xyz_out,
+                                   hipStream_t* stream) {
+  const pdf_cells_t* cl = (const pdf_cells_t*) h;
+  const size_t ns = (size_t) (n_site > 0 ? n_site : 1);
+  const size_t np = (size_t) (n_pairs > 0 ? n_pairs : 1);
+  int* n_neigh;
+  int* species_b;
+  int* nl;
+  int* nspec;
+  double* rjs;
+  double* xyz;
+  gpuErrchk(hipMallocAsync(&n_neigh, ns * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&species_b, ns * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&nl, np * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&nspec, np * sizeof(int), stream[0]));
+  gpuErrchk(hipMallocAsync(&rjs, np * sizeof(double), stream[0]));
+  gpuErrchk(hipMallocAsync(&xyz, 3 * np * sizeof(double), stream[0]));
+  *n_neigh_out = n_neigh;
+  *species_out = species_b;
+  *nl_out = nl;
+  *nspec_out = nspec;
+  *rjs_out = rjs;
+  *xyz_out = xyz;
+  if (n_site <= 0)
+    return;
+
+  int* site_end;
+  gpuErrchk(hipMallocAsync(&site_end, ns * sizeof(int), stream[0]));
+  gpuErrchk(hipMemcpyAsync(n_neigh, n_neigh_h, ns * sizeof(int), hipMemcpyHostToDevice, stream[0]));
+  gpuErrchk(hipMemcpyAsync(site_end, n_neigh, ns * sizeof(int), hipMemcpyDeviceToDevice, stream[0]));
+  inclusiveScan(site_end, n_site, stream);
+  const int blocks = (n_site + PDF_WARPS - 1) / PDF_WARPS;
+  kernel_pdf_cells_fill<<<blocks, 32 * PDF_WARPS, 0, stream[0]>>>(*cl, site_beg, n_site, cl->rcut * cl->rcut, n_neigh, site_end,
+                                                                  species_b, nl, nspec, rjs, xyz);
+  gpuErrchk(hipFreeAsync(site_end, stream[0]));
+}
+
+extern "C" void gpu_pdf_cells_free(void* h, hipStream_t* stream) {
+  pdf_cells_t* cl = (pdf_cells_t*) h;
+  gpuErrchk(hipFreeAsync(cl->x_d, stream[0]));
+  gpuErrchk(hipFreeAsync(cl->y_d, stream[0]));
+  gpuErrchk(hipFreeAsync(cl->z_d, stream[0]));
+  gpuErrchk(hipFreeAsync(cl->atom_d, stream[0]));
+  gpuErrchk(hipFreeAsync(cl->species_d, stream[0]));
+  gpuErrchk(hipFreeAsync(cl->species_idx_d, stream[0]));
+  gpuErrchk(hipFreeAsync(cl->cell_start_d, stream[0]));
+  gpuErrchk(hipFreeAsync(cl->cell_of_site_d, stream[0]));
+  gpuErrchk(hipStreamSynchronize(stream[0]));
+  delete cl;
+}

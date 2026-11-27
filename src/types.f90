@@ -937,6 +937,13 @@ module types
 !     GPU
 !     Accepted by the CPU build too, so that one input deck runs on both.
       logical :: gpu_batched = .true.
+!     The batched pdf builds its pairs on the device from the positions, where
+!     the cell allows (turbogap_setup: pdf_cell_ok), rather than uploading the
+!     host's neighbour list every step.
+      logical :: gpu_pdf_neighbors = .true.
+!     Set by the setup, not read: the cutoff of everything but the pdf, XRD and
+!     ND, with the buffer (turbogap_setup: list_cutoff).
+      real(dp) :: rcut_potential = 0.d0
       logical :: gpu_low_memory = .true.
       real(dp) :: gpu_mem_fraction = 0.8d0
       real(dp) :: gpu_batch_gbytes = -1.d0

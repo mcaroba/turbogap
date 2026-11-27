@@ -36,7 +36,7 @@ program turbogap
    use threads, only: threads_init
    use gpu_context, only: gpu_context_init, gpu_context_finalize, gpu_memory_budget_init, gpu_memory_report
    use gap_backend, only: gap_backend_init
-   use turbogap_setup, only: model_t, read_input_and_gap_files, model_free
+   use turbogap_setup, only: model_t, read_input_and_gap_files, model_free, list_cutoff
    use turbogap_output, only: handle_help_request, read_run_mode, print_banner, print_options, &
                               print_nothing_to_do, print_timing_report, print_end
    use turbogap_loop, only: loop_t, loop_init, loop_continues, loop_begin_step, loop_sync, loop_end_step
@@ -108,6 +108,8 @@ program turbogap
                                  model%has_local_properties_mpi, model%local_properties_n_sparse_mpi_soap_turbo, &
                                  model%local_properties_dim_mpi_soap_turbo, dyn%nrows, dyn%allelstopdata, &
                                  dyn%ephbeta, dyn%ephfdm, dyn%ephlsc, time)
+
+   model%rcut_list = list_cutoff(params, model%rcut_max)
 
 !  After the input: it reads mem_fraction and writes max_Gbytes_per_process.
    call gpu_memory_budget_init(params, comm%rank, comm%size)

@@ -45,12 +45,24 @@ module turbogap_setup
    private
    public :: read_input_and_gap_files
    public :: model_free
+   public :: list_cutoff
+   public :: pdf_cell_ok
+   public :: pdf_list_rcut
+
+!  Whether the host list is being built short of the pdf cutoff, the device
+!  building the pdf's pairs: decided at the first list build (pdf_list_rcut)
+!  and kept, so the list and the route never disagree.
+   logical, save, public :: pdf_device_pairs = .false.
+   logical, save :: pdf_device_decided = .false.
 
 !  The potential as read from the input and the GAP files, and the indices into
 !  its local properties the rest of the run looks things up by.
    type, public :: model_t
       integer :: n_species = 1
       real(dp) :: rcut_max
+!     What the host neighbour list is built to; see list_cutoff. Halos and
+!     supercells keep rcut_max.
+      real(dp) :: rcut_list
       integer :: n_soap_turbo = 0
       integer :: n_distance_2b = 0
       integer :: n_angle_3b = 0
@@ -74,6 +86,69 @@ module turbogap_setup
    end type model_t
 
 contains
+
+!  The cutoff the host neighbour list is built to: rcut_max, unless the device
+!  builds the batched pdf's pairs itself (gpu_pdf_neighbors), when the host
+!  list needs only what everything else does. The conditions are the batched
+!  route's (turbogap_exp: batched_pdf); the cell's are checked every step, and
+!  a run whose cell stops meeting them stops rather than miss pairs.
+   real(dp) function list_cutoff(params, rcut_max)
+      type(input_parameters), intent(in) :: params
+      real(dp), intent(in) :: rcut_max
+      integer :: i
+
+      list_cutoff = rcut_max
+#ifdef _GPU
+      if (.not. (params%gpu_pdf_neighbors .and. params%gpu_batched .and. params%do_pair_distribution .and. &
+                 (params%do_xrd .neqv. params%do_nd) .and. .not. params%xrd_debye)) return
+      do i = 1, params%n_exp
+         if (trim(params%exp_data(i)%label) == 'pair_distribution') return
+      end do
+      list_cutoff = min(rcut_max, params%rcut_potential)
+#endif
+   end function list_cutoff
+
+!  Whether the device can build the batched pdf's pairs for this cell: asked
+!  for, an orthorhombic cell of the structure itself rather than a supercell,
+!  and at least margin times three pdf cutoffs a side, so that the cells
+!  around any cell are distinct (gpu_pdf_cells_* in src/gpu/mad_pdf.cu).
+   logical function pdf_cell_ok(params, a_box, b_box, c_box, indices, margin)
+      type(input_parameters), intent(in) :: params
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      integer, intent(in) :: indices(1:3)
+      real(dp), intent(in) :: margin
+      real(dp), parameter :: TOL = 1.d-6
+
+      pdf_cell_ok = params%gpu_pdf_neighbors .and. all(indices == 1) .and. &
+                    abs(a_box(2)) < TOL .and. abs(a_box(3)) < TOL .and. &
+                    abs(b_box(1)) < TOL .and. abs(b_box(3)) < TOL .and. &
+                    abs(c_box(1)) < TOL .and. abs(c_box(2)) < TOL .and. &
+                    min(a_box(1), b_box(2), c_box(3)) >= margin*3.d0*params%pair_distribution_rcut
+   end function pdf_cell_ok
+
+!  The cutoff to build the host list to now: model%rcut_list if the device
+!  builds the pdf's pairs, decided for the run on the first call from the cell
+!  then, else rcut_max. The cell must clear the bound by 10% then, so that a
+!  barostat squeezing it does not cross the bound the run is held to after.
+   real(dp) function pdf_list_rcut(model, params, a_box, b_box, c_box, indices)
+      type(model_t), intent(in) :: model
+      type(input_parameters), intent(in) :: params
+      real(dp), intent(in) :: a_box(1:3)
+      real(dp), intent(in) :: b_box(1:3)
+      real(dp), intent(in) :: c_box(1:3)
+      integer, intent(in) :: indices(1:3)
+      real(dp), parameter :: PDF_CELL_MARGIN = 1.1d0
+
+      if (.not. pdf_device_decided) then
+         pdf_device_decided = .true.
+         pdf_device_pairs = model%rcut_list < model%rcut_max .and. &
+                            pdf_cell_ok(params, a_box, b_box, c_box, indices, PDF_CELL_MARGIN)
+      end if
+      pdf_list_rcut = model%rcut_max
+      if (pdf_device_pairs) pdf_list_rcut = model%rcut_list
+   end function pdf_list_rcut
 
    subroutine read_input_and_gap_files(mode, rank, ntasks, params, &
                                        soap_turbo_hypers, distance_2b_hypers, angle_3b_hypers, core_pot_hypers, &
@@ -302,6 +377,7 @@ contains
             if (params%vdw_rcut > rcut_max) then
                rcut_max = params%vdw_rcut
             end if
+            params%rcut_potential = rcut_max
             !   xrd_rcut/nd_rcut widen the neighbour list for the routes that
             !   walk it. The Debye route reads the positions directly and uses
             !   xrd_rcut only as its window cutoff, so widening the list there
@@ -321,6 +397,7 @@ contains
 
             !   We increase rcut_max by the neighbors buffer
             rcut_max = rcut_max + params%neighbors_buffer
+            params%rcut_potential = params%rcut_potential + params%neighbors_buffer
 
             ! Check that the local properties we want to compute are valid,
             ! so things are commensurate between input file and .gap model
@@ -372,6 +449,7 @@ contains
          call mpi_bcast(params%n_local_properties, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
          !   Broadcast the maximum cutoff distance
          call mpi_bcast(rcut_max, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+         call mpi_bcast(params%rcut_potential, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(valid_xps, 1,&
               & MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
          call mpi_bcast(valid_vdw, 1,&

@@ -5680,6 +5680,18 @@ contains
          read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_batched
          call check_iostatus(iostatus, keyword)
          if (rank == 0) call print_parameter("gpu_batched", params%gpu_batched)
+         !> @kw gpu_pdf_neighbors
+         !> Build the batched pdf's pairs on the device from the positions instead of uploading the
+         !> host's neighbour list every step, and build the host list only to the cutoffs of
+         !> everything else. Taken when the cell is orthorhombic, holds no periodic images and is at
+         !> least three pdf cutoffs wide when the first list is built; otherwise the list is
+         !> uploaded.
+         !> @see gpu_batched, pair_distribution_rcut
+      else if (keyword == 'gpu_pdf_neighbors') then
+         backspace (unit)
+         read (unit, *, iostat=iostatus) cjunk, cjunk, params%gpu_pdf_neighbors
+         call check_iostatus(iostatus, keyword)
+         if (rank == 0) call print_parameter("gpu_pdf_neighbors", params%gpu_pdf_neighbors)
          !> @kw gpu_low_memory
          !> Free each batch's device arrays as soon as its contribution has been accumulated, rather
          !> than holding them for the whole calculation. Slower and much smaller.

@@ -240,7 +240,7 @@ footer {
 <header class="masthead">
 <p class="eyebrow">TurboGAP &middot; keyword reference</p>
 <h1>Keywords</h1>
-<p class="lede">364 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
+<p class="lede">365 keywords across the input file and the potential (.gap) file. Types and defaults are read out of <code>src/types.f90</code>, and the rest out of the branch in <code>src/read_files.f90</code> that parses the keyword, so nothing here is transcribed by hand.</p>
 </header>
 <nav class="rail" aria-label="Groups">
 <p class="railhead">the input file</p>
@@ -255,7 +255,7 @@ footer {
 <a href="#electronic-stopping-and-eph"><span>Electronic stopping and EPH</span><span class="n">32</span></a>
 <a href="#local-properties"><span>Local properties</span><span class="n">5</span></a>
 <a href="#output"><span>Output</span><span class="n">20</span></a>
-<a href="#gpu"><span>GPU</span><span class="n">5</span></a>
+<a href="#gpu"><span>GPU</span><span class="n">6</span></a>
 <p class="railhead">the potential (.gap) file</p>
 <a href="#soap-turbo"><span>soap_turbo</span><span class="n">40</span></a>
 <a href="#distance-2b"><span>distance_2b</span><span class="n">7</span></a>
@@ -3071,6 +3071,15 @@ footer {
 <td class="mo">all</td>
 <td class="de">Split the work into exactly this many batches, instead of choosing the count from the memory budget.</td>
 <td class="dp"><span class="dep">see <code>gpu_max_batch_size</code></span></td>
+</tr>
+<tr data-h="gpu_pdf_neighbors build the batched pdf&#x27;s pairs on the device from the positions instead of uploading the host&#x27;s neighbour list every step, and build the host list only to the cutoffs of everything else. taken when the cell is orthorhombic, holds no periodic images and is at least three pdf cutoffs wide when the first list is built; otherwise the list is uploaded." data-m="predict md mc soap ipi">
+<td class="kw"><code>gpu_pdf_neighbors</code></td>
+<td class="ty">logical</td>
+<td class="df"><code>true</code></td>
+<td class="un"></td>
+<td class="mo">all</td>
+<td class="de">Build the batched pdf&#x27;s pairs on the device from the positions instead of uploading the host&#x27;s neighbour list every step, and build the host list only to the cutoffs of everything else. Taken when the cell is orthorhombic, holds no periodic images and is at least three pdf cutoffs wide when the first list is built; otherwise the list is uploaded.</td>
+<td class="dp"><span class="dep">see <code>gpu_batched</code></span><span class="dep">see <code>pair_distribution_rcut</code></span></td>
 </tr>
 <tr data-h="n_batches split the soap descriptor calculation into exactly this many batches, instead of choosing the count from max_gbytes_per_process." data-m="predict md mc soap ipi">
 <td class="kw"><code>n_batches</code></td>

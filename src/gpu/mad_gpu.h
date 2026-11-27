@@ -64,6 +64,11 @@ void gpu_pdf_tag_pairs(int n_sites_b, int n_pairs_b, int* n_neigh_d, int* specie
 void gpu_pdf_compact_pairs(int n_pairs_b, int n_sites0, int n_channels, int* chan_d, int* neighbors_list_d, double* rjs_d,
                            double* xyz_d, double* r_out, double* xyz_out, int* j2_out, int* chan_out, int* off_h, int n_sites_b,
                            int* n_neigh_d, int* seg_out, hipStream_t* stream);
+void* gpu_pdf_cells_build(int n, double* pos_h, int* species_h, double lx, double ly, double lz, double rcut, hipStream_t* stream);
+void gpu_pdf_cells_count(void* h, int site_beg, int n_site, int* counts_h, hipStream_t* stream);
+void gpu_pdf_cells_fill(void* h, int site_beg, int n_site, int* n_neigh_h, int n_pairs, void** n_neigh_out, void** species_out,
+                        void** nl_out, void** nspec_out, void** rjs_out, void** xyz_out, hipStream_t* stream);
+void gpu_pdf_cells_free(void* h, hipStream_t* stream);
 void gpu_pdf_window_kde(int n_channels, int* off_h, int n_samples, double r_min, double dr, double kde_sigma, double kde_cut,
                         double* x_d, double* dV_d, double* r_d, double pdf_factor, double* pdf_out_d, hipStream_t* stream);
 
