@@ -767,13 +767,6 @@ contains
                                          gpu_streams(omp_task), rank)
             end if
 
-            print *, " Total neighbors   = ", j_end
-            print *, "   n_batch         = ", i
-            print *, "   this neighbors  = ", this_j_end - this_j_beg + 1
-            print *, "   Allocating ->   = ", (this_j_end - this_j_beg + 1)*8*5, " bytes"
-            print *, "              ->   = ", &
-               dfloat((this_j_end - this_j_beg + 1)*8*5)/1024.d0/1024.d0/1024.d0, " Gbytes"
-
             call total_gpu_memory(dfloat((this_j_end - this_j_beg + 1)*8*5))
 
             ! Now as we don't need anything else we can just try and
@@ -788,14 +781,6 @@ contains
 
             call gpu_free_neighbors(gpu_neigh(i), gpu_streams(omp_task))
 
-            write (*, '(A,I4,A,I4,A,I4,A,I4,A,I4,A,I4)') "pdf batches finished---Rank ", rank, " ---Thread ", omp_task, &
-               " / ", n_omp, " i = ", i, &
-               " i_beg = ", this_i_beg, &
-               " i_end = ", this_i_end, &
-               " j_beg = ", this_j_beg, &
-               " j_end = ", this_j_end
-            call flush (101)
-
 !           This batch's work is on gpu_streams(omp_task), not on the default
 !           stream. Syncing gpu_stream here waited for a stream this iteration
 !           never touched -- so it neither ordered anything this loop needs nor,
@@ -805,8 +790,6 @@ contains
 !           to make the batch's own device work complete before its host-side
 !           bookkeeping below.
             call gpu_stream_sync(gpu_streams(omp_task))
-
-            call gpu_meminfo()
          end do
          !$OMP END PARALLEL DO
          deallocate (gpu_neigh)
@@ -1183,19 +1166,6 @@ contains
 
             n_pairs_temp = this_j_end - this_j_beg + 1
 
-            ! I have the neighbors allocated in in gpu_neigh(i)
-            print *, " "
-!           I0, not I8, and eight descriptors for eight integers. The format had
-!           six, so it wrapped onto a second line, and the pair indices overflowed
-!           it into '********' -- a million atoms at a 6 A cutoff gives ~168M
-!           pairs, which is nine digits.
-            write (*, '(A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0,A,I0)') "xrd batches---Rank ", rank, " ---Thread ", omp_task, &
-               " / ", n_omp, " i ", i, &
-               " this_i_beg = ", this_i_beg, &
-               " this_i_end = ", this_i_end, &
-               " this_j_beg = ", this_j_beg, &
-               " this_j_end = ", this_j_end
-
 !           Every species pair of the batch in one pass, from the pairs the
 !           pdf compacted; the batch's total lands in host(1).
             allocate (gpu_batch_storage(i)%host(1)%forces_h(1:3, 1:n_sites))
@@ -1317,10 +1287,6 @@ contains
 !        block, so the hand-written form would leave the range open and nest
 !        every later phase inside it.
          call time_end(time%exp_batched, "exp_batched")
-
-         if (rank == 0) print *, " "
-         if (rank == 0) print *, "--Rank, ", rank, " --- TIME EXP BATCHED = ", time%exp_batched(3)
-         if (rank == 0) print *, " "
       end if
 
       !###---   Compute similarity of experimental predictions   ---###!
