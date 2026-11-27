@@ -517,7 +517,7 @@ contains
                                   i_beg_list, i_end_list, j_beg_list, &
                                   j_end_list, n_omp, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, &
                                   n_sites_temp, n_pairs_temp, write_condition, overwrite_condition, &
-                                  temp_string, species_types_actual, es%v_uc)
+                                  temp_string, species_types_actual, es%v_uc, n_tot)
 #else
          call compute_exp_spectra(params, es%n_sites, es%species, es%positions, enl%rjs, enl%xyz, enl%neighbors_list, &
                                   enl%n_neigh, enl%neighbor_species, es%indices, es%a_box, es%b_box, es%c_box, &

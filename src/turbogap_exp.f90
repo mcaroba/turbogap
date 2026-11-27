@@ -301,13 +301,16 @@ contains
                                   i_beg_list, i_end_list, j_beg_list, j_end_list, &
                                   n_omp, omp_task, this_i_beg, this_i_end, this_j_beg, this_j_end, n_sites_temp, &
                                   n_pairs_temp, write_condition, overwrite_condition, temp_string, &
-                                  species_types_actual, v_uc)
+                                  species_types_actual, v_uc, n_total)
 
       implicit none
 
 !   ---- dummy arguments ----
 !   Read-only inputs.
       integer, intent(in) :: n_sites
+!   The atoms in the system. n_sites is the extent of the per-site arrays: on
+!   a domain, its owned sites and its halo.
+      integer, intent(in) :: n_total
       integer, intent(in) :: i_beg
       integer, intent(in) :: i_end
       integer, intent(in) :: j_beg
@@ -553,7 +556,10 @@ contains
 
       ! Partials and n_atoms_of_species are indexed by species id, so slot k
       ! must name species k whatever order the atoms come in.
-      n_species_actual = maxval(species(1:n_sites))
+      n_species_actual = maxval(species(i_beg:i_end))
+#ifdef _MPIF90
+      call mpi_allreduce(MPI_IN_PLACE, n_species_actual, 1, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, ierr)
+#endif
       if (allocated(species_types_actual)) deallocate (species_types_actual)
       allocate (species_types_actual(1:n_species_actual))
       species_types_actual(1:n_species_actual) = params%species_types(1:n_species_actual)
@@ -661,7 +667,7 @@ contains
          call setup_batched_pair_distribution(params%r_range_min, params%r_range_max, &
                                          params%pair_distribution_rcut, params%pair_distribution_n_samples, x_pair_distribution, dV)
 
-         call get_n_atoms_of_species(n_atoms_of_species, n_sites, species, n_species_actual)
+         call get_n_atoms_of_species(n_atoms_of_species, i_beg, i_end, species, n_species_actual)
 
          allocate (gpu_neigh(1:size(i_beg_list)))
          allocate (gpu_exp(1:size(i_beg_list)))
@@ -806,14 +812,14 @@ contains
                      y_pair_distribution(1:params%pair_distribution_n_samples) + &
                      f*(n_atoms_of_species(j)*n_atoms_of_species(k))* &
                      pair_distribution_partial(1:params%pair_distribution_n_samples, n_dim_idx) &
-                     /dfloat(n_sites)/dfloat(n_sites)
+                     /dfloat(n_total)/dfloat(n_total)
                   n_dim_idx = n_dim_idx + 1
                   if (n_dim_idx > n_dim_partial) exit outertot
                end do
             end do outertot
 
             if (trim(params%pair_distribution_output) == "D(r)") then
-               y_pair_distribution = 4.d0*pi*(dfloat(n_sites)/v_uc)*x_pair_distribution &
+               y_pair_distribution = 4.d0*pi*(dfloat(n_total)/v_uc)*x_pair_distribution &
                                      *(y_pair_distribution - 1.d0)
             end if
 
@@ -885,7 +891,7 @@ contains
               & params%exp_forces, pair_distribution_der,&
               & pair_distribution_partial_der,&
               & pair_distribution_partial_temp_der, energies_pdf,&
-              & forces_pdf, virial_pdf, n_sites)
+              & forces_pdf, virial_pdf, n_total)
 
             call time_end(time%pdf, "pair_distribution")
          end if
@@ -921,7 +927,7 @@ contains
          & pair_distribution_partial_der, energies_sf, forces_sf&
            &, virial_sf, params%structure_factor_matrix_forces&
            &, cublas_handle, gpu_stream, &
-           & gpu_host_exp_storage, params%gpu_low_memory)
+           & gpu_host_exp_storage, params%gpu_low_memory, n_total)
 
          !time%sf(2) = MPI_wtime()
          call time_end(time%sf, "structure_factor")
@@ -963,7 +969,7 @@ contains
               & forces_xrd, virial_xrd, .false., params&
               &%structure_factor_matrix_forces, cublas_handle,&
               & gpu_stream, gpu_host_exp_storage, params&
-              &%gpu_low_memory)
+              &%gpu_low_memory, n_total)
          end if
 
          !time%xrd(2) = MPI_wtime()
@@ -1003,7 +1009,7 @@ contains
               &, virial_nd, .true., params &
               &%structure_factor_matrix_forces, cublas_handle,&
               & gpu_stream, gpu_host_exp_storage, params&
-              &%gpu_low_memory)
+              &%gpu_low_memory, n_total)
          end if
 
          !time%nd(2) = MPI_wtime()
@@ -1082,7 +1088,7 @@ contains
 !              be .true. here -- we are inside the diffraction branch by
 !              construction -- with neutron carrying the choice.
                call get_all_scattering_factors(all_scattering_factors_d(n_dim_idx),&
-                 & n_sites, x_obs(1:params%structure_factor_n_samples), species_types_actual, &
+                 & n_total, x_obs(1:params%structure_factor_n_samples), species_types_actual, &
                  params%structure_factor_n_samples, n_species_actual,&
                  & x_obs(1:params%structure_factor_n_samples), j, k, .true., obs_output,&
                  & n_atoms_of_species, obs_neutron, gpu_stream)
@@ -1142,7 +1148,7 @@ contains
                                            params%pair_distribution_kde_sigma, params%exp_energy_scales(obs_idx), &
                                            n_atoms_of_species, v_uc, xpdf_d, dV_d, sinc_factor_matrix_d, prefactor_d, &
                                            all_scattering_factors_d, gpu_batch_storage(i)%host(1)%forces_h, &
-                                           gpu_batch_storage(i)%host(1)%virial_h, gpu_streams(omp_task))
+                                           gpu_batch_storage(i)%host(1)%virial_h, gpu_streams(omp_task), n_total)
             call free_window_pairs(gpu_exp(i), gpu_streams(omp_task))
          end do
          !$OMP END PARALLEL DO
@@ -1186,8 +1192,8 @@ contains
 
                   if (j == k) f = 1.d0
                   if (j /= k) f = 2.d0
-                  f = 4.d0*pi*f*((n_atoms_of_species(j)*n_atoms_of_species(k))/dfloat(n_sites)/&
-                    & dfloat(n_sites))*(dfloat(n_sites)/v_uc)
+                  f = 4.d0*pi*f*((n_atoms_of_species(j)*n_atoms_of_species(k))/dfloat(n_total)/&
+                    & dfloat(n_total))*(dfloat(n_total)/v_uc)
 
                   call add_structure_factor_volume_virial(virial_obs_volume, rank,&
                        & params%exp_energy_scales(obs_idx), f, prefactor,&

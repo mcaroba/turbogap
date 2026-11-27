@@ -272,19 +272,15 @@ contains
 !  the domains, each rank the pairs of its own sites as the replicated mode
 !  does, rather than on the whole-structure view: a domain's halo reaches the
 !  pdf's cutoff, and only the partial pdfs are summed over all ranks. The pdf
-!  routes on the host build; Debye XRD and the explicit structure factor sum
-!  over the whole structure, and the device build keeps the view.
+!  routes, on the host and on the device; Debye XRD and the explicit structure
+!  factor sum over the whole structure.
    pure logical function exp_on_domains(params)
       type(input_parameters), intent(in) :: params
 
-#ifdef _GPU
-      exp_on_domains = .false.
-#else
       exp_on_domains = params%do_pair_distribution .and. params%pair_distribution_partial .and. &
                        .not. params%xrd_debye .and. &
                        (params%structure_factor_from_pdf .or. .not. (params%do_structure_factor .or. &
                                                                      params%do_xrd .or. params%do_nd))
-#endif
    end function exp_on_domains
 
 !  Is this run integrating on the domains?
